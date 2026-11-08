@@ -71,7 +71,7 @@ test('the server answers a refused input with the form in the error message', ()
 
 test('list refuses a status, a kind and a priority the loop does not know, naming the values it knows', () => {
   const root = loopDir();
-  jarl(root, 'new', 'a thing', '--kind', 'gap', '--prio', '1');
+  jarl(root, 'new', 'a thing', '--acceptance', '[read] it works', '--kind', 'gap', '--prio', '1');
   assert.equal(refuses(root, 'list', '--status', 'bogus').trim(), '--status must be one of: open, in-progress, done, dropped, deferred (got "bogus")\njarl.mjs list --status "<status>"');
   assert.equal(refuses(root, 'list', '--kind', 'task').trim(), '--kind must be one of: bug, gap, cleanup, docs, test, research, process, promise, wait (got "task")\njarl.mjs list --kind "<kind>"');
   assert.equal(refuses(root, 'list', '--prio', '7').trim(), '--prio must be one of: 1, 2, 3 (got "7")\njarl.mjs list --prio "<prio>"');

@@ -36,10 +36,10 @@ let seq = 0;
 // One finished unit of work: filed, leased with a model, one evidence row, `changes` reviews, an approve, done.
 function unit(root, { model, worker = 'w-x', reviewer = 'rev-big', reviewerModel = BIG, kind = 'bug', tier = 'standard', changes = 0, repo } = {}) {
   seq += 1;
-  const { id } = R.newIssue(root, `unit ${seq}`, { kind, tier, acceptance: 'it works', ...(repo ? { repo } : {}) });
+  const { id } = R.newIssue(root, `unit ${seq}`, { kind, tier, acceptance: '[read] it works', ...(repo ? { repo } : {}) });
   R.setStatus(root, id, 'in-progress', '', { branch: `jarl/${id}-x`, worker, ...(model ? { model } : {}) });
-  R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass 3' });
-  for (let k = 0; k < changes; k += 1) R.review(root, id, 'changes', 'Important: the case is not handled', { by: reviewer, ...(reviewerModel ? { model: reviewerModel } : {}) });
+  R.addEvidence(root, id, undefined, { line: 1, ran: 'npm test', saw: 'pass 3' });
+  for (let k = 0; k < changes; k += 1) R.review(root, id, 'changes', 'Important: the case is not handled', { by: reviewer, ...(reviewerModel ? { model: reviewerModel } : {}) }); R.addRound(root, id, 'fixed');
   R.review(root, id, 'approve', 'read the diff, nothing found', { by: reviewer, ...(reviewerModel ? { model: reviewerModel } : {}) });
   R.recordMerged(root, id, { sha: 'abc1234' }); R.setStatus(root, id, 'done', 'merged', {});
   return id;
@@ -50,7 +50,7 @@ function units(root, n, opts, changed = 0) { for (let k = 0; k < n; k += 1) unit
 
 test('set in-progress --model writes the Model field and the model before the worker in the lease line; leaving removes the field', () => {
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works' });
   const out = R.setStatus(root, id, 'in-progress', 'start', { branch: 'jarl/001-a', worker: 'w-one', model: '  claude-sonnet-5-5@high ', worktree: join(root, 'wt') });
   assert.equal(out.model, 'claude-sonnet-5-5@high', 'stored as given, trimmed');
   assert.match(issueText(root, id), /^\*\*Model:\*\* claude-sonnet-5-5@high$/m);
@@ -63,7 +63,7 @@ test('set in-progress --model writes the Model field and the model before the wo
 
 test('a takeover with another worker and no model does not keep the old model on the issue', () => {
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works' });
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
   R.setStatus(root, id, 'in-progress', 'taken over', { branch: 'jarl/001-a', worker: 'w-two', handover: true });
   assert.doesNotMatch(issueText(root, id), /\*\*Model:\*\*/, 'the model belonged to w-one');
@@ -72,7 +72,7 @@ test('a takeover with another worker and no model does not keep the old model on
 
 test('--model goes with in-progress only, needs a value and cannot hold the line separator', () => {
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works' });
   assert.throws(() => R.setStatus(root, id, 'deferred', 'later', { model: MID }), /--model goes with in-progress only/);
   assert.throws(() => R.setStatus(root, id, 'in-progress', '', { worker: 'w', model: '   ' }), /--model needs a value/);
   assert.throws(() => R.setStatus(root, id, 'in-progress', '', { worker: 'w', model: 'a · worker b' }), /one value/);
@@ -96,7 +96,7 @@ test('a --worker or --branch value that holds the line separator is refused, so 
 
 test('review --model [--relayed] writes the model and the relay mark after the kind, in the log line and in the Reviews entry', () => {
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works' });
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
   const out = R.review(root, id, 'approve', 'read the diff, found nothing', { by: 'rev-c', model: ` ${BIG} `, relayed: true });
   assert.equal(out.model, BIG);
@@ -115,7 +115,7 @@ test('review --model [--relayed] writes the model and the relay mark after the k
 test('record.mjs takes model and relayed as optional keys, and jarl-record/1 is still a contract it keeps', () => {
   assert.ok(R.RECORD_APIS.includes('jarl-record/1'));
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works' });
   const lease = R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one' });
   assert.equal(lease.model, undefined, 'without the key, nothing changes');
   assert.match(log(root), /001 → in-progress · branch jarl\/001-a · worker w-one$/m);
@@ -128,7 +128,7 @@ test('the command line and the tables carry --model and --relayed', () => {
   assert.ok(J.COMMAND_FLAGS.models && J.COMMAND_ARGS.models && J.COMMAND_SUMMARY.models, 'models is a command of the tables');
   assert.equal(J.MUTATING.has('models'), false, 'a read-only view takes no lock');
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works' });
   assert.equal(cli(root, 'set', id, 'in-progress', 'go', '--branch', 'jarl/001-a', '--worker', 'w-one', '--model', MID).status, 0);
   const r = cli(root, 'review', id, 'approve', '--by', 'rev-c', '--model', BIG, '--relayed', 'read the diff, found nothing');
   assert.equal(r.status, 0, r.stderr);
@@ -146,7 +146,7 @@ test('the frozen reader reads the lease line with the model before the worker, t
   // The frozen reader finds the worker of the lease, whatever the model before it says.
   assert.equal(OLD.findIssue(root, id).fields.worker, 'w-five');
   assert.throws(() => OLD.cmdReview(root, id, 'approve', 'Minor: nothing to add here', { by: 'w-five' }), /self-approve/, 'the self-approve is refused');
-  R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
+  R.addEvidence(root, id, undefined, { line: 1, ran: 'npm test', saw: 'pass' });
   R.review(root, id, 'approve', 'read the diff, found nothing', { by: 'rev-c', model: 'claude-opus-5-5', relayed: true });
   const gate = OLD.gateState(root, id);
   assert.equal(gate.approved, true);
@@ -176,11 +176,11 @@ test('the built-in tiers are light, standard, strong, weakest first, and standar
   const p = R.loadProfile(root);
   assert.deepEqual(p.tiers, ['light', 'standard', 'strong']);
   assert.equal(p.tierDefault, 'standard');
-  const a = R.newIssue(root, 'no tier named', {});
+  const a = R.newIssue(root, 'no tier named', { acceptance: '[read] it works', });
   assert.match(issueText(root, a.id), /^\*\*Tier:\*\* standard$/m);
-  const b = R.newIssue(root, 'a light one', { tier: 'light' });
+  const b = R.newIssue(root, 'a light one', { acceptance: '[read] it works', tier: 'light' });
   assert.match(issueText(root, b.id), /^\*\*Tier:\*\* light$/m);
-  assert.throws(() => R.newIssue(root, 'bad', { tier: 'heavy' }), /--tier must be one of: light, standard, strong/);
+  assert.throws(() => R.newIssue(root, 'bad', { acceptance: '[read] it works', tier: 'heavy' }), /--tier must be one of: light, standard, strong/);
 });
 
 test('a profile keeps its declared tiers in their declared order', () => {
@@ -220,11 +220,12 @@ function notes(root, cmd, rest, flags) { return J.dispatch(root, cmd, rest, flag
 
 test('notes on a lease and on a verdict without --model, and on an approve of the same model or a lower rank, only in a loop with model lines', () => {
   const root = loop({ lines: true });
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'strong' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works', tier: 'strong' });
   assert.match(notes(root, 'set', [id, 'in-progress', 'go'], { branch: 'jarl/001-a', worker: 'w-one' }), /no --model/, 'a lease without a model');
   assert.doesNotMatch(notes(root, 'set', [id, 'in-progress', 'go'], { branch: 'jarl/001-a', worker: 'w-one', model: BIG }), /--model/);
-  R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
+  R.addEvidence(root, id, undefined, { line: 1, ran: 'npm test', saw: 'pass' });
   assert.match(notes(root, 'review', [id, 'changes', 'Important: the case is missing'], { by: 'rev-1' }), /no --model/, 'a verdict without a model');
+  R.addRound(root, id, 'the case is handled now');
   assert.match(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-2', model: BIG }), /same model as the worker's/, 'the worker model leased on the issue');
   assert.match(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-3', model: SMALL }), /ranks below the worker's model/, 'a lower rank');
   assert.match(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-4', model: 'stranger-1' }), /unplaced|ranks below/, 'an unplaced reviewer ranks below every placed one');
@@ -233,29 +234,29 @@ test('notes on a lease and on a verdict without --model, and on an approve of th
 
 test('no note at all in a loop without model lines', () => {
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works' });
   assert.equal(notes(root, 'set', [id, 'in-progress', 'go'], { branch: 'jarl/001-a', worker: 'w-one' }), '');
-  R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
+  R.addEvidence(root, id, undefined, { line: 1, ran: 'npm test', saw: 'pass' });
   assert.equal(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-1' }), '');
   assert.equal(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-2', model: MID }), '');
 });
 
 test('a library caller gets no note and its results do not change', () => {
   const root = loop({ lines: true });
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works' });
   const lease = R.setStatus(root, id, 'in-progress', 'go', { branch: 'jarl/001-a', worker: 'w-one' });
   assert.equal(lease.note, undefined);
   const v = R.review(root, id, 'approve', 'read it all, nothing found', { by: 'rev-1' });
   assert.equal(v.note, undefined);
   assert.deepEqual(Object.keys(v).sort(), ['acceptance', 'by', 'id', 'kind', 'severities', 'verdict']);
-  const made = R.newIssue(root, 'another', {});
+  const made = R.newIssue(root, 'another', { acceptance: '[read] it works', });
   assert.equal(made.note, undefined);
 });
 
 test('in a loop with no Model line the spelling note and the offer of the lines are each said on their own lease, and both on one lease, the spelling first', () => {
   const root = loop();
   const goal = readFileSync(join(root, '.jarl', 'goal.md'), 'utf8');
-  const ids = ['a', 'b', 'c', 'd'].map((t) => R.newIssue(root, t, { acceptance: 'it works' }).id);
+  const ids = ['a', 'b', 'c', 'd'].map((t) => R.newIssue(root, t, { acceptance: '[read] it works' }).id);
   const lease = (n, model) => notes(root, 'set', [ids[n], 'in-progress', 'go'], { branch: `jarl/${ids[n]}-x`, worker: `w-${n}`, model });
   const offer = /is leased with a model and the goal declares no Model line/;
   const spelling = /claude-opus-5\.5 is another spelling of claude-opus-5-5/;
@@ -276,7 +277,7 @@ test('in a loop with no Model line the spelling note and the offer of the lines 
 
 test('the notes of one lease are each a line of their own that names its subject: the spelling first, then the offer, and a checked --worktree before the offer', () => {
   const root = loop();
-  const ids = ['a', 'b', 'c'].map((t) => R.newIssue(root, t, { acceptance: 'it works' }).id);
+  const ids = ['a', 'b', 'c'].map((t) => R.newIssue(root, t, { acceptance: '[read] it works' }).id);
   notes(root, 'set', [ids[0], 'in-progress', 'go'], { branch: `jarl/${ids[0]}-x`, worker: 'w-0', model: 'claude-opus-5-5' });
   // The offer is made once; the lines that remember it are taken out so that the next leases are offered again.
   const remembered = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
@@ -297,10 +298,10 @@ test('the notes of one lease are each a line of their own that names its subject
 
 test('a lease that names another spelling of a model the record holds says which spelling the record holds; the spelling the record holds, and a library call, say nothing', () => {
   const root = loop({ lines: true });
-  const first = R.newIssue(root, 'first', { acceptance: 'it works' }).id;
-  const second = R.newIssue(root, 'second', { acceptance: 'it works' }).id;
-  const third = R.newIssue(root, 'third', { acceptance: 'it works' }).id;
-  const fourth = R.newIssue(root, 'fourth', { acceptance: 'it works' }).id;
+  const first = R.newIssue(root, 'first', { acceptance: '[read] it works' }).id;
+  const second = R.newIssue(root, 'second', { acceptance: '[read] it works' }).id;
+  const third = R.newIssue(root, 'third', { acceptance: '[read] it works' }).id;
+  const fourth = R.newIssue(root, 'fourth', { acceptance: '[read] it works' }).id;
   assert.equal(notes(root, 'set', [first, 'in-progress', 'go'], { branch: 'jarl/001-a', worker: 'w-one', model: 'claude-opus-5-5' }), '', 'nothing held yet, so nothing to compare with');
   assert.match(notes(root, 'set', [second, 'in-progress', 'go'], { branch: 'jarl/002-b', worker: 'w-two', model: 'claude-opus-5.5' }), /claude-opus-5\.5 is another spelling of claude-opus-5-5, which the record holds; models counts both as one model\./);
   assert.equal(notes(root, 'set', [third, 'in-progress', 'go'], { branch: 'jarl/003-c', worker: 'w-three', model: 'claude-opus-5-5' }), '', 'the spelling the record holds is not another one');
@@ -309,9 +310,9 @@ test('a lease that names another spelling of a model the record holds says which
 
 test('a review that names another spelling of a model the record holds says which spelling the record holds, on the command line and in a loop with no model lines', () => {
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works' });
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: 'claude-opus-5-5' });
-  R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
+  R.addEvidence(root, id, undefined, { line: 1, ran: 'npm test', saw: 'pass' });
   assert.match(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-1', model: 'claude-opus-5.5' }), /claude-opus-5\.5 is another spelling of claude-opus-5-5, which the record holds; models counts both as one model\./);
   assert.equal(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-2', model: 'claude-opus-5-5' }), '', 'a spelling the record holds says nothing');
   assert.equal(R.review(root, id, 'approve', 'read it all, nothing found', { by: 'rev-3', model: 'claude-opus-5.5' }).note, undefined, 'a library call gets no note');
@@ -325,7 +326,7 @@ test('new without --tier says on the command line which tier it used and the cri
   assert.match(w, /strong: unknown cause/);
   assert.equal(w.split('\n').filter((l) => l.includes('no --tier given')).length, 1, 'the tier note is one line');
   assert.equal(notes(root, 'new', ['another thing'], { tier: 'strong', kind: 'bug', prio: '2' }), '');
-  assert.equal(R.newIssue(root, 'third', {}).note, undefined);
+  assert.equal(R.newIssue(root, 'third', { acceptance: '[read] it works', }).note, undefined);
   const real = cli(root, 'new', 'fourth thing');
   assert.equal(real.status, 0);
   assert.match(real.stderr, /tier standard/);
@@ -350,7 +351,7 @@ test('new without --kind or --prio says on the command line that each was defaul
 
 test('the third round prints a takeover block that says to raise the fresh worker one tier up or on another model than the one that failed', () => {
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'standard' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works', tier: 'standard' });
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
   R.addRound(root, id, 'red one');
   R.addRound(root, id, 'red two');
@@ -361,7 +362,7 @@ test('the third round prints a takeover block that says to raise the fresh worke
 
 test('the takeover advice from the strong tier names another model or a changed approach, never a tier above strong', () => {
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'strong' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works', tier: 'strong' });
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
   R.addRound(root, id, 'red one');
   R.addRound(root, id, 'red two');
@@ -373,7 +374,7 @@ test('the takeover advice from the strong tier names another model or a changed 
 
 test('a takeover starts a new count: the block comes once per takeover, not on every round after the third', () => {
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'standard' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works', tier: 'standard' });
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
   const seen = [1, 2, 3, 4, 5, 6, 7].map((k) => R.addRound(root, id, `red ${k}`));
   assert.deepEqual(seen.map((r) => r.takeover), [false, false, true, false, false, true, false]);
@@ -386,7 +387,7 @@ test('a takeover starts a new count: the block comes once per takeover, not on e
 
 test('the takeover block quotes the log with no worktree path of the machine that wrote a lease, and keeps the rest of each line', () => {
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'standard' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works', tier: 'standard' });
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
   const log = join(root, '.jarl', 'log.md');
   appendFileSync(log, `- 2026-10-18 10:00 · ${id} → in-progress · go · branch jarl/001-a · model m · worker w-six · worktree /home/other/Worktrees/Repo/001-a\n`);
@@ -559,7 +560,7 @@ test('two kinds count apart: a changed line moves only the issues whose limit it
   const root = loop();
   appendFileSync(goalFile(root), '\nTakeover (docs): 2\nTakeover: 4\n');
   const issue = (kind) => {
-    const { id } = R.newIssue(root, `a ${kind} thing`, { acceptance: 'it works', tier: 'standard', kind });
+    const { id } = R.newIssue(root, `a ${kind} thing`, { acceptance: '[read] it works', tier: 'standard', kind });
     R.setStatus(root, id, 'in-progress', '', { branch: `jarl/${id}-a`, worker: 'w-one', model: MID });
     return id;
   };
@@ -699,7 +700,7 @@ test('a takeover line in the goal is read by the pinned frozen reader without a 
 
 test('a round records its count of findings and the takeover block lists them', () => {
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'standard' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works', tier: 'standard' });
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
   assert.equal(cli(root, 'round', id, 'red one', '--findings', '29').status, 0);
   assert.equal(cli(root, 'round', id, 'red two', '--findings', '14').status, 0);
@@ -714,7 +715,7 @@ test('the takeover advice reads the tiers and their order from the loop\'s profi
   const root = loop();
   writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, name: 'sized', statuses: { open: ['dispatchable'], 'in-progress': ['holds-claim'], done: ['terminal', 'closes-record', 'settles-dependents'] }, fields: { Tier: { enum: ['small', 'big', 'huge'], default: 'small' } } }));
   const run = (tier) => {
-    const { id } = R.newIssue(root, `a ${tier} thing`, { acceptance: 'it works', tier });
+    const { id } = R.newIssue(root, `a ${tier} thing`, { acceptance: '[read] it works', tier });
     R.setStatus(root, id, 'in-progress', '', { branch: `jarl/${id}-a`, worker: 'w-one', model: MID });
     R.addRound(root, id, 'red one');
     R.addRound(root, id, 'red two');
@@ -728,7 +729,7 @@ test('the takeover advice reads the tiers and their order from the loop\'s profi
 
 test('a later takeover does not offer the tier up again, and a count above the bound is refused', () => {
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'standard' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works', tier: 'standard' });
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
   const blocks = [1, 2, 3, 4, 5, 6].map((k) => R.addRound(root, id, `red ${k}`).block);
   assert.match(blocks[2], /tier up/);
@@ -742,7 +743,7 @@ test('a later takeover does not offer the tier up again, and a count above the b
 
 test('the findings per round keep each round in its place, a round with no count shown as a dash', () => {
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'standard' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works', tier: 'standard' });
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
   assert.equal(cli(root, 'round', id, 'red one', '--findings', '29').status, 0);
   assert.equal(cli(root, 'round', id, 'red two').status, 0);
@@ -752,7 +753,7 @@ test('the findings per round keep each round in its place, a round with no count
 
 test('a later takeover names every model that held the issue, and says nothing of one same model', () => {
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'standard' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works', tier: 'standard' });
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
   const first = [1, 2, 3].map((k) => R.addRound(root, id, `red ${k}`)).pop().block;
   assert.match(first, /a model other than mid-model, or change the approach — the same model at the same tier has failed this 3 times/);
@@ -764,7 +765,7 @@ test('a later takeover names every model that held the issue, and says nothing o
 
 test('the takeover advice for an issue whose Tier is not one of the profile\'s offers no tier up', () => {
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'standard' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works', tier: 'standard' });
   writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, name: 'sized', statuses: { open: ['dispatchable'], 'in-progress': ['holds-claim'], done: ['terminal', 'closes-record', 'settles-dependents'] }, fields: { Tier: { enum: ['small', 'big', 'huge'], default: 'small' } } }));
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
   const block = [1, 2, 3].map((k) => R.addRound(root, id, `red ${k}`)).pop().block;
@@ -774,7 +775,7 @@ test('the takeover advice for an issue whose Tier is not one of the profile\'s o
 
 test('a count of findings is read from the flag only, never from the words of a round', () => {
   const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'standard' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works', tier: 'standard' });
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
   R.addRound(root, id, 'findings 99 · typed by hand');
   cli(root, 'round', id, 'red two', '--findings', '4');
@@ -788,7 +789,7 @@ test('a count of findings is read from the flag only, never from the words of a 
 function reviewedUnit(root, findings, extra = {}) {
   const id = fileAsBefore(root, 'a thing', { acceptance: 'it works' });
   R.setStatus(root, id, 'in-progress', extra.reason ?? '', { branch: `jarl/${id}-x`, worker: 'w-one', ...(extra.model ? { model: extra.model } : {}) });
-  R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
+  R.addEvidence(root, id, undefined, { line: 1, ran: 'npm test', saw: 'pass' });
   R.review(root, id, 'approve', findings, { by: 'rev-one' });
   return id;
 }
@@ -958,9 +959,9 @@ test('a model written with dots sits on the goal line that writes it with dashes
   const lines = L.modelLines(root);
   assert.equal(lines.rank('claude-opus-5.5'), lines.rank('claude-opus-5-5'));
   assert.equal(lines.rank('claude-opus-5.5@high'), lines.rank('claude-opus-5-5@high'), 'the same id at another effort sits where the id sits, in either spelling');
-  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'strong' });
+  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works', tier: 'strong' });
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: 'claude-opus-5-5' });
-  R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
+  R.addEvidence(root, id, undefined, { line: 1, ran: 'npm test', saw: 'pass' });
   assert.match(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-2', model: 'claude-opus-5.5' }), /same model as the worker's \(claude-opus-5\.5\)/);
 });
 
@@ -989,9 +990,9 @@ test('models: an approve by a lower-ranked reviewer that a reviewer able to clea
   const clear = (n) => {
     for (let k = 0; k < n; k += 1) {
       seq += 1;
-      const { id } = R.newIssue(root, `cl ${seq}`, { kind: 'bug', tier: 'standard', acceptance: 'it works' });
+      const { id } = R.newIssue(root, `cl ${seq}`, { kind: 'bug', tier: 'standard', acceptance: '[read] it works' });
       R.setStatus(root, id, 'in-progress', '', { branch: `jarl/${id}-x`, worker: 'w-mid', model: MID });
-      R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
+      R.addEvidence(root, id, undefined, { line: 1, ran: 'npm test', saw: 'pass' });
       R.review(root, id, 'approve', 'first look, nothing found', { by: 'rev-small', model: SMALL });
       R.review(root, id, 'approve', 'second look, nothing found', { by: 'rev-big', model: BIG });
       R.recordMerged(root, id, { sha: 'abc1234' }); R.setStatus(root, id, 'done', 'merged', {});
@@ -1027,8 +1028,8 @@ test('next and resume show the default model of the issue\'s tier alone, whateve
   const root = loop({ lines: true });
   units(root, 5, { model: SMALL, worker: 'w-small' });
   units(root, 5, { model: MID, worker: 'w-mid' }, 2);
-  const { id } = R.newIssue(root, 'to do', { kind: 'bug', tier: 'standard', acceptance: 'it works' });
-  const { id: strong } = R.newIssue(root, 'hard', { kind: 'bug', tier: 'strong', acceptance: 'it works' });
+  const { id } = R.newIssue(root, 'to do', { kind: 'bug', tier: 'standard', acceptance: '[read] it works' });
+  const { id: strong } = R.newIssue(root, 'hard', { kind: 'bug', tier: 'strong', acceptance: '[read] it works' });
   const rows = J.cmdNext(root, {});
   assert.deepEqual(rows.find((r) => r.id === id).model, { default: MID });
   assert.deepEqual(rows.find((r) => r.id === strong).model, { default: BIG });
@@ -1043,15 +1044,15 @@ test('next and resume show the default model of the issue\'s tier alone, whateve
 
 test('next and resume carry no model in a loop without model lines', () => {
   const root = loop();
-  R.newIssue(root, 'to do', { acceptance: 'it works' });
+  R.newIssue(root, 'to do', { acceptance: '[read] it works' });
   assert.equal(J.cmdNext(root, {})[0].model, undefined);
   assert.equal(R.resumeData(root, {}).next[0].model, undefined);
 });
 
 test('resume in-flight rows and status inFlightRows carry the model, or say it was not recorded', () => {
   const root = loop();
-  const a = R.newIssue(root, 'with a model', { acceptance: 'it works' }).id;
-  const b = R.newIssue(root, 'without', { acceptance: 'it works' }).id;
+  const a = R.newIssue(root, 'with a model', { acceptance: '[read] it works' }).id;
+  const b = R.newIssue(root, 'without', { acceptance: '[read] it works' }).id;
   R.setStatus(root, a, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: 'claude-sonnet-5-5@high' });
   R.setStatus(root, b, 'in-progress', '', { branch: 'jarl/002-b', worker: 'w-two' });
   const s = R.statusData(root, {});

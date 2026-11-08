@@ -95,8 +95,8 @@ const LINES = '\nModel (strong): big-model\nModel (standard): mid-model, other-m
 function readyLoop() {
   const root = loop({ prefix: 'jarl-next-model-', goal: 'a goal' });
   appendFileSync(join(root, '.jarl', 'goal.md'), LINES);
-  R.newIssue(root, 'to do', { kind: 'bug', tier: 'standard', acceptance: 'it works' });
-  R.newIssue(root, 'hard', { kind: 'bug', tier: 'strong', acceptance: 'it works' });
+  R.newIssue(root, 'to do', { kind: 'bug', tier: 'standard', acceptance: '[read] it works' });
+  R.newIssue(root, 'hard', { kind: 'bug', tier: 'strong', acceptance: '[read] it works' });
   return root;
 }
 
@@ -118,8 +118,8 @@ test('next and resume print the default model of the tier and no table row; the 
 
 test('next computes its rows once, also when nothing is ready', () => {
   const root = loop({ prefix: 'jarl-next-once-', goal: 'a goal' });
-  R.newIssue(root, 'first', { acceptance: 'it works', files: 'a.mjs' });
-  R.newIssue(root, 'second', { acceptance: 'it works', files: 'a.mjs' });
+  R.newIssue(root, 'first', { acceptance: '[read] it works', files: 'a.mjs' });
+  R.newIssue(root, 'second', { acceptance: '[read] it works', files: 'a.mjs' });
   R.setStatus(root, '1', 'in-progress', '', { branch: 'jarl/1-x', worker: 'w' });
   let before = L.nextRowsBuilds();
   const some = dispatch(root, 'next', [], {});

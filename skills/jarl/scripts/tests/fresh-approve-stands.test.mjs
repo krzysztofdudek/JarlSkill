@@ -38,9 +38,9 @@ function ruleLoop(rule) {
   for (const [name, approves] of Object.entries(CASES)) {
     for (const code of [true, false]) {
       const id = String(issues.length + 1);
-      jarl(root, 'new', `${name}${code ? '' : ', no code'}`, '--acceptance', 'it works');
+      jarl(root, 'new', `${name}${code ? '' : ', no code'}`, '--acceptance', '[read] it works');
       jarl(root, 'set', id, 'in-progress', '--worker', `w${id}`, '--model', WORKER_MODEL, ...(code ? ['--branch', `jarl/${id}`] : []), '--by', 'jarl');
-      jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 3, fail 0', '--by', `w${id}`);
+      jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass 3, fail 0', '--by', `w${id}`);
       if (code) jarl(root, 'merged', id, '--sha', 'abc1234', '--ci', 'none', '--by', 'jarl');
       for (const [who, fit] of approves) {
         const r = run(root, ['review', id, 'approve', '--by', who === 'fresh' ? `rev-${id}` : 'jarl', '--model', MODELS[rule][fit], 'read the change against its acceptance, nothing found']);

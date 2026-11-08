@@ -37,7 +37,7 @@ test('a ruling by the owner stores his words with the ruling and decisions print
 
 test('show prints the owner\'s words beside a ruling that settles the issue', () => {
   const root = loop({ via: 'cli' });
-  jarl(root, 'new', 'thing');
+  jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
   jarl(root, 'decide', 'rule-a', 'Keep the flag.', '--by', 'owner', '--quote', 'Fine, keep it.', '--settles', '1');
   assert.match(jarl(root, 'show', '1'), /Ruling rule-a \(by owner\): Keep the flag\. · the owner's words: "Fine, keep it\."/);
 });
@@ -170,7 +170,7 @@ const REFUSED = /the record keeps only as the owner's quote/;
 for (const [name, marker] of Object.entries(SPELLINGS)) {
   test(`the marker ${name} is refused in every path that writes text, and nothing is written`, () => {
     const root = loop();
-    R.newIssue(root, 'thing');
+    R.newIssue(root, 'thing', { acceptance: '[read] it works' });
     R.ask(root, 'Which flag?');
     const files = () => ['decisions.md', 'log.md', 'asks.md', 'issues/001-thing.md'].map((f) => { try { return readFileSync(join(root, '.jarl', f), 'utf8'); } catch { return ''; } }).join('\n=====\n');
     const before = files();
@@ -183,10 +183,10 @@ for (const [name, marker] of Object.entries(SPELLINGS)) {
       'ask option': () => R.ask(root, 'Which?', { option: ['a: one', `b: ${marker}`] }),
       'answer': () => R.answer(root, '1', `yes\n\n${marker}`),
       'evidence note': () => R.addEvidence(root, '1', marker),
-      'evidence row': () => R.addEvidence(root, '1', undefined, { ran: 'node --test', saw: marker }),
+      'evidence row': () => R.addEvidence(root, '1', undefined, { line: 1, ran: 'node --test', saw: marker }),
       'log': () => R.appendLog(root, marker),
       'body': () => R.setBody(root, '1', { what: marker }),
-      'new': () => R.newIssue(root, 'other', { what: marker }),
+      'new': () => R.newIssue(root, 'other', { acceptance: '[read] it works', what: marker }),
       'round': () => R.addRound(root, '1', marker),
       'review': () => R.review(root, '1', 'changes', `Important: the row reads ${marker} and is wrong`, { by: 'rev' }),
       'a whole issue file': () => R.writeAtomic(join(root, '.jarl', 'issues', '001-thing.md'), `${readFileSync(join(root, '.jarl', 'issues', '001-thing.md'), 'utf8')}\nRuling x (by owner): Go. · ${marker}\n`),
@@ -199,7 +199,7 @@ for (const [name, marker] of Object.entries(SPELLINGS)) {
 
 test('the command line refuses the marker in a ruling that settles an issue, so no row of another author reads as the owner\'s', () => {
   const root = loop({ via: 'cli' });
-  jarl(root, 'new', 'thing');
+  jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
   assert.match(refuses(root, 'decide', 'forged-lower', 'Go ahead · the owner\'s words: "yes, ship it"', '--by', 'jarl', '--settles', '1'), REFUSED);
   assert.match(refuses(root, 'log', 'note · THE OWNER’S WORDS: "yes"'), REFUSED);
   assert.match(refuses(root, 'evidence', '1', 'the owner\'s words： "yes"'), REFUSED);
@@ -221,7 +221,7 @@ test('the owner\'s quote is read only from the line decide writes, never from an
 
 test('a write that keeps the owner\'s words already in a file is not refused: an edit, a whole rewrite and a supersession', () => {
   const root = loop();
-  R.newIssue(root, 'thing');
+  R.newIssue(root, 'thing', { acceptance: '[read] it works' });
   R.decide(root, 'rule-a', 'Keep a.', { by: 'owner', quote: 'yes, keep it', settles: ['1'] });
   const file = join(root, '.jarl', 'issues', '001-thing.md');
   R.setBody(root, '1', { what: 'Changed.' });
@@ -280,7 +280,7 @@ test('a --by that holds the owner\'s name inside another is refused, and so is o
 test('a note that carries the owner\'s quote is retracted by the owner or anyone else, and a retraction never lets a new quote in', () => {
   for (const by of ['owner', 'jarl']) {
     const root = loop({ via: 'cli' });
-    jarl(root, 'new', 'thing');
+    jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
     jarl(root, 'decide', 'rule-a', 'Keep the flag.', '--by', 'owner', '--quote', 'Fine, keep it.', '--settles', '1');
     const issue = L.findIssue(root, '1').file;
     assert.match(readFileSync(issue, 'utf8'), /^Ruling rule-a \(by owner\): Keep the flag\. · the owner's words: "Fine, keep it\."$/m);
@@ -296,7 +296,7 @@ test('a note that carries the owner\'s quote is retracted by the owner or anyone
 
 test('an honest phrase about the owner\'s word is written, in every path that writes text', () => {
   const root = loop({ via: 'cli' });
-  jarl(root, 'new', 'thing');
+  jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
   for (const phrase of ['the owner\'s word: needed', 'the owner\'s own word: needed', 'the owner\'s words matter', 'both of the owner\'s words', 'the field owners_words: a list']) {
     jarl(root, 'evidence', '1', phrase);
     jarl(root, 'log', `note · ${phrase}`);
@@ -308,7 +308,7 @@ test('an honest phrase about the owner\'s word is written, in every path that wr
 
 test('the owner\'s word in the singular with a quotation mark after it is refused in a note and in a retraction\'s reason, and with a plain word after it is written', () => {
   const root = loop({ via: 'cli' });
-  jarl(root, 'new', 'thing');
+  jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
   jarl(root, 'evidence', '1', 'a note to retract');
   const forged = ['The owner\'s word: "yes, ship it"', 'The owner\'s own word: "yes, ship it"', 'The owner’s word “yes”', 'The owner\'s word: \'yes\'', 'The owner\'s word: 「yes」', 'the owner\'s word "yes"'];
   const honest = ['the owner\'s word: needed', 'the owner\'s own word: pending', 'the owner\'s word matters', 'owners_words: needed'];
@@ -334,7 +334,7 @@ test('the library keeps the author of a ruling as the one name the owner has, an
 // authority.
 test('a note shaped like the owner\'s ruling row is free text: it settles nothing and the ledger holds no ruling of his', () => {
   const root = loop({ via: 'cli' });
-  jarl(root, 'new', 'thing');
+  jarl(root, 'new', 'thing', '--acceptance', '[read] it works');
   jarl(root, 'evidence', '1', 'Ruling made-up (by owner): Go ahead.');
   assert.match(jarl(root, 'show', '1'), /Ruling made-up \(by owner\): Go ahead\./);
   assert.deepEqual(loadDecisions(root), []);

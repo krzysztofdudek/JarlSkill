@@ -9,10 +9,10 @@ import { jarl, spawnJarl, loop as makeLoop } from './helpers.mjs';
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
 const loop = (n) => {
   const root = makeLoop({ prefix: 'jarl-closed-gate-', via: 'cli' });
-  for (let k = 1; k <= n; k += 1) jarl(root, 'new', `issue ${k}`, '--acceptance', 'it works');
+  for (let k = 1; k <= n; k += 1) jarl(root, 'new', `issue ${k}`, '--acceptance', '[read] it works');
   return root;
 };
-const row = (root, id) => jarl(root, 'evidence', String(id), '--ran', 'npm test', '--saw', 'pass');
+const row = (root, id) => jarl(root, 'evidence', String(id), '--line', '1', '--ran', 'npm test', '--saw', 'pass');
 const every = (root) => [jarl(root, 'status'), jarl(root, 'report'), jarl(root, 'resume')];
 const flagsOf = (root) => ({ status: json(root, 'status').closedGate, report: json(root, 'report').closedGate, resume: json(root, 'resume').status.closedGate });
 const files = (root) => Object.fromEntries(readdirSync(join(root, '.jarl'), { recursive: true }).filter((f) => /\.md$/.test(f)).map((f) => [f, readFileSync(join(root, '.jarl', f), 'utf8')]));

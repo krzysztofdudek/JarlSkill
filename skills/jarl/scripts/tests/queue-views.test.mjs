@@ -32,10 +32,10 @@ function branchWith(dir, branch, file) {
 
 test('the merge queue of resume: approved, ahead of the base and not merged — in the order of approval; unapproved and merged branches stay out', () => {
   const root = repo();
-  jarl(root, 'new', 'first', '--files', 'src/a.mjs');
-  jarl(root, 'new', 'second', '--files', 'src/b.mjs');
-  jarl(root, 'new', 'third', '--files', 'src/b.mjs');
-  jarl(root, 'new', 'not reviewed', '--files', 'src/c.mjs');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works', '--files', 'src/a.mjs');
+  jarl(root, 'new', 'second', '--acceptance', '[read] it works', '--files', 'src/b.mjs');
+  jarl(root, 'new', 'third', '--acceptance', '[read] it works', '--files', 'src/b.mjs');
+  jarl(root, 'new', 'not reviewed', '--acceptance', '[read] it works', '--files', 'src/c.mjs');
   jarl(root, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-first', '--worker', 'w1');
   jarl(root, 'set', '2', 'in-progress', 'go', '--branch', 'jarl/2-second', '--worker', 'w2');
   jarl(root, 'set', '4', 'in-progress', 'go', '--branch', 'jarl/4-not', '--worker', 'w4');
@@ -64,14 +64,14 @@ test('the merge queue of resume: approved, ahead of the base and not merged — 
 
 test('the merge queue lists an approved branch the base already holds, marked record only, when a red round spent its merge', () => {
   const root = repo();
-  jarl(root, 'new', 'first', '--files', 'src/a.mjs');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works', '--files', 'src/a.mjs');
   jarl(root, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-first', '--worker', 'w1');
   branchWith(root, 'jarl/1-first', 'src/a.mjs');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'merged', '1', '--sha', execFileSync('git', ['rev-parse', 'jarl/1-first'], { cwd: root, encoding: 'utf8', timeout: SPAWN_TIMEOUT }).trim(), '--keep');
   jarl(root, 'round', '1', 'the check went red on the merge');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   sh(root, 'git merge -q --no-ff jarl/1-first -m "merge 1"');
   const rows = JSON.parse(jarl(root, 'resume', '--json')).queue.repos[0].rows;
@@ -84,10 +84,10 @@ test('the merge queue lists an approved branch the base already holds, marked re
 
 test('the merge queue of resume: a round spends the approve, overlapping files start a new batch, a package lists who still waits for review', () => {
   const root = repo();
-  jarl(root, 'new', 'a', '--files', 'src/a.mjs');
-  jarl(root, 'new', 'b');
-  jarl(root, 'new', 'c', '--files', 'src/b.mjs');
-  jarl(root, 'new', 'd', '--files', 'src/b.mjs');
+  jarl(root, 'new', 'a', '--acceptance', '[read] it works', '--files', 'src/a.mjs');
+  jarl(root, 'new', 'b', '--acceptance', '[read] it works');
+  jarl(root, 'new', 'c', '--acceptance', '[read] it works', '--files', 'src/b.mjs');
+  jarl(root, 'new', 'd', '--acceptance', '[read] it works', '--files', 'src/b.mjs');
   jarl(root, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-a', '--worker', 'w1');
   jarl(root, 'set', '2', 'in-progress', 'go', '--branch', 'jarl/2-b', '--worker', 'w2');
   // Two leases that share a file are refused at the lease and when the file is declared after it, yet a record can still
@@ -120,7 +120,7 @@ test('the merge queue of resume: an issue in another repository is queued there;
   const hub = join(parent, 'hub'); const tool = join(parent, 'tool');
   for (const d of [hub, tool]) { mkdirSync(d); sh(d, 'git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && mkdir src && echo 1 > src/a.mjs && git add -A && git commit -qm base'); }
   jarl(hub, 'init', 'goal');
-  jarl(hub, 'new', 'in tool', '--repo', '../tool', '--files', 'tool/src/a.mjs');
+  jarl(hub, 'new', 'in tool', '--acceptance', '[read] it works', '--repo', '../tool', '--files', 'tool/src/a.mjs');
   jarl(hub, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-t', '--worker', 'w');
   branchWith(tool, 'jarl/1-t', 'src/a.mjs');
   jarl(hub, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
@@ -136,10 +136,10 @@ test('the merge queue of resume: an issue in another repository is queued there;
 
 test('changelog: fragments recorded on the issue print grouped for [Unreleased]; unprefixed lines follow the issue kind', () => {
   const root = repo();
-  jarl(root, 'new', 'a feature', '--kind', 'gap', '--changelog', 'Added: `queue` shows the merge queue.', '--changelog', 'Changed: `report` groups by repository.');
-  jarl(root, 'new', 'a bug', '--kind', 'bug');
+  jarl(root, 'new', 'a feature', '--acceptance', '[read] it works', '--kind', 'gap', '--changelog', 'Added: `queue` shows the merge queue.', '--changelog', 'Changed: `report` groups by repository.');
+  jarl(root, 'new', 'a bug', '--acceptance', '[read] it works', '--kind', 'bug');
   jarl(root, 'field', '2', 'Changelog', 'A value starting with $1 or $& is written as it is.');
-  jarl(root, 'new', 'silent');
+  jarl(root, 'new', 'silent', '--acceptance', '[read] it works');
   const shown = jarl(root, 'show', '1');
   assert.match(shown, /## Changelog\n- Added: `queue` shows the merge queue\.\n- Changed: `report` groups by repository\.\n\n## Evidence/);
   const r = run(root, ['changelog', '1-3']);
@@ -173,8 +173,8 @@ test('changelog: an issue naming several repositories prints under each; --repo 
   const dirs = {};
   for (const n of ['hub', 'tool', 'lib']) { dirs[n] = join(parent, n); mkdirSync(dirs[n]); sh(dirs[n], 'git init -q -b main && git commit -q --allow-empty -m base'); }
   jarl(dirs.hub, 'init', 'goal');
-  jarl(dirs.hub, 'new', 'both', '--kind', 'gap', '--repo', '../tool,../lib', '--changelog', 'Added: both.');
-  jarl(dirs.hub, 'new', 'tool only', '--kind', 'gap', '--repo', '../tool', '--changelog', 'Added: tool.');
+  jarl(dirs.hub, 'new', 'both', '--acceptance', '[read] it works', '--kind', 'gap', '--repo', '../tool,../lib', '--changelog', 'Added: both.');
+  jarl(dirs.hub, 'new', 'tool only', '--acceptance', '[read] it works', '--kind', 'gap', '--repo', '../tool', '--changelog', 'Added: tool.');
   const all = jarl(dirs.hub, 'changelog', '1,2');
   assert.match(all, /^## lib\n\n### Added\n- both\.\n\n## tool\n\n### Added\n- both\.\n- tool\.$/);
   assert.equal(jarl(dirs.hub, 'changelog', '1,2', '--repo', '../lib'), '### Added\n- both.');
@@ -216,11 +216,11 @@ test('new --template reads .jarl/templates/<name>.md: its fields are defaults, i
 
 test('status --group groups the counts by kind, tag, priority or repository; report --json carries one row per issue', () => {
   const root = repo();
-  jarl(root, 'new', 'a', '--kind', 'bug', '--tags', 'x,y');
-  jarl(root, 'new', 'b', '--kind', 'gap', '--tags', 'x');
-  jarl(root, 'new', 'c', '--kind', 'gap');
+  jarl(root, 'new', 'a', '--acceptance', '[read] it works', '--kind', 'bug', '--tags', 'x,y');
+  jarl(root, 'new', 'b', '--acceptance', '[read] it works', '--kind', 'gap', '--tags', 'x');
+  jarl(root, 'new', 'c', '--acceptance', '[read] it works', '--kind', 'gap');
   jarl(root, 'set', '3', 'dropped', 'not needed');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'ok');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'set', '1', 'done', 'ok');
   const s = JSON.parse(jarl(root, 'status', '--group', 'kind', '--json'));

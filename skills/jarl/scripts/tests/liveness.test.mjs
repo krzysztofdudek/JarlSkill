@@ -30,7 +30,7 @@ const statusText = (root, opts = {}) => L.renderStatus(R.statusData(root, opts),
 test('a lease with no commit, row or log line for longer than 30 minutes is idle in status, resume and next --as', () => {
   const root = at(0, () => {
     const r = makeLoop({ prefix: 'jarl-live-', dotGit: false });
-    R.newIssue(r, 'one', { files: 'a.mjs', acceptance: 'a is done' });
+    R.newIssue(r, 'one', { files: 'a.mjs', acceptance: '[read] a is done' });
     R.setStatus(r, '001', 'in-progress', 'w', { worker: 'w1' });
     return r;
   });
@@ -53,11 +53,11 @@ test('a lease with no commit, row or log line for longer than 30 minutes is idle
 test('a row resets the age, and a proof that waits past the threshold for its verdict is on the jarl\'s list', () => {
   const root = at(0, () => {
     const r = makeLoop({ prefix: 'jarl-live-', dotGit: false });
-    R.newIssue(r, 'one', { files: 'a.mjs', acceptance: 'a is done' });
+    R.newIssue(r, 'one', { files: 'a.mjs', acceptance: '[read] a is done' });
     R.setStatus(r, '001', 'in-progress', 'w', { worker: 'w1' });
     return r;
   });
-  at(25, () => R.addEvidence(root, '001', undefined, { ran: 'npm test', saw: 'ok' }));
+  at(25, () => R.addEvidence(root, '001', undefined, { line: 1, ran: 'npm test', saw: 'ok' }));
   at(50, () => {
     assert.deepEqual(R.statusData(root).stale, [], 'the row 25 minutes ago is the last activity');
     assert.match(nextAs(root, 'jarl'), /^- 001 one: proof recorded, no verdict; raise a reviewer \(worker w1\) — /m);
@@ -71,7 +71,7 @@ test('a row resets the age, and a proof that waits past the threshold for its ve
 test('the goal\'s Liveness line sets the threshold in minutes, and --stale-hours overrides it for one call', () => {
   const root = at(0, () => {
     const r = makeLoop({ prefix: 'jarl-live-', dotGit: false });
-    R.newIssue(r, 'one', { files: 'a.mjs', acceptance: 'a is done' });
+    R.newIssue(r, 'one', { files: 'a.mjs', acceptance: '[read] a is done' });
     R.setStatus(r, '001', 'in-progress', 'w', { worker: 'w1' });
     L.cmdGoalSet(r, 'Liveness: 45');
     return r;
@@ -98,8 +98,8 @@ test('in a sliced loop an idle lease is on its slice\'s coordinator, and one in 
   const root = at(0, () => {
     const r = makeLoop({ prefix: 'jarl-live-', dotGit: false });
     L.cmdGoalSet(r, 'Coordinators: odin');
-    R.newIssue(r, 'sliced', { files: 'a.mjs', acceptance: 'a is done', tags: 'slice:odin' });
-    R.newIssue(r, 'plain', { files: 'b.mjs', acceptance: 'b is done' });
+    R.newIssue(r, 'sliced', { files: 'a.mjs', acceptance: '[read] a is done', tags: 'slice:odin' });
+    R.newIssue(r, 'plain', { files: 'b.mjs', acceptance: '[read] b is done' });
     R.setStatus(r, '001', 'in-progress', 'w', { worker: 'w1' });
     R.setStatus(r, '002', 'in-progress', 'w', { worker: 'w2' });
     return r;
@@ -120,14 +120,14 @@ test('proofs of code that wait past the threshold for a verdict say how long eac
   const root = at(0, () => {
     const r = makeLoop({ prefix: 'jarl-live-', dotGit: false });
     L.cmdGoalSet(r, 'Coordinators: odin');
-    R.newIssue(r, 'first', { files: 'a.mjs', acceptance: 'a is done', tags: 'slice:odin' });
-    R.newIssue(r, 'second', { files: 'b.mjs', acceptance: 'b is done', tags: 'slice:odin' });
+    R.newIssue(r, 'first', { files: 'a.mjs', acceptance: '[read] a is done', tags: 'slice:odin' });
+    R.newIssue(r, 'second', { files: 'b.mjs', acceptance: '[read] b is done', tags: 'slice:odin' });
     R.setStatus(r, '001', 'in-progress', 'w', { worker: 'w1', branch: 'jarl/1-first' });
     R.setStatus(r, '002', 'in-progress', 'w', { worker: 'w2', branch: 'jarl/2-second' });
     return r;
   });
-  at(5, () => R.addEvidence(root, '001', undefined, { ran: 'npm test', saw: 'ok' }));
-  at(14, () => R.addEvidence(root, '002', undefined, { ran: 'npm test', saw: 'ok' }));
+  at(5, () => R.addEvidence(root, '001', undefined, { line: 1, ran: 'npm test', saw: 'ok' }));
+  at(14, () => R.addEvidence(root, '002', undefined, { line: 1, ran: 'npm test', saw: 'ok' }));
   at(40, () => {
     const odin = nextAs(root, 'odin');
     assert.match(odin, /^- 001, 002: proof recorded, no verdict for 35m on 001 \(threshold 30m\); raise one fresh reviewer per unit: 001 · 002;/m);
@@ -147,7 +147,7 @@ test('the ages read the branch\'s commits in this clone and its fetched refs, an
   };
   at(0, () => {
     R.initLoop(root, 'goal');
-    R.newIssue(root, 'one', { files: 'b.txt', acceptance: 'b is done' });
+    R.newIssue(root, 'one', { files: 'b.txt', acceptance: '[read] b is done' });
     R.setStatus(root, '001', 'in-progress', 'w', { worker: 'w1', branch: 'jarl/1-one' });
   });
   g('checkout', '-q', '-b', 'jarl/1-one');
@@ -175,7 +175,7 @@ test('a branch that exists only as a fetched ref is not gone: the lease is aged 
   const { dir: root, g } = gitRepo({ prefix: 'jarl-live-fetched-', branch: 'main' });
   at(0, () => {
     R.initLoop(root, 'goal');
-    R.newIssue(root, 'one', { files: 'b.txt', acceptance: 'b is done' });
+    R.newIssue(root, 'one', { files: 'b.txt', acceptance: '[read] b is done' });
     R.setStatus(root, '001', 'in-progress', 'w', { worker: 'w1', branch: 'jarl/1-one' });
   });
   g('checkout', '-q', '-b', 'jarl/1-one');
@@ -200,7 +200,7 @@ test('a branch that exists only as a fetched ref is not gone: the lease is aged 
 test('status --stale-hours moves the threshold of the asker\'s list as it moves the rest of the call', () => {
   const root = at(0, () => {
     const r = makeLoop({ prefix: 'jarl-live-', dotGit: false });
-    R.newIssue(r, 'one', { files: 'a.mjs', acceptance: 'a is done' });
+    R.newIssue(r, 'one', { files: 'a.mjs', acceptance: '[read] a is done' });
     R.setStatus(r, '001', 'in-progress', 'w', { worker: 'w1' });
     return r;
   });
@@ -214,9 +214,9 @@ test('status --stale-hours moves the threshold of the asker\'s list as it moves 
 test('a row idle past the threshold goes before the others of its holder, so it is among the seven lines shown', () => {
   const root = at(0, () => {
     const r = makeLoop({ prefix: 'jarl-live-', dotGit: false });
-    R.newIssue(r, 'the lease', { files: 'lease.mjs', acceptance: 'it is done', prio: '3' });
+    R.newIssue(r, 'the lease', { files: 'lease.mjs', acceptance: '[read] it is done', prio: '3' });
     R.setStatus(r, '001', 'in-progress', 'w', { worker: 'w1' });
-    for (let n = 2; n <= 9; n += 1) R.newIssue(r, `ready ${n}`, { files: `f${n}.mjs`, acceptance: 'it is done', prio: '1' });
+    for (let n = 2; n <= 9; n += 1) R.newIssue(r, `ready ${n}`, { files: `f${n}.mjs`, acceptance: '[read] it is done', prio: '1' });
     return r;
   });
   at(31, () => {
@@ -232,8 +232,8 @@ test('a row idle past the threshold goes before the others of its holder, so it 
 test('a held resource shows the issue that holds it and that holder\'s age', () => {
   const root = at(0, () => {
     const r = makeLoop({ prefix: 'jarl-live-', dotGit: false });
-    R.newIssue(r, 'holder', { files: 'a.mjs', acceptance: 'a is done' });
-    R.newIssue(r, 'waiter', { files: 'b.mjs', acceptance: 'b is done' });
+    R.newIssue(r, 'holder', { files: 'a.mjs', acceptance: '[read] a is done' });
+    R.newIssue(r, 'waiter', { files: 'b.mjs', acceptance: '[read] b is done' });
     L.cmdField(r, '001', 'Resources', 'db');
     L.cmdField(r, '002', 'Resources', 'db');
     R.setStatus(r, '001', 'in-progress', 'w', { worker: 'w1' });
@@ -276,8 +276,8 @@ test('a lease that holds a live approve and waits for its merge is not idle for 
   };
   at(0, () => {
     R.initLoop(root, 'goal');
-    R.newIssue(root, 'approved', { files: 'a.txt', acceptance: 'a is done' });
-    R.newIssue(root, 'unapproved', { files: 'b.txt', acceptance: 'b is done' });
+    R.newIssue(root, 'approved', { files: 'a.txt', acceptance: '[read] a is done' });
+    R.newIssue(root, 'unapproved', { files: 'b.txt', acceptance: '[read] b is done' });
     R.setStatus(root, '001', 'in-progress', 'w', { worker: 'w1', branch: 'jarl/1-approved' });
     R.setStatus(root, '002', 'in-progress', 'w', { worker: 'w2', branch: 'jarl/2-unapproved' });
   });
@@ -311,9 +311,9 @@ test('a lease that holds a live approve and waits for its merge is not idle for 
 test('an approved lease with no code has no merge to wait for: it is idle past the threshold, as a lease with no approve is', () => {
   const root = at(0, () => {
     const r = makeLoop({ prefix: 'jarl-live-nocode-', dotGit: false });
-    R.newIssue(r, 'a note', { acceptance: 'it reads well' });
+    R.newIssue(r, 'a note', { acceptance: '[read] it reads well' });
     R.setStatus(r, '001', 'in-progress', 'w', { worker: 'w1' });
-    R.addEvidence(r, '001', undefined, { ran: 'proofread', saw: 'reads well' });
+    R.addEvidence(r, '001', undefined, { line: 1, ran: 'proofread', saw: 'reads well' });
     R.review(r, '001', 'approve', FINDINGS, { by: 'rev' });
     return r;
   });
@@ -328,7 +328,7 @@ test('an approved lease with no code has no merge to wait for: it is idle past t
 // leaves them, and resume, status and next --as name it at the default threshold.
 test('resume, status and next --as show a lease idle for 45 minutes at the default threshold', () => {
   const root = makeLoop({ prefix: 'jarl-live-cli-', via: 'cli', dotGit: false });
-  jarl(root, 'new', 'one', '--files', 'a.mjs', '--acceptance', 'a is done');
+  jarl(root, 'new', 'one', '--files', 'a.mjs', '--acceptance', '[read] a is done');
   jarl(root, 'set', '1', 'in-progress', 'w', '--worker', 'w1');
   const log = join(root, '.jarl', 'log.md');
   const back = new Date(Date.now() - 45 * MIN).toISOString().replace('T', ' ').slice(0, 16);

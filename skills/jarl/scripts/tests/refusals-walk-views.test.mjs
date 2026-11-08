@@ -14,7 +14,7 @@ import { NO_EXCLUDES } from './portable.mjs';
 const L = await import('../jarl-lib.mjs');
 
 // The calls, each with the state of the loop before it: an approve, a row, a merge on the plain loop's issues.
-const PRE = [['review', '1', 'approve', '--by', 'rev-fresh', 'read the diff and the tests, all fine'], ['evidence', '2', '--ran', 'npm test', '--saw', 'all pass']];
+const PRE = [['review', '1', 'approve', '--by', 'rev-fresh', 'read the diff and the tests, all fine'], ['evidence', '2', '--line', '1', '--ran', 'npm test', '--saw', 'all pass']];
 const CALLS = [
   ['next', '--as', 'jarl', '--all'], ['next', '--as', 'owner', '--all'], ['next', '--as', 'w2', '--all'], ['resume', '--as', 'jarl'], ['status', '--as', 'owner'],
   ['report'], ['verify'], ['show', '3'], ['show', '1', '--full'], ['changelog', '1'],
@@ -63,7 +63,7 @@ test('in a worker worktree of a committed loop, the note of a call given --root 
   g('config', 'user.email', 't@t'); g('config', 'user.name', 't'); g('config', 'core.excludesFile', NO_EXCLUDES);
   const at = (cwd, args) => { const r = run(cwd, args); assert.equal(r.status, 0, `${args.join(' ')}: ${r.stderr}`); return r; };
   at(main, ['init', 'a committed goal', '--committed']);
-  for (const t of ['one', 'two', 'three']) at(main, ['new', t, '--tier', 'light', '--acceptance', 'it works']);
+  for (const t of ['one', 'two', 'three']) at(main, ['new', t, '--tier', 'light', '--acceptance', '[read] it works']);
   g('add', '-A'); g('commit', '-qm', 'loop');
   g('worktree', 'add', '-q', '-b', 'w3', wt);
   const copyBefore = readFileSync(join(wt, '.jarl', 'log.md'), 'utf8');

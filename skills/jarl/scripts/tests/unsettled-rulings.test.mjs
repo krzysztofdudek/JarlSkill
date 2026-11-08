@@ -9,9 +9,9 @@ import { FINDINGS } from './findings.mjs';
 
 function rulingsLoop() {
   const root = makeLoop({ prefix: 'jarl-unsettled-', via: 'cli' });
-  for (const t of ['still open', 'carried out', 'given up']) jarl(root, 'new', t, '--acceptance', 'it holds');
+  for (const t of ['still open', 'carried out', 'given up']) jarl(root, 'new', t, '--acceptance', '[read] it holds');
   jarl(root, 'set', '2', 'in-progress', '--worker', 'w2', '--by', 'jarl');
-  jarl(root, 'evidence', '2', '--ran', 'proofread', '--saw', 'reads well', '--by', 'w2');
+  jarl(root, 'evidence', '2', '--line', '1', '--ran', 'proofread', '--saw', 'reads well', '--by', 'w2');
   jarl(root, 'review', '2', 'approve', '--by', 'rev-2', FINDINGS);
   jarl(root, 'set', '2', 'done', 'the gate holds', '--by', 'jarl');
   jarl(root, 'set', '3', 'dropped', 'not needed', '--by', 'jarl');

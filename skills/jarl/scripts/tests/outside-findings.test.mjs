@@ -23,9 +23,9 @@ const issueFiles = (root) => json(root, 'list', '--all').map((i) => i.id);
 // One issue in a lease with a proof row, ready for its review.
 function leased() {
   const root = loop();
-  jarl(root, 'new', 'the csv export', '--acceptance', 'the export writes csv', '--repo', gitRepo({ prefix: 'jarl-outside-tool-' }).dir);
+  jarl(root, 'new', 'the csv export', '--acceptance', '[read] the export writes csv', '--repo', gitRepo({ prefix: 'jarl-outside-tool-' }).dir);
   jarl(root, 'set', '1', 'in-progress', 'start', '--worker', 'w1');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
   return root;
 }
 
@@ -115,9 +115,9 @@ function profiledLeased() {
   const file = join(dir, 'profile.json');
   writeFileSync(file, JSON.stringify(PROFILE));
   const root = makeLoop({ prefix: 'jarl-outside-fielded-', via: 'cli', dotGit: false, initFlags: ['--profile', file] });
-  jarl(root, 'new', 'the csv export', '--acceptance', 'the export writes csv', '--field', 'Area=cli');
+  jarl(root, 'new', 'the csv export', '--acceptance', '[read] the export writes csv', '--field', 'Area=cli');
   jarl(root, 'set', '1', 'in-progress', 'start', '--worker', 'w1');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
   return root;
 }
 
@@ -149,7 +149,7 @@ test('the issue a finding outside a format-1 loop files names the reviewed issue
   const id = fileAsBefore(root, 'the csv export', { acceptance: 'the export writes csv', repo: 'tool' });
   assert.equal(json(root, 'show', id).fields.repo, 'tool', 'the format-1 reader writes the path bare');
   assert.equal(oldJarl(root, 'set', {}, [id, 'in-progress', null, { worker: 'w1' }]).ok, true);
-  jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'tests 4, pass 4');
+  jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
   const out = jarl(root, 'review', id, 'approve', 'read the diff and the test, the export writes csv', '--by', 'rev-a', '--outside', 'Important: the importer drops the header row');
   const filedId = /filed outside the issue: (\S+)/.exec(out)[1];
   assert.equal(json(root, 'show', id).fields.repo, './tool', 'the raise wrote the reviewed issue\'s path with a leading ./');
@@ -204,10 +204,10 @@ test('a bulk review whose finding outside the issues raises a format-1 loop reco
 test('a review with a finding outside the issue in a format-3 loop records the tip of the reviewed branch', () => {
   const { dir, g } = gitRepo({ prefix: 'jarl-outside-tip3-' });
   const root = loop();
-  jarl(root, 'new', 'the csv export', '--acceptance', 'the export writes csv', '--repo', dir);
+  jarl(root, 'new', 'the csv export', '--acceptance', '[read] the export writes csv', '--repo', dir);
   g('checkout', '-q', '-b', 'jarl/1-csv'); writeFileSync(join(dir, 'b.txt'), 'b\n'); g('add', '-A'); g('commit', '-qm', 'csv');
   jarl(root, 'set', '1', 'in-progress', 'start', '--worker', 'w1', '--branch', 'jarl/1-csv');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
   const before = tipLinesOf(root).length;
   jarl(root, 'review', '1', 'approve', 'read the diff and the test, the export writes csv', '--by', 'rev-a', '--outside', 'Important: the importer drops the header row');
   assert.deepEqual(tipLinesOf(root).slice(before), [['1', g('rev-parse', 'jarl/1-csv').trim()]]);
@@ -217,7 +217,7 @@ test('on a loop that stays at its record format, the second finding outside the 
   const hub = composed();
   writeFileSync(join(hub, '.jarl', 'issues', '998-old-998.md'), L.renderIssue({ id: '998', title: 'old 998', kind: 'bug', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
   jarl(hub, 'set', '001', 'in-progress', 'start', '--worker', 'w1');
-  jarl(hub, 'evidence', '001', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
+  jarl(hub, 'evidence', '001', '--line', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
   const before = snapshot(hub);
   const said = refuses(hub, 'review', '001', 'approve', 'read the diff and the test, it works', '--by', 'rev-a', '--outside', 'Minor: the first thing seen', '--outside', 'Minor: the second thing seen');
   assert.match(said, /^the finding outside the issue "Minor: the second thing seen" cannot be filed: issue number 1000 needs record format 2, and this loop stays at format 1: /);
@@ -234,7 +234,7 @@ test('on a composer\'s loop whose goal holds a range, a second finding outside t
   writeFileSync(join(hub, '.jarl', 'issues', '997-old-997.md'), L.renderIssue({ id: '997', title: 'old 997', kind: 'bug', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
   writeFileSync(join(hub, '.jarl', 'goal.md'), `${readFileSync(join(hub, '.jarl', 'goal.md'), 'utf8')}Range (film): 999-1001\n`);
   jarl(hub, 'set', '001', 'in-progress', 'start', '--worker', 'w1');
-  jarl(hub, 'evidence', '001', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
+  jarl(hub, 'evidence', '001', '--line', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
   const before = snapshot(hub);
   const said = refuses(hub, 'review', '001', 'approve', 'read the diff and the test, it works', '--by', 'rev-a', '--outside', 'Minor: the first thing seen', '--outside', 'Minor: the second thing seen');
   // The first finding takes 998; the second takes 1002, the number after the range 999 to 1001, which needs record format 2.
@@ -249,7 +249,7 @@ test('on a loop that stays at its record format, a finding outside the issue tha
   const hub = composed();
   writeFileSync(join(hub, '.jarl', 'issues', '999-old-999.md'), L.renderIssue({ id: '999', title: 'old 999', kind: 'bug', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
   jarl(hub, 'set', '001', 'in-progress', 'start', '--worker', 'w1');
-  jarl(hub, 'evidence', '001', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
+  jarl(hub, 'evidence', '001', '--line', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
   const before = snapshot(hub);
   const said = refuses(hub, 'review', '001', 'approve', 'read the diff and the test, it works', '--by', 'rev-a', '--outside', 'Minor: the thing seen');
   assert.match(said, /^the finding outside the issue "Minor: the thing seen" cannot be filed: issue number 1000 needs record format 2, .* until its profile says "format": 2 — nothing was written\n/);
@@ -279,7 +279,7 @@ test('a finding outside an issue that names an undeclared repository is filed na
 
 test('the library\'s newIssue writes no Repo it did not check, and its review refuses a finding outside the issue on a retraction', () => {
   const root = leased();
-  const { id } = R.newIssue(root, 'a hand filing', { repoAsHeld: '../../nowhere/at/all' });
+  const { id } = R.newIssue(root, 'a hand filing', { acceptance: '[read] it works', repoAsHeld: '../../nowhere/at/all' });
   assert.equal(R.findIssue(root, id).fields.repo, undefined, 'repoAsHeld is no option of newIssue');
   R.review(root, '1', 'approve', 'read the diff and the test, the export writes csv', { by: 'rev-a' });
   const before = snapshot(root);

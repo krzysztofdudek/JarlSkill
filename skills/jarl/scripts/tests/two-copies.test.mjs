@@ -18,7 +18,7 @@ const issueFiles = (dir) => readdirSync(join(dir, '.jarl', 'issues')).filter((f)
 function committedLoop() {
   const { dir, g } = gitRepo({ branch: 'main' });
   jarl(dir, 'init', 'two drivers', '--committed');
-  jarl(dir, 'new', 'filed before the split', '--tier', 'light');
+  jarl(dir, 'new', 'filed before the split', '--acceptance', '[read] it works', '--tier', 'light');
   g('add', '-A'); g('commit', '-qm', 'loop');
   return { dir, g };
 }
@@ -71,7 +71,7 @@ function twoClonesWorked() {
   a.g('add', '-A'); a.g('commit', '-qm', 'a leases its 2');
   assert.equal(fileAndCommit(b, 'second on B'), '2', 'B has not seen A');
   jarl(b.dir, 'set', '2', 'in-progress', '--branch', 'jarl/2-on-b', '--worker', 'wb', '--by', 'coordinator B');
-  jarl(b.dir, 'evidence', '2', '--ran', 'npm test', '--saw', 'green on B', '--by', 'wb');
+  jarl(b.dir, 'evidence', '2', '--line', '1', '--ran', 'npm test', '--saw', 'green on B', '--by', 'wb');
   b.g('add', '-A'); b.g('commit', '-qm', 'b works its 2');
   b.g('pull', '-q', '--no-rebase', '--no-edit', 'origin', 'main');
   return b;
@@ -84,7 +84,7 @@ for (const [shape, make] of [
     const c = cloneOf(a.dir);
     assert.equal(fileAndCommit(c, 'second on B'), '2');
     jarl(c.dir, 'set', '2', 'in-progress', '--branch', 'jarl/2-on-b', '--worker', 'wb', '--by', 'coordinator B');
-    jarl(c.dir, 'evidence', '2', '--ran', 'npm test', '--saw', 'green on B', '--by', 'wb');
+    jarl(c.dir, 'evidence', '2', '--line', '1', '--ran', 'npm test', '--saw', 'green on B', '--by', 'wb');
     c.g('add', '-A'); c.g('commit', '-qm', 'c works its 2');
     a.g('checkout', '-q', '-b', 'one');
     assert.equal(fileAndCommit(a, 'second on A'), '2', 'the clone\'s branch is not fetched yet');
@@ -191,7 +191,7 @@ test('under a profile with two statuses that hold the lease, a worker\'s move fr
   const file = join(mkdtempSync(join(tmpdir(), 'jarl-copies-p-')), 'house.json');
   writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'house', statuses: { proposed: [], queued: ['dispatchable'], running: ['lease'], landed: ['lease'], merged: ['settles-dependents', 'terminal', 'closes-record'], dropped: ['terminal', 'needs-reason'] }, initial: 'queued' }));
   jarl(dir, 'init', 'house', '--committed', '--profile', file);
-  jarl(dir, 'new', 'one', '--tier', 'light');
+  jarl(dir, 'new', 'one', '--acceptance', '[read] it works', '--tier', 'light');
   jarl(dir, 'set', '1', 'running', '--branch', 'jarl/1-one', '--worker', 'w1', '--by', 'coord');
   jarl(dir, 'set', '1', 'landed', 'pushed', '--by', 'w1');
   assert.deepEqual(json(dir, 'next', '--as', 'jarl').rows.filter((r) => r.what === 'conflict'), []);

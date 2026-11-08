@@ -9,7 +9,7 @@ import { jarl, jarlResult, loop as makeLoop, refuses } from './helpers.mjs';
 // A loop with four issues, the fourth deferred and the others dropped, so nothing is open.
 function deferredLoop(initFlags = []) {
   const root = makeLoop({ prefix: 'jarl-close-deferred-', via: 'cli', initFlags });
-  for (let k = 1; k <= 4; k += 1) jarl(root, 'new', `issue ${k}`, '--acceptance', 'it works');
+  for (let k = 1; k <= 4; k += 1) jarl(root, 'new', `issue ${k}`, '--acceptance', '[read] it works');
   for (const id of [1, 2, 3]) jarl(root, 'set', String(id), 'dropped', 'not needed');
   jarl(root, 'set', '4', 'deferred', 'waits for the owner');
   return root;
@@ -52,7 +52,7 @@ test('archive keeps the deferred issue under .jarl/archive, and init and close o
 
 test('a default-mode loop with no deferred issue closes as it did', () => {
   const root = makeLoop({ prefix: 'jarl-close-plain-', via: 'cli' });
-  jarl(root, 'new', 'one', '--acceptance', 'it works');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works');
   jarl(root, 'set', '1', 'dropped', 'not needed');
   const out = jarl(root, 'close');
   assert.match(out, /^removed \S+\.jarl$/);
@@ -70,7 +70,7 @@ test('a permanent loop with a deferred issue keeps its directory and says the is
 // A committed loop that was archived once and opened again: its archive is committed content.
 function committedWithArchive() {
   const root = makeLoop({ prefix: 'jarl-close-committed-', via: 'cli', initFlags: ['--committed'] });
-  jarl(root, 'new', 'first', '--acceptance', 'it works');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works');
   jarl(root, 'set', '1', 'dropped', 'not needed');
   jarl(root, 'archive', 'first round');
   jarl(root, 'init', 'second round');

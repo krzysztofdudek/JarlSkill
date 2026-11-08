@@ -75,7 +75,7 @@ for (const [name, shape] of Object.entries(SHAPES)) {
     const { rest, work, park } = shape.names;
     const dir = R.jarlDir(root);
     const profile = R.loadProfile(root);
-    const { id } = R.newIssue(root, 'folded');
+    const { id } = R.newIssue(root, 'folded', { acceptance: '[read] it works' });
     const same = (label) => assert.deepEqual(foldOf(dir, profile, id), { ...headerOf(issueFile(root, id)) }, label);
     same('a filed issue');
     R.setStatus(root, id, work, undefined, { branch: 'jarl/1-a', worker: 'w1', model: 'm1' }); same('a lease with branch, worker and model');
@@ -91,7 +91,7 @@ for (const [name, shape] of Object.entries(SHAPES)) {
     R.recordMerged(root, id, { ci: 'red' }); same('a CI state alone');
     R.recordMerged(root, id, { sha: 'abc1236', ci: 'none' }); same('a merge with CI none');
     R.setStatus(root, id, park, 'not now', {}); same('parked with a reason');
-    const cli = R.newIssue(root, 'folded through the command line');
+    const cli = R.newIssue(root, 'folded through the command line', { acceptance: '[read] it works' });
     jarl(root, 'set', cli.id, work, '--branch', 'jarl/2-a', '--worker', 'w5', '--model', 'm5');
     assert.deepEqual(foldOf(dir, profile, cli.id), headerOf(issueFile(root, cli.id)), 'a lease through the command line');
     jarl(root, 'merged', cli.id, '--sha', 'deadbeef', '--keep');
@@ -141,8 +141,8 @@ function editHeader(root, id, fn) {
 
 test('a hand edit of a Status header to done is not counted by status, resume, list, show or next', () => {
   const root = makeLoop();
-  jarl(root, 'new', 'first', '--tier', 'light');
-  jarl(root, 'new', 'second', '--tier', 'light');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works', '--tier', 'light');
+  jarl(root, 'new', 'second', '--acceptance', '[read] it works', '--tier', 'light');
   jarl(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-a', '--worker', 'w1');
   editHeader(root, '1', (t) => t.replace('**Status:** in-progress', '**Status:** done'));
   const status = JSON.parse(jarl(root, 'status', '--json'));
@@ -160,9 +160,9 @@ test('a hand edit of a Status header to done is not counted by status, resume, l
 
 test('a removed Branch header does not turn a code issue into one a coordinator may close', () => {
   const root = makeLoop();
-  jarl(root, 'new', 'code', '--tier', 'light', '--acceptance', 'it works');
+  jarl(root, 'new', 'code', '--tier', 'light', '--acceptance', '[read] it works');
   jarl(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-a', '--worker', 'w1');
-  jarl(root, 'evidence', '1', '--ran', 'node --test', '--saw', 'ok');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'node --test', '--saw', 'ok');
   editHeader(root, '1', (t) => t.replace(/^\*\*Branch:\*\*.*\n/m, ''));
   jarl(root, 'review', '1', 'approve', '--by', 'jarl', 'the diff was read and holds');
   const refusal = refuses(root, 'set', '1', 'done');
@@ -173,9 +173,9 @@ test('a removed Branch header does not turn a code issue into one a coordinator 
 test('a Merged header written by hand does not satisfy a done gate that wants a recorded merge', () => {
   const repo = gitRepo({ branch: 'main' });
   const root = shapedLoop(SHAPES.composer);
-  const { id } = R.newIssue(root, 'lands', { repo: repo.dir });
+  const { id } = R.newIssue(root, 'lands', { acceptance: '[read] it works', repo: repo.dir });
   R.setStatus(root, id, 'running', undefined, { branch: 'jarl/1-a', worker: 'w1' });
-  R.addEvidence(root, id, undefined, { ran: 'node --test', saw: 'ok' });
+  R.addEvidence(root, id, undefined, { line: 1, ran: 'node --test', saw: 'ok' });
   const sha = repo.g('rev-parse', 'HEAD').trim();
   editHeader(root, id, (t) => t.replace(/^(\*\*Status:\*\*.*)$/m, `$1\n**Merged:** ${sha}`));
   assert.throws(() => R.setStatus(root, id, 'merged', undefined, {}), /records no merge/);
@@ -212,7 +212,7 @@ const recordLines = (text) => text.split('\n').filter((l) => l.startsWith('recor
 // A loop with its first issue leased, with a model, and merged with its CI green, moved only through the command line.
 function leasedAndMerged() {
   const root = makeLoop();
-  jarl(root, 'new', 'one', '--tier', 'light', '--acceptance', 'a');
+  jarl(root, 'new', 'one', '--tier', 'light', '--acceptance', '[read] a');
   jarl(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-a', '--worker', 'w1', '--model', 'm1');
   jarl(root, 'merged', '1', '--sha', 'abc1234', '--ci', 'green', '--keep');
   return root;
@@ -220,7 +220,7 @@ function leasedAndMerged() {
 
 test('a hand edit of Status is reported by status, resume and show as one line that names the log as the record and the commands that settle it', () => {
   const root = makeLoop();
-  jarl(root, 'new', 'first', '--tier', 'light');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works', '--tier', 'light');
   jarl(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-a', '--worker', 'w1');
   assert.deepEqual(recordLines(jarl(root, 'status')), [], 'a loop moved through the tool prints no such line');
   assert.equal(JSON.parse(jarl(root, 'status', '--json')).disagreements, undefined);
@@ -296,7 +296,7 @@ test('a hand edit of the profile\'s status list is reported: a line that moved a
   const dir = mkdtempSync(join(tmpdir(), 'jarl-one-store-profile-'));
   mkdirSync(join(dir, '.git'));
   jarl(dir, 'init', 'g', '--profile', file);
-  jarl(dir, 'new', 'one', '--tier', 'light');
+  jarl(dir, 'new', 'one', '--acceptance', '[read] it works', '--tier', 'light');
   jarl(dir, 'set', '1', 'working', '--worker', 'w1');
   jarl(dir, 'set', '1', 'review');
   assert.match(jarl(dir, 'status'), /review 1/);
@@ -314,7 +314,7 @@ test('a hand edit of the profile\'s status list is reported: a line that moved a
 test('the same log folds the same in two clones, and clones that merged in opposite directions follow their own log', () => {
   const { dir, g } = gitRepo({ branch: 'main' });
   jarl(dir, 'init', 'g', '--committed');
-  jarl(dir, 'new', 'one', '--tier', 'light');
+  jarl(dir, 'new', 'one', '--acceptance', '[read] it works', '--tier', 'light');
   g('add', '-A'); g('commit', '-qm', 'loop');
   g('checkout', '-q', '-b', 'x');
   jarl(dir, 'set', '1', 'in-progress', '--worker', 'wx');
@@ -371,8 +371,8 @@ const FORGED = [
 
 test('the free log refuses a line that reads as state, names the command that writes it, and a forged row and approve never reach the gate', () => {
   const root = makeLoop();
-  jarl(root, 'new', 'first', '--tier', 'light', '--acceptance', 'a');
-  jarl(root, 'new', 'second', '--tier', 'light', '--acceptance', 'a');
+  jarl(root, 'new', 'first', '--tier', 'light', '--acceptance', '[read] a');
+  jarl(root, 'new', 'second', '--tier', 'light', '--acceptance', '[read] a');
   const before = logLinesOf(root).length;
   for (const [line, command] of FORGED) {
     const said = refuses(root, 'log', line);
@@ -385,7 +385,7 @@ test('the free log refuses a line that reads as state, names the command that wr
 
 test('the free log still writes a note about the loop or about an issue, and a composer\'s plain lines', () => {
   const root = makeLoop();
-  jarl(root, 'new', 'first', '--tier', 'light');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works', '--tier', 'light');
   for (const line of ['the deploy window moved to friday', '1 talked to the owner about the scope', 'decided some-ruling · by owner', 'profile brought up to this orchestrator\'s: added initial', 'a-1 answered by the owner', '1 field Resources · gate']) {
     jarl(root, 'log', line);
     assert.deepEqual(R.appendLog(root, line), { logged: line });
@@ -412,12 +412,12 @@ test('a composer that moves issues with the record operations and edits its own 
   const repo = gitRepo({ branch: 'main' });
   const root = shapedLoop(SHAPES.composer);
   const dir = R.jarlDir(root);
-  const a = R.newIssue(root, 'lands on main', { repo: repo.dir }).id;
-  const b = R.newIssue(root, 'waits in the queue', { repo: repo.dir }).id;
-  const c = R.newIssue(root, 'is sent back', { repo: repo.dir }).id;
+  const a = R.newIssue(root, 'lands on main', { acceptance: '[read] it works', repo: repo.dir }).id;
+  const b = R.newIssue(root, 'waits in the queue', { acceptance: '[read] it works', repo: repo.dir }).id;
+  const c = R.newIssue(root, 'is sent back', { acceptance: '[read] it works', repo: repo.dir }).id;
   R.setStatus(root, a, 'queued', undefined, {});
   R.setStatus(root, a, 'running', undefined, { branch: 'jarl/a', worker: 'w1', model: 'm1' });
-  R.addEvidence(root, a, undefined, { ran: 'node --test', saw: 'ok' });
+  R.addEvidence(root, a, undefined, { line: 1, ran: 'node --test', saw: 'ok' });
   R.recordMerged(root, a, { sha: repo.g('rev-parse', 'HEAD').trim() });
   R.setStatus(root, a, 'merged', undefined, {});
   R.setStatus(root, b, 'queued', undefined, {});
@@ -476,7 +476,7 @@ test('a reason is never searched for lease fields: reasons that open with a fiel
     { reason: 'on branch tools-misc: first slice', flags: ['--worker', 'w4'], want: { branch: null, worker: 'w4' } },
   ];
   for (const c of cases) {
-    const { id } = R.newIssue(root, `reason ${c.reason}`);
+    const { id } = R.newIssue(root, `reason ${c.reason}`, { acceptance: '[read] it works' });
     jarl(root, 'set', id, 'in-progress', c.reason, ...c.flags);
     const state = foldOf(R.jarlDir(root), R.loadProfile(root), id);
     assert.equal(state.branch, c.want.branch, `${c.reason}: branch`);
@@ -486,7 +486,7 @@ test('a reason is never searched for lease fields: reasons that open with a fiel
   }
   assert.deepEqual(recordLines(jarl(root, 'status')), []);
   const wt = join(root, 'a · branch b');
-  const { id } = R.newIssue(root, 'a worktree path with the separator');
+  const { id } = R.newIssue(root, 'a worktree path with the separator', { acceptance: '[read] it works' });
   jarl(root, 'set', id, 'in-progress', 'go', '--branch', 'jarl/9-z', '--worker', 'w9', '--worktree', wt);
   assert.equal(foldOf(R.jarlDir(root), R.loadProfile(root), id).branch, 'jarl/9-z');
   assert.equal(foldOf(R.jarlDir(root), R.loadProfile(root), id).worker, 'w9');
@@ -529,7 +529,7 @@ for (const flag of ['worker', 'model', 'branch']) {
     const profile = R.loadProfile(root);
     let accepted = 0; let refused = 0;
     for (const value of NASTY) {
-      const { id } = R.newIssue(root, `lease ${flag}`);
+      const { id } = R.newIssue(root, `lease ${flag}`, { acceptance: '[read] it works' });
       const logBefore = logLinesOf(root).length;
       const fileBefore = readFileSync(issueFile(root, id), 'utf8');
       let wrote = true;
@@ -552,7 +552,7 @@ for (const flag of ['worker', 'model', 'branch']) {
 
 test('the refusals name the flag and the rule, and a worktree path that does not exist is accepted and stored nowhere', () => {
   const root = makeLoop();
-  const { id } = R.newIssue(root, 'refusals');
+  const { id } = R.newIssue(root, 'refusals', { acceptance: '[read] it works' });
   assert.match(refuses(root, 'set', id, 'in-progress', '--worker', 'w,x'), /--worker "w,x" holds a comma/);
   assert.match(refuses(root, 'set', id, 'in-progress', '--model', 'm,1'), /--model "m,1" holds a comma/);
   assert.match(refuses(root, 'set', id, 'in-progress', '--branch', 'a b'), /--branch "a b" is not a branch name git accepts/);
@@ -568,7 +568,7 @@ test('the refusals name the flag and the rule, and a worktree path that does not
 
 test('a branch with a space is refused, so a coordinator approve cannot close an issue that carries it', () => {
   const root = makeLoop();
-  jarl(root, 'new', 'code', '--tier', 'light', '--acceptance', 'it works');
+  jarl(root, 'new', 'code', '--tier', 'light', '--acceptance', '[read] it works');
   refuses(root, 'set', '1', 'in-progress', '--branch', 'a b', '--worker', 'w1');
   assert.equal(R.findIssue(root, '1').status, 'open');
   assert.equal(R.findIssue(root, '1').fields.branch, undefined);
@@ -599,7 +599,7 @@ test('a reason over the alphabet of separators, spaces and field names never rea
   const texts = alphabetTexts(300, ['a · · branch evil', 'x ·  · worker evil', ' ·  ·  · model evil', 'branch evil', 'worker raised', '(reason)', 'branch x · (reason)']);
   for (const why of texts) {
     for (const flags of [{}, { branch: 'jarl/1-a', worker: 'w1', model: 'm1' }]) {
-      const { id } = R.newIssue(root, 'reason');
+      const { id } = R.newIssue(root, 'reason', { acceptance: '[read] it works' });
       R.setStatus(root, id, 'in-progress', why, flags);
       const move = L.loopEvents(dir, profile).filter((e) => e.id === id && e.type === 'move').pop();
       const state = foldOf(dir, profile, id);
@@ -612,7 +612,7 @@ test('a reason over the alphabet of separators, spaces and field names never rea
 
 test('a note the free log accepts over the same alphabet is read as a note, and never changes an issue', () => {
   const root = makeLoop();
-  const { id } = R.newIssue(root, 'notes');
+  const { id } = R.newIssue(root, 'notes', { acceptance: '[read] it works' });
   R.setStatus(root, id, 'in-progress', undefined, { branch: 'jarl/1-a', worker: 'w1' });
   const dir = R.jarlDir(root);
   const profile = R.loadProfile(root);
@@ -632,7 +632,7 @@ test('a note the free log accepts over the same alphabet is read as a note, and 
 
 test('findings and the reason of a round over the same alphabet are never read as a mark or a field', () => {
   const root = makeLoop();
-  const { id } = R.newIssue(root, 'verdicts');
+  const { id } = R.newIssue(root, 'verdicts', { acceptance: '[read] it works' });
   R.setStatus(root, id, 'in-progress', undefined, { branch: 'jarl/1-a', worker: 'w1' });
   const dir = R.jarlDir(root);
   const profile = R.loadProfile(root);
@@ -657,7 +657,7 @@ test('findings and the reason of a round over the same alphabet are never read a
 
 test('set --header says it rewrote a header and moved nothing, and refuses an unknown or a missing status in its own words', () => {
   const root = makeLoop();
-  jarl(root, 'new', 'one', '--tier', 'light');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--tier', 'light');
   jarl(root, 'set', '1', 'in-progress', '--worker', 'w1');
   assert.equal(jarl(root, 'set', '1', 'in-progress', '--header'), 'header of 1 rewritten from the log: in-progress');
   const unknown = refuses(root, 'set', '1', 'bogus', '--header');
@@ -687,7 +687,7 @@ test('a phantom lease is not read from a reason: the units of a loop with such r
 
 test('the free log refuses an id and an arrow whatever follows, and a note of that shape already in a log is no disagreement', () => {
   const root = makeLoop();
-  jarl(root, 'new', 'one', '--tier', 'light');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--tier', 'light');
   for (const line of ['1 → see 3 for context', '1 → DONE', '1 →nowhere']) {
     assert.match(refuses(root, 'log', line), /has the shape of a move.*jarl\.mjs set "<ids>" "<status>"/, line);
     assert.throws(() => R.appendLog(root, line), /shape of a move/);
@@ -701,7 +701,7 @@ test('the free log refuses an id and an arrow whatever follows, and a note of th
 
 test('a bulk set that stopped after its journal lines is repaired by set --header, which writes no line and keeps the moves', { skip: NOT_STOPPED }, () => {
   const root = makeLoop();
-  const ids = ['one', 'two'].map((t) => R.newIssue(root, t).id);
+  const ids = ['one', 'two'].map((t) => R.newIssue(root, t, { acceptance: '[read] it works' }).id);
   withIssuesDirClosed(root, () => assert.throws(() => R.setStatus(root, ids.join(','), 'in-progress', undefined, { branch: 'jarl/1-a', worker: 'w1' })));
   const lines = recordLines(jarl(root, 'status'));
   assert.ok(lines.length >= ids.length, 'each issue is reported');
@@ -732,9 +732,9 @@ test('the guard on the journal compares its name without case', () => {
 
 test('a second filing line for an issue resets neither its status nor the window of the gate', () => {
   const root = makeLoop();
-  const { id } = R.newIssue(root, 'filed twice');
+  const { id } = R.newIssue(root, 'filed twice', { acceptance: '[read] it works' });
   R.setStatus(root, id, 'in-progress', undefined, { worker: 'w1' });
-  R.addEvidence(root, id, undefined, { ran: 'node --test', saw: 'ok' });
+  R.addEvidence(root, id, undefined, { line: 1, ran: 'node --test', saw: 'ok' });
   const dir = R.jarlDir(root);
   const rowsBefore = L.gateOf(L.readLoop(dir), id).rowsSince;
   appendFileSync(join(dir, 'log.md'), `- 2026-10-19 10:00 · filed ${id} · filed twice\n`);
@@ -775,7 +775,7 @@ function logLinesOf(root) { return readFileSync(join(R.jarlDir(root), 'log.md'),
 
 test('the Since of a lease and the stamp of its journal line are one reading of the clock', () => {
   const root = makeLoop();
-  const { id } = R.newIssue(root, 'one stamp');
+  const { id } = R.newIssue(root, 'one stamp', { acceptance: '[read] it works' });
   withRacingClock(() => R.setStatus(root, id, 'in-progress', undefined, { branch: 'jarl/1-a', worker: 'w1' }));
   const issue = R.findIssue(root, id);
   const line = logLinesOf(root).find((l) => l.includes(`${id} → in-progress`));
@@ -788,7 +788,7 @@ test('the Since of a lease and the stamp of its journal line are one reading of 
 
 test('set writes the journal line before the file: a write that stops leaves the record ahead of the file', { skip: NOT_STOPPED }, () => {
   const root = makeLoop();
-  const { id } = R.newIssue(root, 'crash in set');
+  const { id } = R.newIssue(root, 'crash in set', { acceptance: '[read] it works' });
   withIssuesDirClosed(root, () => assert.throws(() => R.setStatus(root, id, 'in-progress', undefined, { branch: 'jarl/1-a', worker: 'w1' })));
   assert.ok(logLinesOf(root).some((l) => l.includes(`${id} → in-progress`)), 'the line is in the journal');
   assert.equal(headerOf(issueFile(root, id)).status, 'open', 'the file was not reached');
@@ -798,7 +798,7 @@ test('set writes the journal line before the file: a write that stops leaves the
 
 test('merged writes the journal line before the file', { skip: NOT_STOPPED }, () => {
   const root = makeLoop();
-  const { id } = R.newIssue(root, 'crash in merged');
+  const { id } = R.newIssue(root, 'crash in merged', { acceptance: '[read] it works' });
   withIssuesDirClosed(root, () => assert.throws(() => R.recordMerged(root, id, { sha: 'abc1234', ci: 'green' })));
   assert.ok(logLinesOf(root).some((l) => l.includes(`${id} merged abc1234`)));
   assert.equal(headerOf(issueFile(root, id)).merged, null);
@@ -810,9 +810,9 @@ test('new writes the filing line before the file is created, and a stopped filin
   const real = fs.linkSync;
   fs.linkSync = () => { throw Object.assign(new Error('stopped'), { code: 'EIO' }); };
   syncBuiltinESMExports();
-  try { assert.throws(() => R.newIssue(root, 'crash in new'), /stopped/); } finally { fs.linkSync = real; syncBuiltinESMExports(); }
+  try { assert.throws(() => R.newIssue(root, 'crash in new', { acceptance: '[read] it works' }), /stopped/); } finally { fs.linkSync = real; syncBuiltinESMExports(); }
   assert.ok(logLinesOf(root).some((l) => l.includes('filed 001 · crash in new')), 'the filing is in the journal');
   assert.deepEqual(readdirSync(join(R.jarlDir(root), 'issues')).filter((f) => f.endsWith('.md')), [], 'no file was created');
-  const again = R.newIssue(root, 'crash in new');
+  const again = R.newIssue(root, 'crash in new', { acceptance: '[read] it works' });
   assert.equal(again.id, '001', 'the number is taken again');
 });

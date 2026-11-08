@@ -21,9 +21,9 @@ function fieldedLoop() {
   const file = join(dir, 'profile.json');
   writeFileSync(file, JSON.stringify(PROFILE));
   const root = makeLoop({ prefix: 'jarl-surface-', goal: 'a goal', via: 'cli', initFlags: ['--profile', file] });
-  jarl(root, 'new', 'first', '--tier', 'light', '--field', 'Area=core', '--what', 'old what', '--acceptance', 'old line', '--section', 'Design=old design');
-  jarl(root, 'new', 'second', '--tier', 'light');
-  jarl(root, 'new', 'third', '--tier', 'light');
+  jarl(root, 'new', 'first', '--tier', 'light', '--field', 'Area=core', '--what', 'old what', '--acceptance', '[read] old line', '--section', 'Design=old design');
+  jarl(root, 'new', 'second', '--acceptance', '[read] it works', '--tier', 'light');
+  jarl(root, 'new', 'third', '--acceptance', '[read] it works', '--tier', 'light');
   return root;
 }
 const logLines = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').filter(Boolean).map((l) => l.replace(/^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)?(?: by \S+)? · /, ''));
@@ -38,9 +38,9 @@ test('field writes every section of the description: a value replaces it, --add 
   assert.equal(issue(root, '1').sections.what.trim(), 'new what\n\nmore what', 'a name is matched in any case, and --add puts a paragraph after the text');
   jarl(root, 'field', '1', 'Why', 'because');
   assert.equal(issue(root, '1').sections.why.trim(), 'because');
-  jarl(root, 'field', '1', 'Acceptance', 'line a\nline b');
+  jarl(root, 'field', '1', 'Acceptance', '[read] line a\n[read] line b');
   assert.equal(issue(root, '1').sections.acceptance.trim(), '- line a\n- line b', 'Acceptance takes one item per line');
-  jarl(root, 'field', '1', 'Acceptance', 'line c', '--add');
+  jarl(root, 'field', '1', 'Acceptance', '[read] line c', '--add');
   assert.equal(issue(root, '1').sections.acceptance.trim(), '- line a\n- line b\n- line c', '--add gives the list a line');
   jarl(root, 'field', '1', 'Changelog', 'Fixed: one');
   jarl(root, 'field', '1', 'Changelog', 'Added: two', '--add');
@@ -106,7 +106,7 @@ test('a slice: tag keeps its one-slice rule through --add, and the refusal names
 
 test('field adds a repository to Repo and takes it off by its name', () => {
   const root = makeLoop({ prefix: 'jarl-surface-repo-', via: 'cli' });
-  jarl(root, 'new', 'one', '--tier', 'light');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--tier', 'light');
   const a = gitRepo({ prefix: 'jarl-surface-a-' });
   const b = gitRepo({ prefix: 'jarl-surface-b-' });
   jarl(root, 'field', '1', 'Repo', a.dir);
@@ -133,7 +133,7 @@ test('the commands that wrote one part each are refused with the reason, then on
     [['after', '1', '--clear'], "after is not a command; the issues an issue waits on are a field\njarl.mjs field \"<ids>\" After --clear"],
     [['repo', '1', '--clear'], "repo is not a command; the repository is a field\njarl.mjs field \"<ids>\" Repo --clear"],
     [['repo', '--base', 'tool', 'main'], "repo is not a command; a repository's base is changed by base\njarl.mjs base \"<name>\" \"<branch>\""],
-    [['body', '1', '--why', 'a reason', '--acceptance', 'a line', '--append'], "body is not a command; every part of the description is written by field, one call per part (--why is Why, --acceptance is Acceptance, --append is --add)\njarl.mjs field \"<ids>\" \"<part>\" \"<value>\" --add"],
+    [['body', '1', '--why', 'a reason', '--acceptance', '[read] a line', '--append'], "body is not a command; every part of the description is written by field, one call per part (--why is Why, --acceptance is Acceptance, --append is --add)\njarl.mjs field \"<ids>\" \"<part>\" \"<value>\" --add"],
   ];
   for (const [args, line] of cases) {
     const said = refuses(root, ...args);
@@ -243,7 +243,7 @@ test('status and models group with --group; --by on them is refused with the cal
 
 test('a verdict and an evidence row are taken back by retract alone; the other spellings and the second name of scope are refused with the call to use', () => {
   const root = fieldedLoop();
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'ok');
   assert.equal(refuses(root, 'evidence', '1', '--retract', '1', '--by', 'jarl', 'wrong row').trim(), "evidence takes nothing back with --retract: a row or a note is taken back with retract\njarl.mjs retract \"<id>\" \"<n-or-note-n>\" \"<why>\" --by \"<who>\"");
   assert.equal(refuses(root, 'review', '1', 'retract', '--by', 'jarl', 'wrong verdict').trim(), "a verdict is taken back with retract, not with review retract\njarl.mjs retract \"<id>\" review \"<why>\" --by \"<who>\"");
   assert.equal(refuses(root, 'check', '1', '--branch', 'jarl/1-a').trim(), "check is not a command; a branch is measured by scope\njarl.mjs scope \"<id>\" --branch \"<worker-branch>\"");
@@ -286,7 +286,7 @@ test('a tool call writes its free text through the field text', () => {
 
 test('every write that records a judgement names its author: review, answer, decide, retract and tick refuse a call without --by, ending with the form of the call that names one', () => {
   const root = fieldedLoop();
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'ok');
   jarl(root, 'ask', 'which way?');
   const before = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   assert.match(refuses(root, 'review', '1', 'approve', 'read the diff, nothing found'), /a verdict needs --by <reviewer>/);
@@ -326,7 +326,7 @@ test('the tips and the merge queue are sections of resume: --repo narrows both, 
   const { dir } = gitRepo({ prefix: 'jarl-surface-fold-' });
   const other = gitRepo({ prefix: 'jarl-surface-fold-other-' });
   jarl(dir, 'init', 'goal');
-  jarl(dir, 'new', 'elsewhere', '--tier', 'light', '--repo', other.dir);
+  jarl(dir, 'new', 'elsewhere', '--acceptance', '[read] it works', '--tier', 'light', '--repo', other.dir);
   const all = JSON.parse(jarl(dir, 'resume', '--json'));
   assert.equal(all.tips.repos.length, 2, 'the tips of the loop\'s repository and of the one an issue names');
   assert.equal(all.queue.repos.length, 2);
@@ -395,7 +395,7 @@ test('the form a removed command ends with, filled with values the one quoting f
 
 test('a removed form ends with the form of the command that replaces it: --by kept as its placeholder, the filters of status, Files emptied as --clear, and no value of the call', () => {
   const root = fieldedLoop();
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'ok');
   const retract = refuses(root, 'evidence', '1', '--retract', '1', '--by', 'rev', 'ran on the wrong tree').trim();
   assert.equal(retract, "evidence takes nothing back with --retract: a row or a note is taken back with retract\njarl.mjs retract \"<id>\" \"<n-or-note-n>\" \"<why>\" --by \"<who>\"");
   assert.equal(refuses(root, 'status', '--by', 'tag', '--tag', 'docs').trim(), "status groups its counts with --group, and --by names the author of a write\njarl.mjs status --group \"<group>\" --tag \"<tag>\"");
@@ -404,7 +404,7 @@ test('a removed form ends with the form of the command that replaces it: --by ke
   assert.equal(refuses(root, 'set', '1', 'Area', 'cli', '--by', 'w2').trim(), "Area is a field, not a status: field writes it\njarl.mjs field \"<ids>\" Area \"<value>\" --by \"<who>\"");
   assert.equal(refuses(root, 'body', '1', '--title', 'new title', '--by', 'w2').trim(), "body is not a command; every part of the description is written by field, one call per part (--title is Title)\njarl.mjs field \"<ids>\" Title \"<title>\" --by \"<who>\"");
   runFilled(root, formOf(retract), { '<id>': '1', '<n-or-note-n>': '1', '<why>': 'ran on the wrong tree', '<who>': 'rev' });
-  assert.match(R.findIssue(root, '1').sections.evidence, /~~\*\*ran:\*\* npm test/);
+  assert.match(R.findIssue(root, '1').sections.evidence, /~~\*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* npm test/);
 });
 
 // A command the surface does not have, written as a command: in code quotes with an argument after it, as a call of the

@@ -28,13 +28,13 @@ function plainLoop() {
   const root = mkdtempSync(join(tmpdir(), 'jarl-refusals-'));
   mkdirSync(join(root, '.git'));
   jarl(root, 'init', 'goal');
-  for (const t of ['one', 'two', 'three']) jarl(root, 'new', t, '--tier', 'light', '--acceptance', 'it works');
+  for (const t of ['one', 'two', 'three']) jarl(root, 'new', t, '--tier', 'light', '--acceptance', '[read] it works');
   jarl(root, 'set', '2', 'in-progress', 'start', '--worker', 'w2', '--branch', 'jarl/2-two');
   jarl(root, 'ask', 'which way?');
   jarl(root, 'ask', 'pick one', '--issue', '3', '--option', 'A: does a', '--option', 'B: does b');
   jarl(root, 'ask', 'ratify this', '--kind', 'ratify');
   jarl(root, 'decide', 'taken', 'a ruling', '--by', 'jarl');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'ok');
   // An owner line on 3, for tick, and a findings file, for import.
   jarl(root, 'field', '3', 'Acceptance', '[owner] the page reads well · material: docs/x.md · check: it reads well', '--add');
   mkdirSync(join(root, 'research'));
@@ -42,8 +42,8 @@ function plainLoop() {
   const other = mkdtempSync(join(tmpdir(), 'jarl-refusals-branch-'));
   cpSync(root, other, { recursive: true });
   const base = logOf(root);
-  jarl(root, 'new', 'four', '--tier', 'light', '--acceptance', 'it works');
-  jarl(other, 'new', 'four elsewhere', '--tier', 'light', '--acceptance', 'it works');
+  jarl(root, 'new', 'four', '--tier', 'light', '--acceptance', '[read] it works');
+  jarl(other, 'new', 'four elsewhere', '--tier', 'light', '--acceptance', '[read] it works');
   const file = readdirSync(join(other, '.jarl', 'issues')).find((f) => f.startsWith('4-'));
   cpSync(join(other, '.jarl', 'issues', file), join(root, '.jarl', 'issues', file));
   appendFileSync(join(root, '.jarl', 'log.md'), logOf(other).slice(base.length));
@@ -64,12 +64,12 @@ function siblingLoop() {
   }
   const root = join(top, 'main');
   jarl(root, 'init', 'a scratch goal');
-  jarl(root, 'new', 'alpha', '--tier', 'light', '--acceptance', 'alpha works', '--tags', 'core', '--files', 'a.mjs', '--why', 'because');
-  jarl(root, 'new', 'beta', '--tier', 'standard', '--acceptance', 'beta works', '--repo', 'tool');
-  jarl(root, 'new', 'gamma', '--tier', 'strong', '--acceptance', 'gamma works', '--after', '1');
-  jarl(root, 'new', 'delta', '--tier', 'light', '--acceptance', 'delta works', '--acceptance', 'and still works');
+  jarl(root, 'new', 'alpha', '--tier', 'light', '--acceptance', '[read] alpha works', '--tags', 'core', '--files', 'a.mjs', '--why', 'because');
+  jarl(root, 'new', 'beta', '--tier', 'standard', '--acceptance', '[read] beta works', '--repo', 'tool');
+  jarl(root, 'new', 'gamma', '--tier', 'strong', '--acceptance', '[read] gamma works', '--after', '1');
+  jarl(root, 'new', 'delta', '--tier', 'light', '--acceptance', '[read] delta works', '--acceptance', '[read] and still works');
   jarl(root, 'set', '2', 'in-progress', 'start beta', '--worker', 'w-beta', '--branch', 'jarl/2-beta');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 3');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'pass 3');
   jarl(root, 'evidence', '1', 'a free note on alpha');
   jarl(root, 'review', '1', 'approve', '--by', 'rev-a', 'read it all, alpha is fine');
   jarl(root, 'ask', 'plain question?', '--issue', '4');
@@ -87,7 +87,7 @@ function rootedLoop() {
   const top = mkdtempSync(join(tmpdir(), 'jarl-refusals-rooted-'));
   mkdirSync(join(top, '.git'));
   jarl(top, 'init', 'the loop at the root');
-  jarl(top, 'new', 'root one', '--tier', 'light', '--acceptance', 'it works');
+  jarl(top, 'new', 'root one', '--tier', 'light', '--acceptance', '[read] it works');
   cpSync(PLAIN.dir, join(top, 'releases', 'r1'), { recursive: true, filter: (s) => basename(s) !== '.git' });
   cpSync(join(PLAIN.dir, 'research'), join(top, 'research'), { recursive: true });
   mkdirSync(join(top, 'releases', 'r2'));
@@ -532,7 +532,7 @@ export function generateWrongCalls() {
     [['new', 't', '--tier', 'light', '--tags', 'ui,-x'], '-x'], [['new', 't', '--tier', 'light', '--files', 'src/a.mjs,--b'], '--b'], [['field', '1', 'Files', 'a.mjs,-b.mjs', '--add'], '-b.mjs'],
     [['field', '1', 'Tags', 'core,-x', '--remove'], '-x'], [['set', '3-12', 'deferred', 'later'], '3-12'], [['round', '3-9', 'it failed'], '3-9'], [['field', '6-9', 'Priority', '1'], '6-9'],
     [['set', '3-2', 'dropped', 'duplicate of 1'], '3-2'], [['field', '3-1', 'Priority', '3'], '3-1'], [['set', '2', 'in-progress', 'start', '--worker', 'w-other', '--branch', 'jarl/2-other'], '2'],
-    [['evidence', '1', '--ran', 'npm', 'test', '--saw', 'ok'], 'test'], [['evidence', '1', '--ran', 'npm test', '--saw', 'pass', '3'], '3'], [['set', '1', 'deferred', 'not', 'now'], 'now'],
+    [['evidence', '1', '--line', '1', '--ran', 'npm', 'test', '--saw', 'ok'], 'test'], [['evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'pass', '3'], '3'], [['set', '1', 'deferred', 'not', 'now'], 'now'],
     [['review', '1', 'approve', '--by', 'rev', 'read', 'it', 'all'], 'all'],
   ]) add(args, wrong);
   // Odd words: each given as the text of a call refused for its status, as a title refused for its tier, as the part field

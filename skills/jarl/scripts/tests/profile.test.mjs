@@ -169,7 +169,7 @@ function houseLoop() {
 
 test('a new issue starts in the initial status, and next offers only a dispatchable one', () => {
   const root = houseLoop();
-  jarl(root, 'new', 'a', '--files', 'src/a.mjs');
+  jarl(root, 'new', 'a', '--acceptance', '[read] it works', '--files', 'src/a.mjs');
   assert.match(jarl(root, 'show', '1'), /\*\*Status:\*\* proposed/);
   assert.equal(jarl(root, 'next'), '(nothing open)', 'a proposal is not offered');
   assert.match(refuses(root, 'set', '1', 'open', 'x'), /status must be one of: proposed, queued, running, landed, merged, blocked, dropped/);
@@ -179,8 +179,8 @@ test('a new issue starts in the initial status, and next offers only a dispatcha
 
 test('both holds-claim statuses carry the lease and hold their files; leaving them removes the lease', () => {
   const root = houseLoop();
-  jarl(root, 'new', 'a', '--files', 'src/a.mjs');
-  jarl(root, 'new', 'b', '--files', 'src/a.mjs');
+  jarl(root, 'new', 'a', '--acceptance', '[read] it works', '--files', 'src/a.mjs');
+  jarl(root, 'new', 'b', '--acceptance', '[read] it works', '--files', 'src/a.mjs');
   jarl(root, 'set', '1,2', 'queued', 'accepted');
   assert.match(refuses(root, 'set', '1', 'queued', 'x', '--worker', 'w'), /--worker goes with running or landed only/);
   jarl(root, 'set', '1', 'running', 'go', '--branch', 'b/1', '--worker', 'w1');
@@ -198,8 +198,8 @@ test('both holds-claim statuses carry the lease and hold their files; leaving th
 
 test('only a settles-dependents status releases a dependent; a drop here does not', () => {
   const root = houseLoop();
-  jarl(root, 'new', 'first');
-  jarl(root, 'new', 'second', '--after', '1');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works');
+  jarl(root, 'new', 'second', '--acceptance', '[read] it works', '--after', '1');
   jarl(root, 'set', '1,2', 'queued', 'accepted');
   assert.match(jarl(root, 'next', '--all'), /2 .*\(after 1\)/);
   assert.match(refuses(root, 'set', '1', 'dropped'), /dropped needs a reason/);
@@ -210,13 +210,13 @@ test('only a settles-dependents status releases a dependent; a drop here does no
 
 test('a closes-record status passes the done gate: evidence since the claim, and a live approve', () => {
   const root = houseLoop();
-  jarl(root, 'new', 'first');
-  jarl(root, 'new', 'second', '--after', '1');
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works');
+  jarl(root, 'new', 'second', '--acceptance', '[read] it works', '--after', '1');
   jarl(root, 'set', '1,2', 'queued', 'accepted');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'old');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'old');
   jarl(root, 'set', '1', 'running', 'go', '--worker', 'w1');
   assert.match(refuses(root, 'set', '1', 'merged'), /no --ran\/--saw evidence row recorded since it was moved → running/);
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '12 pass');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', '12 pass');
   assert.match(refuses(root, 'set', '1', 'merged'), /no approving review/);
   assert.match(refuses(root, 'review', '1', 'approve', FINDINGS, '--by', 'w1'), /self-approve/);
   jarl(root, 'review', '1', 'approve', FINDINGS, '--by', 'reviewer');
@@ -227,16 +227,16 @@ test('a closes-record status passes the done gate: evidence since the claim, and
   assert.equal(st.statuses.merged, 1);
   // A reopen out of the closing status spends the approve, as a reopen out of done does.
   jarl(root, 'set', '1', 'queued', 'reopened');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'again');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'again');
   assert.match(refuses(root, 'set', '1', 'merged'), /no approving review newer than its last round or reopen/);
 });
 
 test('status, list, report and close read the statuses by their flags', () => {
   const root = houseLoop();
   jarl(root, 'new', 'waits for acceptance');
-  jarl(root, 'new', 'queued one');
-  jarl(root, 'new', 'blocked one');
-  jarl(root, 'new', 'dropped one');
+  jarl(root, 'new', 'queued one', '--acceptance', '[read] it works');
+  jarl(root, 'new', 'blocked one', '--acceptance', '[read] it works');
+  jarl(root, 'new', 'dropped one', '--acceptance', '[read] it works');
   jarl(root, 'set', '2,3,4', 'queued', 'accepted');
   jarl(root, 'set', '3', 'blocked', 'owner');
   jarl(root, 'set', '4', 'dropped', 'no longer wanted');
@@ -260,7 +260,7 @@ test('no profile: no profile file, the same issue file byte for byte, the same l
   assert.equal(jarl(root, 'init', 'g'), `opened ${join(root, '.jarl')} · kept out of git`);
   assert.ok(!existsSync(join(root, '.jarl', 'profile.json')));
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· opened · g\n$/);
-  jarl(root, 'new', 'plain issue', '--files', 'a.mjs', '--acceptance', 'it works');
+  jarl(root, 'new', 'plain issue', '--files', 'a.mjs', '--acceptance', '[read] it works');
   const file = readFileSync(join(root, '.jarl', 'issues', '1-plain-issue.md'), 'utf8').replace(/^\*\*Key:\*\* \d{8}T\d{4}-[a-z]{4}$/m, '**Key:** <key>');
   assert.equal(file, '# 1 · plain issue\n\n**Status:** open\n**Kind:** bug\n**Priority:** 2\n**Tier:** standard\n**Key:** <key>\n**Tags:** \n**Files:** a.mjs\n**Found by:** jarl\n**Where:**\n\n## What\n\n\n## Why\n\n\n## Acceptance\nit works\n\n## Evidence\n\n');
   const st = JSON.parse(jarl(root, 'status', '--json'));
@@ -280,19 +280,19 @@ test('no profile: no profile file, the same issue file byte for byte, the same l
 // The same work, run on a loop with no profile and on one whose profile spells out the built-in statuses: every view
 // must print the same, which is what shows the generic code reads the flags the way the constants were read.
 function sameWork(root) {
-  jarl(root, 'new', 'one', '--files', 'a.mjs', '--acceptance', 'x');
-  jarl(root, 'new', 'two', '--files', 'a.mjs', '--after', '1');
-  jarl(root, 'new', 'three', '--files', 'b.mjs');
-  jarl(root, 'new', 'four');
-  jarl(root, 'new', 'five');
+  jarl(root, 'new', 'one', '--files', 'a.mjs', '--acceptance', '[read] x');
+  jarl(root, 'new', 'two', '--acceptance', '[read] it works', '--files', 'a.mjs', '--after', '1');
+  jarl(root, 'new', 'three', '--acceptance', '[read] it works', '--files', 'b.mjs');
+  jarl(root, 'new', 'four', '--acceptance', '[read] it works');
+  jarl(root, 'new', 'five', '--acceptance', '[read] it works');
   jarl(root, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-one', '--worker', 'w1');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'ok');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'ok');
   jarl(root, 'review', '1', 'approve', FINDINGS, '--by', 'r1');
   jarl(root, 'set', '4', 'dropped', 'gone');
   jarl(root, 'set', '5', 'deferred', 'later');
   jarl(root, 'set', '3', 'in-progress', 'go');
   jarl(root, 'round', '3', 'red');
-  jarl(root, 'evidence', '3', '--ran', 'npm test', '--saw', 'ok');
+  jarl(root, 'evidence', '3', '--line', '1', '--ran', 'npm test', '--saw', 'ok');
   jarl(root, 'review', '3', 'approve', FINDINGS, '--by', 'jarl');
   jarl(root, 'set', '3', 'done', 'done');
   const views = {};
@@ -340,7 +340,7 @@ test('new writes the declared fields after Where, the extra sections after Accep
   assert.match(refuses(root, 'new', 't', '--field', 'Bogus=1'), /Bogus is not a field this loop's profile declares — it declares Area-2, Class, Note/);
   assert.match(refuses(root, 'new', 't', '--field', 'Area-2'), /--field takes <name>=<value>/);
   assert.match(refuses(root, 'new', 't', '--kind', 'bug', '--field', 'area-2=core'), /--kind must be one of: feature, fix, chore/);
-  jarl(root, 'new', 'a thing', '--field', 'area-2=core', '--section', 'Plan=first this\nthen that', '--acceptance', 'it runs', '--tier', 'max');
+  jarl(root, 'new', 'a thing', '--field', 'area-2=core', '--section', 'Plan=first this\nthen that', '--acceptance', '[read] it runs', '--tier', 'max');
   const file = readFileSync(join(root, '.jarl', 'issues', '1-a-thing.md'), 'utf8').replace(/^\*\*Key:\*\* \d{8}T\d{4}-[a-z]{4}$/m, '**Key:** <key>');
   assert.equal(file, '# 1 · a thing\n\n**Status:** proposed\n**Kind:** feature\n**Priority:** 2\n**Tier:** max\n**Key:** <key>\n**Tags:** \n**Files:** \n**Found by:** jarl\n**Where:**\n**Area-2:** core\n**Class:** b\n**Note:**\n\n## What\n\n\n## Why\n\n\n## Acceptance — evidence\nit runs\n\n## Plan\nfirst this\nthen that\n\n## Ports\n\n\n## Evidence\n\n');
   const shown = JSON.parse(jarl(root, 'show', '1', '--json'));
@@ -351,13 +351,13 @@ test('new writes the declared fields after Where, the extra sections after Accep
 
 test('an issue written with the aliased heading by another tool counts its acceptance lines', () => {
   const root = fieldedLoop();
-  jarl(root, 'new', 'x', '--field', 'Area-2=cli');
+  jarl(root, 'new', 'x', '--acceptance', '[read] it works', '--field', 'Area-2=cli');
   jarl(root, 'set', '1', 'queued', 'ok');
   const path = join(root, '.jarl', 'issues', '1-x.md');
   writeFileSync(path, readFileSync(path, 'utf8').replace('## Acceptance — evidence\n\n', '## Acceptance — evidence\n- one\n- two\n'));
   jarl(root, 'set', '1', 'running', 'go');
   assert.deepEqual(JSON.parse(jarl(root, 'status', '--json')).noAcceptance, []);
-  jarl(root, 'field', '1', 'Acceptance', 'three');
+  jarl(root, 'field', '1', 'Acceptance', '[read] three');
   jarl(root, 'field', '1', 'Ports', 'in: a; out: b');
   const text = readFileSync(path, 'utf8');
   assert.match(text, /## Acceptance — evidence\nthree\n\n## Plan/, 'field writes under the heading the file has');
@@ -368,8 +368,8 @@ test('an issue written with the aliased heading by another tool counts its accep
 
 test('field <ids> <field> <value> writes a declared field, checked against its values, one log line per issue', () => {
   const root = fieldedLoop();
-  jarl(root, 'new', 'a', '--field', 'Area-2=core');
-  jarl(root, 'new', 'b', '--field', 'Area-2=core');
+  jarl(root, 'new', 'a', '--acceptance', '[read] it works', '--field', 'Area-2=core');
+  jarl(root, 'new', 'b', '--acceptance', '[read] it works', '--field', 'Area-2=core');
   assert.equal(jarl(root, 'field', '1,2', 'area-2', 'cli'), '1 Area-2: cli\n2 Area-2: cli');
   assert.match(refuses(root, 'field', '1', 'Area-2', 'web'), /Area-2 must be one of: core, cli/);
   assert.match(refuses(root, 'field', '1', 'Area-2', '--clear'), /Area-2 cannot be emptied with --clear/);
@@ -390,9 +390,9 @@ test('field <ids> <field> <value> writes a declared field, checked against its v
 
 test('list --match filters on any header field; list and resume show the declared fields; status --group takes one', () => {
   const root = fieldedLoop();
-  jarl(root, 'new', 'a', '--field', 'Area-2=core');
-  jarl(root, 'new', 'b', '--field', 'Area-2=cli', '--kind', 'fix');
-  jarl(root, 'new', 'c', '--field', 'Area-2=cli');
+  jarl(root, 'new', 'a', '--acceptance', '[read] it works', '--field', 'Area-2=core');
+  jarl(root, 'new', 'b', '--acceptance', '[read] it works', '--field', 'Area-2=cli', '--kind', 'fix');
+  jarl(root, 'new', 'c', '--acceptance', '[read] it works', '--field', 'Area-2=cli');
   jarl(root, 'set', '1,2,3', 'queued', 'ok');
   const ids = (...w) => JSON.parse(jarl(root, 'list', ...w.flatMap((x) => ['--match', x]), '--json')).map((i) => i.id);
   assert.deepEqual(ids('area-2=cli'), ['2', '3']);
@@ -434,8 +434,8 @@ test('no profile: --field, --section and a field in place of a status are refuse
   jarl(root, 'init', 'g');
   assert.match(refuses(root, 'new', 't', '--field', 'A=1'), /this loop's profile declares no fields — --field names one/);
   assert.match(refuses(root, 'new', 't', '--section', 'Plan=x'), /declares no sections/);
-  jarl(root, 'new', 'a', '--kind', 'gap');
-  jarl(root, 'new', 'b');
+  jarl(root, 'new', 'a', '--acceptance', '[read] it works', '--kind', 'gap');
+  jarl(root, 'new', 'b', '--acceptance', '[read] it works');
   assert.equal(refuses(root, 'set', '1', 'kind', 'gap').trim(), 'kind is a field, not a status: field writes it\njarl.mjs field "<ids>" kind "<kind>"');
   assert.deepEqual(JSON.parse(jarl(root, 'list', '--match', 'kind=gap', '--json')).map((i) => i.id), ['1']);
   assert.equal(jarl(root, 'list'), '1  P2  open        gap      a\n2  P2  open        bug      b');
@@ -445,8 +445,8 @@ test('no profile: --field, --section and a field in place of a status are refuse
 
 test('under a profile the status counts live under statuses, so no status name can overwrite a key of the view', () => {
   const root = houseLoop();
-  jarl(root, 'new', 'a');
-  jarl(root, 'new', 'b', '--after', '1');
+  jarl(root, 'new', 'a', '--acceptance', '[read] it works');
+  jarl(root, 'new', 'b', '--acceptance', '[read] it works', '--after', '1');
   jarl(root, 'set', '1,2', 'queued', 'ok');
   const st = JSON.parse(jarl(root, 'status', '--json'));
   assert.deepEqual(st.statuses, { proposed: 0, queued: 2, running: 0, landed: 0, merged: 0, blocked: 0, dropped: 0 });
@@ -471,7 +471,7 @@ test('a profile must have a status that settles dependents, or every After would
 test('no profile: status --json keeps the five counts at the top level and has no statuses key', () => {
   const root = repo();
   jarl(root, 'init', 'g');
-  jarl(root, 'new', 'a');
+  jarl(root, 'new', 'a', '--acceptance', '[read] it works');
   const st = JSON.parse(jarl(root, 'status', '--json'));
   assert.equal(st.open, 1);
   assert.ok(!('statuses' in st));
@@ -484,17 +484,17 @@ test('branches: a branch is DONE → delete by flags — closed or given up (ter
   const PROF = { ...HOUSE, statuses: { ...HOUSE.statuses, abandoned: ['terminal', 'settles-dependents', 'needs-reason'], parked: ['terminal', 'needs-reason'] } };
   const { dir, g } = gitRepo();
   jarl(dir, 'init', 'g', '--profile', profileFile(PROF));
-  for (const t of ['a', 'b', 'c']) jarl(dir, 'new', t);
+  for (const t of ['a', 'b', 'c']) jarl(dir, 'new', t, '--acceptance', '[read] it works');
   jarl(dir, 'set', '1,2,3', 'queued', 'ok');
   jarl(dir, 'set', '1,2', 'running', 'go', '--branch', 'feat/x', '--worker', 'w');
   jarl(dir, 'set', '3', 'running', 'go', '--branch', 'feat/y', '--worker', 'w');
   g('branch', 'feat/x'); g('branch', 'feat/y');
-  jarl(dir, 'evidence', '1,3', '--ran', 't', '--saw', 'ok');
+  jarl(dir, 'evidence', '1,3', '--line', '1', '--ran', 't', '--saw', 'ok');
   jarl(dir, 'review', '1,3', 'approve', FINDINGS, '--by', 'r');
   jarl(dir, 'merged', '1,3', '--sha', g('rev-parse', 'HEAD').trim(), '--keep');
   jarl(dir, 'set', '1', 'merged', 'in');
   jarl(dir, 'set', '2', 'abandoned', 'gone');
-  jarl(dir, 'new', 'd'); jarl(dir, 'set', '4', 'queued', 'ok');
+  jarl(dir, 'new', 'd', '--acceptance', '[read] it works'); jarl(dir, 'set', '4', 'queued', 'ok');
   jarl(dir, 'set', '3', 'merged', 'in');
   jarl(dir, 'set', '4', 'running', 'go', '--branch', 'feat/y', '--worker', 'w');
   jarl(dir, 'set', '4', 'parked', 'later');
@@ -506,7 +506,7 @@ test('branches: a branch is DONE → delete by flags — closed or given up (ter
 test('the merge queue of resume takes only work in play: a proposed or blocked issue with a fresh approve on a branch is never queued', () => {
   const { dir, g } = gitRepo();
   jarl(dir, 'init', 'g', '--profile', profileFile(HOUSE));
-  jarl(dir, 'new', 'a'); jarl(dir, 'new', 'b');
+  jarl(dir, 'new', 'a', '--acceptance', '[read] it works'); jarl(dir, 'new', 'b');
   jarl(dir, 'set', '1,2', 'queued', 'ok');
   jarl(dir, 'set', '1', 'running', 'go', '--branch', 'feat/a', '--worker', 'w');
   jarl(dir, 'set', '2', 'running', 'go', '--branch', 'feat/b', '--worker', 'w');
@@ -521,7 +521,7 @@ test('the merge queue of resume takes only work in play: a proposed or blocked i
 test('setField matches a field name without case: a hand-written **status:** is replaced, not doubled', () => {
   const root = repo();
   jarl(root, 'init', 'g');
-  jarl(root, 'new', 'a');
+  jarl(root, 'new', 'a', '--acceptance', '[read] it works');
   const path = join(root, '.jarl', 'issues', '1-a.md');
   writeFileSync(path, readFileSync(path, 'utf8').replace('**Status:** open', '**status:** open').replace('**Tags:** ', '**tags:** x'));
   jarl(root, 'set', '1', 'deferred', 'later');

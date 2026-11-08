@@ -67,7 +67,7 @@ test('the refusal of a finding ends with a form of the import, and a dry run ref
 
 test('a flag the filing refuses is refused before the first write, with the form that fixes it', () => {
   const root = loop();
-  jarl(root, 'new', 'an issue that names finding-1', '--what', 'it covers finding-1 of the report');
+  jarl(root, 'new', 'an issue that names finding-1', '--acceptance', '[read] it works', '--what', 'it covers finding-1 of the report');
   const file = findingsFile([good(1), good(2)]);
   const said = refusedImport(root, file, '--adopt', '--tier', 'huge');
   assert.match(said, /--tier must be one of: light, standard, strong \(got "huge"\)/);

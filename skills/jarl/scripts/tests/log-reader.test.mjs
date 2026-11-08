@@ -95,7 +95,7 @@ test('a directory without a log has no events', () => {
 
 const loop = () => makeLoop({ prefix: 'jarl-loaded-loop-', goal: 'a goal for the loaded loop' });
 function worked(root, title, { worker, branch }) {
-  const { id } = R.newIssue(root, title, { tier: 'light', acceptance: 'it works' });
+  const { id } = R.newIssue(root, title, { tier: 'light', acceptance: '[read] it works' });
   R.setStatus(root, id, 'in-progress', '', { branch, worker });
   return id;
 }
@@ -164,7 +164,7 @@ test('a mention of another issue inside a note is not a round of that issue', ()
 test('a hand-written line that is no verdict is not a changes verdict in the metrics', () => {
   const root = loop();
   const id = worked(root, 'closed work', { worker: 'w-one', branch: 'jarl/c' });
-  R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
+  R.addEvidence(root, id, undefined, { line: 1, ran: 'npm test', saw: 'pass' });
   R.review(root, id, 'approve', 'read the diff, nothing found', { by: 'rev-a' });
   R.recordMerged(root, id, { sha: 'abc1234' }); R.setStatus(root, id, 'done', 'merged', {});
   appendToLog(root, `- 2030-01-01 00:00 · ${id} review changes needed more tests`);
@@ -174,7 +174,7 @@ test('a hand-written line that is no verdict is not a changes verdict in the met
 test('an archived loop is read by its directory', () => {
   const root = loop();
   const id = worked(root, 'archived work', { worker: 'w-one', branch: 'jarl/y' });
-  R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
+  R.addEvidence(root, id, undefined, { line: 1, ran: 'npm test', saw: 'pass' });
   R.review(root, id, 'approve', 'read the diff, nothing found', { by: 'rev-a' });
   R.recordMerged(root, id, { sha: 'abc1234' }); R.setStatus(root, id, 'done', 'merged', {});
   L.cmdArchive(root, 'done-loop');

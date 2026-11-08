@@ -115,14 +115,14 @@ const head = (root) => execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, e
 // The state every case starts from: a loop with two issues, the second after the first, built by the library.
 function base(root) {
   R.initLoop(root, 'goal');
-  R.newIssue(root, 'first', { acceptance: 'it works' });
-  R.newIssue(root, 'second', { after: '1' });
+  R.newIssue(root, 'first', { acceptance: '[read] it works' });
+  R.newIssue(root, 'second', { acceptance: '[read] it works', after: '1' });
 }
 // The first issue taken through a worker's proof and a fresh approve, so that done and merged have something to stand on.
 function proven(root) {
   base(root);
   R.setStatus(root, '1', 'in-progress', undefined, { branch: 'work/first', worker: 'w1' });
-  R.addEvidence(root, '1', undefined, { ran: 'npm test', saw: 'ok' });
+  R.addEvidence(root, '1', undefined, { line: 1, ran: 'npm test', saw: 'ok' });
   R.review(root, '1', 'approve', FINDINGS, { by: 'reviewer' });
 }
 // A loop whose profile gives a status to the record's own tool: the library moves it, the command line refuses.
@@ -130,14 +130,14 @@ function recordOwned(root) {
   const file = join(root, 'profile.json');
   writeFileSync(file, JSON.stringify({ 'jarl-profile': R.PROFILE_VERSION, name: 'p', statuses: { open: ['dispatchable'], doing: { flags: ['holds-claim'], 'set-by': 'record' }, done: ['settles-dependents', 'terminal', 'closes-record'] } }));
   R.initLoop(root, 'g', { profile: file });
-  R.newIssue(root, 't');
+  R.newIssue(root, 't', { acceptance: '[read] it works' });
 }
 // A loop whose profile declares a field of its own, Area, on its one issue.
 function fielded(root) {
   const file = join(root, 'profile.json');
   writeFileSync(file, JSON.stringify({ 'jarl-profile': R.PROFILE_VERSION, name: 'p', statuses: { open: ['dispatchable'], 'in-progress': ['holds-claim'], done: ['settles-dependents', 'terminal', 'closes-record'] }, fields: { Area: {} } }));
   R.initLoop(root, 'g', { profile: file });
-  R.newIssue(root, 't');
+  R.newIssue(root, 't', { acceptance: '[read] it works' });
 }
 // A proven issue on a branch that is merged into the base, with a worktree of that branch beside the loop.
 function merged(root) {
@@ -149,7 +149,7 @@ function merged(root) {
 // Three issues that wait on nothing, for the cases of the offer of the Model lines; and the lease the library gives one.
 function ready(root) {
   R.initLoop(root, 'goal');
-  for (const t of ['first', 'second', 'third']) R.newIssue(root, t, { acceptance: 'it works' });
+  for (const t of ['first', 'second', 'third']) R.newIssue(root, t, { acceptance: '[read] it works' });
 }
 const raise = (root, id) => R.setStatus(root, id, 'in-progress', undefined, { branch: `work/${id}`, worker: `w${id}`, model: 'some-model' });
 const raiseArgs = (id) => ['set', id, 'in-progress', '--branch', `work/${id}`, '--worker', `w${id}`, '--model', 'some-model'];
@@ -160,7 +160,7 @@ function scheduled(root) {
   const file = join(root, 'profile.json');
   writeFileSync(file, JSON.stringify({ 'jarl-profile': R.PROFILE_VERSION, name: 'p', statuses: { queued: ['dispatchable'], running: ['lease'], done: ['settles-dependents', 'terminal', 'closes-record'] }, initial: 'queued', 'external-scheduler': 'composer tick' }));
   R.initLoop(root, 'g', { profile: file });
-  R.newIssue(root, 't');
+  R.newIssue(root, 't', { acceptance: '[read] it works' });
 }
 
 // Each case: `pre` builds the state on both loops with the library; `lib` runs on one loop as the library calls it;
@@ -169,7 +169,7 @@ function scheduled(root) {
 // `op` names the record operation the case shows.
 const CASES = [
   { op: 'initLoop', name: 'init', git: false, pre: () => {}, lib: (root) => R.initLoop(root, 'goal'), cli: ['init', 'goal'] },
-  { op: 'newIssue', name: 'new', pre: base, spell: true, lib: (root) => R.newIssue(root, 'third', { kind: 'gap', prio: '2', acceptance: 'it works' }), cli: ['new', 'third', '--kind', 'gap', '--prio', '2', '--acceptance', 'it works'] },
+  { op: 'newIssue', name: 'new', pre: base, spell: true, lib: (root) => R.newIssue(root, 'third', { kind: 'gap', prio: '2', acceptance: '[read] it works' }), cli: ['new', 'third', '--kind', 'gap', '--prio', '2', '--acceptance', '[read] it works'] },
   { op: 'setStatus', name: 'set in-progress', pre: base, lib: (root) => R.setStatus(root, '1', 'in-progress', undefined, { branch: 'work/first', worker: 'w1' }), cli: ['set', '1', 'in-progress', '--branch', 'work/first', '--worker', 'w1'] },
   // The offer of the Model lines: the lines that remember it are written by both, the offer text is the command line's.
   { op: 'setStatus', name: 'lease with a model, offered', pre: ready, lib: (root) => raise(root, '1'), cli: raiseArgs('1') },
@@ -189,7 +189,7 @@ const CASES = [
   { op: 'setAfter', name: 'field After', pre: base, lib: (root) => R.setAfter(root, '1', '2'), cli: ['field', '1', 'After', '2'] },
   { op: 'setSource', name: 'field Source', pre: base, lib: (root) => R.setSource(root, '1', 'https://example.test/a'), cli: ['field', '1', 'Source', 'https://example.test/a'] },
   { op: 'addEvidence', name: 'evidence text', pre: base, lib: (root) => R.addEvidence(root, '1', 'a note'), cli: ['evidence', '1', 'a note'] },
-  { op: 'addEvidence', name: 'evidence rows', pre: base, lib: (root) => R.addEvidence(root, '1', undefined, { ran: 'npm test', saw: 'ok' }), cli: ['evidence', '1', '--ran', 'npm test', '--saw', 'ok'] },
+  { op: 'addEvidence', name: 'evidence rows', pre: base, lib: (root) => R.addEvidence(root, '1', undefined, { line: 1, ran: 'npm test', saw: 'ok' }), cli: ['evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'ok'] },
   { op: 'review', name: 'review', pre: base, lib: (root) => R.review(root, '1', 'approve', FINDINGS, { by: 'reviewer' }), cli: ['review', '1', 'approve', '--by', 'reviewer', FINDINGS] },
   { op: 'recordMerged', name: 'merged', pre: proven, lib: (root) => R.recordMerged(root, '1', { sha: 'abc1234' }), cli: ['merged', '1', '--sha', 'abc1234'] },
   { op: 'recordMerged', name: 'merged with CI', pre: proven, lib: (root) => R.recordMerged(root, '1', { sha: 'abc1234', ci: 'green' }), cli: ['merged', '1', '--sha', 'abc1234', '--ci', 'green'] },

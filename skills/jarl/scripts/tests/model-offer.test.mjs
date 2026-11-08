@@ -23,7 +23,7 @@ let seq = 0;
 // A lease through the command line; `model` is the model of the agent raised for it.
 const lease = (root, { model = 'some-model' } = {}) => {
   seq += 1;
-  const id = JSON.parse(jarl(root, 'new', `change ${seq}`, '--files', `f${seq}.mjs`, '--json')).id;
+  const id = JSON.parse(jarl(root, 'new', `change ${seq}`, '--acceptance', '[read] it works', '--files', `f${seq}.mjs`, '--json')).id;
   const args = ['set', id, 'in-progress', 'go', '--worker', `w${seq}`, '--branch', `jarl/${id}-x`, ...(model ? ['--model', model] : [])];
   return run(root, args);
 };
@@ -94,7 +94,7 @@ test('a loop run by an external scheduler is offered nothing and nothing is writ
   mkdirSync(root);
   mkdirSync(join(root, '.git'));
   jarl(root, 'init', 'a composed goal', '--profile', profile);
-  const id = JSON.parse(jarl(root, 'new', 'one', '--json')).id;
+  const id = JSON.parse(jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--json')).id;
   const r = run(root, ['set', id, 'running', 'go', '--worker', 'w1', '--branch', 'composer-x/1', '--model', 'some-model']);
   assert.equal(r.status, 0, r.stderr);
   assert.doesNotMatch(r.stderr, /Model \(strong\)/);

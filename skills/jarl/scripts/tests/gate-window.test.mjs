@@ -12,10 +12,10 @@ const R = await import('../record.mjs');
 
 const loop = (n) => {
   const root = makeLoop({ prefix: 'jarl-window-', via: 'cli' });
-  for (let k = 1; k <= n; k += 1) jarl(root, 'new', `issue ${k}`, '--acceptance', 'it works');
+  for (let k = 1; k <= n; k += 1) jarl(root, 'new', `issue ${k}`, '--acceptance', '[read] it works');
   return root;
 };
-const row = (root, id, saw = 'pass') => jarl(root, 'evidence', String(id), '--ran', 'npm test', '--saw', saw);
+const row = (root, id, saw = 'pass') => jarl(root, 'evidence', String(id), '--line', '1', '--ran', 'npm test', '--saw', saw);
 const approve = (root, id) => jarl(root, 'review', String(id), 'approve', '--by', 'jarl', 'read the diff, nothing found');
 const gate = (root, id) => L.gateState(root, String(id));
 
@@ -89,7 +89,7 @@ test('gateWindow gives the anchor and the cut for every event, from each closing
 function leased({ library = false } = {}) {
   const { dir: root, g } = gitRepo({ prefix: 'jarl-pause-', branch: 'main' });
   jarl(root, 'init', 'goal');
-  if (library) fileAsBefore(root, 'issue 1', { acceptance: 'it works' }); else jarl(root, 'new', 'issue 1', '--acceptance', 'it works');
+  if (library) fileAsBefore(root, 'issue 1', { acceptance: 'it works' }); else jarl(root, 'new', 'issue 1', '--acceptance', '[read] it works');
   g('branch', 'jarl/1-x');
   const commit = (name) => { g('checkout', '-q', 'jarl/1-x'); writeFileSync(join(root, `${name}.txt`), `${name}\n`); g('add', `${name}.txt`); g('commit', '-qm', name); g('checkout', '-q', 'main'); };
   commit('work');
@@ -272,11 +272,11 @@ test('a loop whose profile names an external scheduler records no tip below reco
   const file = join(root, 'composed-profile.json');
   writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: L.BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }));
   jarl(root, 'init', 'goal', '--profile', file);
-  R.newIssue(root, 'issue 1', { acceptance: 'it works' });
+  R.newIssue(root, 'issue 1', { acceptance: '[read] it works' });
   g('branch', 'jarl/1-x');
   R.setStatus(root, '1', 'in-progress', undefined, { branch: 'jarl/1-x', worker: 'w1' });
   const before = readFileSync(join(root, '.jarl', 'profile.json'), 'utf8');
-  R.addEvidence(root, '1', undefined, { ran: 'npm test', saw: 'pass' });
+  R.addEvidence(root, '1', undefined, { line: 1, ran: 'npm test', saw: 'pass' });
   R.review(root, '1', 'approve', 'read the diff, nothing found', { by: 'rev1' });
   assert.doesNotMatch(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), / · 001 tip /);
   assert.equal(readFileSync(join(root, '.jarl', 'profile.json'), 'utf8'), before, 'the format is the composer\'s: nothing is raised');
@@ -357,7 +357,7 @@ test('a close after a merge that deleted the branch records the tip the merge wa
 function closedAfterLanding({ clears, how, deleted }) {
   const { dir: root, g } = gitRepo({ prefix: 'jarl-close-tip-', branch: 'main' });
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'issue 1', '--acceptance', 'it works');
+  jarl(root, 'new', 'issue 1', '--acceptance', '[read] it works');
   const commit = (branch, name) => { g('checkout', '-q', branch); writeFileSync(join(root, `${name}.txt`), `${name}\n`); g('add', `${name}.txt`); g('commit', '-qm', name); g('checkout', '-q', 'main'); };
   g('branch', 'jarl/1-x');
   commit('jarl/1-x', 'work');

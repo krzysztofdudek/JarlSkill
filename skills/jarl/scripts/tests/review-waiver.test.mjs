@@ -27,12 +27,12 @@ function codeLoop({ reviewer, model } = {}) {
   }
   jarl(root, 'init', 'goal', ...flags);
   if (reviewer || model) for (const line of ['Model (light): m-light', 'Model (strong): m-strong']) jarl(root, 'goal', '--set', line);
-  jarl(root, 'new', 'move the helper', '--acceptance', 'the output is the same', '--files', 'a.txt');
+  jarl(root, 'new', 'move the helper', '--acceptance', '[read] the output is the same', '--files', 'a.txt');
   g('checkout', '-q', '-b', 'jarl/1-move');
   writeFileSync(join(root, 'a.txt'), 'moved\n'); g('add', 'a.txt'); g('commit', '-qm', 'move');
   g('checkout', '-q', 'main');
   jarl(root, 'set', '1', 'in-progress', '--worker', 'w1', '--branch', 'jarl/1-move', ...(model ? ['--model', model] : []), '--by', 'jarl');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 4, fail 0', '--by', 'w1');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'pass 4, fail 0', '--by', 'w1');
   const commit = () => { g('checkout', '-q', 'jarl/1-move'); appendFileSync(join(root, 'a.txt'), 'more\n'); g('commit', '-qam', 'more'); g('checkout', '-q', 'main'); };
   return { root, g, commit };
 }
@@ -70,7 +70,7 @@ test('a round, a reopen or a new commit after the waiver spends it, as it spends
   const round = codeLoop();
   waive(round.root);
   jarl(round.root, 'round', '1', 'red: a case was missed', '--by', 'jarl');
-  jarl(round.root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 5, fail 0', '--by', 'w1');
+  jarl(round.root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'pass 5, fail 0', '--by', 'w1');
   assert.match(refuses(round.root, 'set', '1', 'done', 'x', '--by', 'jarl'), /no approving review newer than its last round/);
   const reopened = codeLoop();
   waive(reopened.root);
@@ -78,7 +78,7 @@ test('a round, a reopen or a new commit after the waiver spends it, as it spends
   jarl(reopened.root, 'set', '1', 'done', 'waived and merged', '--by', 'jarl');
   jarl(reopened.root, 'set', '1', 'open', 'the owner wants one more case', '--by', 'jarl');
   jarl(reopened.root, 'set', '1', 'in-progress', '--worker', 'w2', '--branch', 'jarl/1-move', '--by', 'jarl');
-  jarl(reopened.root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 4, fail 0', '--by', 'w2');
+  jarl(reopened.root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'pass 4, fail 0', '--by', 'w2');
   assert.match(refuses(reopened.root, 'set', '1', 'done', 'x', '--by', 'jarl'), /no approving review/);
   const committed = codeLoop();
   waive(committed.root);

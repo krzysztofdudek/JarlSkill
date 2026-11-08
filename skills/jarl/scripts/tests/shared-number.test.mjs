@@ -337,7 +337,7 @@ function closedOnOneSide(aPullsB, renamed = '2-second-on-a.md') {
   const b = cloneOf(a.dir);
   fileAndCommit(a, 'second on A');
   jarl(a.dir, 'set', '2', 'in-progress', '--branch', 'jarl/2-a', '--worker', 'w-a');
-  jarl(a.dir, 'evidence', '2', '--ran', 'npm test', '--saw', 'all green');
+  jarl(a.dir, 'evidence', '2', '--line', '1', '--ran', 'npm test', '--saw', 'all green');
   jarl(a.dir, 'review', '2', 'approve', '--by', 'rev-a', 'read the diff and found nothing wrong');
   jarl(a.dir, 'merged', '2', '--sha', 'abc1234', '--keep');
   jarl(a.dir, 'set', '2', 'done');
@@ -363,7 +363,7 @@ for (const [order, aPullsB] of [['the first clone\'s lines after the second\'s',
     assert.equal(JSON.parse(jarl(at.dir, 'show', '2', '--json')).status, 'in-progress');
     const before = snapshot(at.dir);
     assert.match(refuses(at.dir, 'set', '2', 'done'), NEVER_CLOSED, 'the other issue\'s row and approve close nothing');
-    jarl(at.dir, 'evidence', '2', '--ran', 'npm test', '--saw', 'all green on B');
+    jarl(at.dir, 'evidence', '2', '--line', '1', '--ran', 'npm test', '--saw', 'all green on B');
     assert.match(refuses(at.dir, 'review', '2', 'approve', '--by', 'rev-b', 'read the diff and found nothing wrong'), NEVER_CLOSED);
     jarl(at.dir, 'round', '2', 'red');
     assert.match(refuses(at.dir, 'set', '2', 'done'), NEVER_CLOSED, 'after a round');
@@ -391,7 +391,7 @@ test('a closed issue whose number the log cannot attribute stays closed, and is 
 test('a plain issue in the same loop closes on the rows and the approve its log holds', () => {
   const at = closedOnOneSide(false);
   jarl(at.dir, 'set', '1', 'in-progress', '--branch', 'jarl/1-x', '--worker', 'w1');
-  jarl(at.dir, 'evidence', '1', '--ran', 'npm test', '--saw', 'all green');
+  jarl(at.dir, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'all green');
   jarl(at.dir, 'review', '1', 'approve', '--by', 'rev-1', 'read the diff and found nothing wrong');
   jarl(at.dir, 'merged', '1', '--sha', 'abc1234', '--keep');
   assert.match(jarl(at.dir, 'set', '1', 'done'), /1 → done/);

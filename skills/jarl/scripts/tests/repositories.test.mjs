@@ -48,7 +48,7 @@ function world(...names) {
 // two questions empties them itself.
 const identity = (root, name) => { L.resetCaches(); return L.repoIdentity(root, name); };
 const roots = (dir) => git(dir, 'rev-list', '--max-parents=0', 'HEAD').split('\n').sort();
-const neu = (hub, title, ...rest) => run(hub, ['new', title, '--tier', 'light', ...rest]);
+const neu = (hub, title, ...rest) => run(hub, ['new', title, '--acceptance', '[read] it works', '--tier', 'light', ...rest]);
 
 // ---- naming ------------------------------------------------------------------------------------------
 
@@ -304,7 +304,7 @@ test('a loop opened in a linked worktree resolves its siblings beside the main c
   const hub = repoAt(join(parent, 'hub'));
   const tool = repoAt(join(parent, 'tool'));
   jarl(hub, 'init', 'goal', '--committed');
-  jarl(hub, 'new', 'named', '--tier', 'light', '--repo', 'tool');
+  jarl(hub, 'new', 'named', '--acceptance', '[read] it works', '--tier', 'light', '--repo', 'tool');
   git(hub, 'add', '-A');
   git(hub, 'commit', '-qm', 'loop');
   const elsewhere = tmp('jarl-elsewhere-');
@@ -321,14 +321,14 @@ test('worktrees whose paths hold a line break are read whole: a linked worktree 
     const parent = tmp('jarl-linked-break-');
     const hub = repoAt(join(parent, main));
     jarl(hub, 'init', 'goal', '--committed');
-    jarl(hub, 'new', 'first', '--tier', 'light');
+    jarl(hub, 'new', 'first', '--acceptance', '[read] it works', '--tier', 'light');
     git(hub, 'add', '-A');
     git(hub, 'commit', '-qm', 'loop');
     const wt = join(parent, linked);
     git(hub, 'worktree', 'add', '-q', '-b', 'side', wt);
     const said = JSON.stringify([main, linked]);
     const before = readdirSync(join(wt, '.jarl', 'issues'));
-    const r = run(wt, ['new', 'from the worktree', '--tier', 'light']);
+    const r = run(wt, ['new', 'from the worktree', '--acceptance', '[read] it works', '--tier', 'light']);
     assert.notEqual(r.status, 0, `${said}: ${r.stdout}`);
     assert.match(r.stderr, /is a linked worktree of [^]*, which holds this loop/, said);
     assert.deepEqual(readdirSync(join(wt, '.jarl', 'issues')), before, `${said}: nothing was filed`);
@@ -351,7 +351,7 @@ function submoduleWorld() {
 test('a loop kept in a submodule finds a sibling submodule by name beside its working tree, not inside the superproject\'s git directory', () => {
   const w = submoduleWorld();
   jarl(w.hub, 'init', 'goal');
-  const r = run(w.hub, ['new', 'a', '--tier', 'light', '--repo', '../tool']);
+  const r = run(w.hub, ['new', 'a', '--acceptance', '[read] it works', '--tier', 'light', '--repo', '../tool']);
   assert.equal(r.status, 0, r.stderr);
   assert.doesNotMatch(r.stderr, /stored as the path/);
   assert.match(readFileSync(join(w.hub, '.jarl', 'issues', readdirSync(join(w.hub, '.jarl', 'issues'))[0]), 'utf8'), /^\*\*Repo:\*\* tool$/m);
@@ -366,7 +366,7 @@ test('a loop kept in a submodule finds a sibling submodule by name beside its wo
 test('a linked worktree of a submodule loop resolves its siblings beside the submodule\'s working tree', () => {
   const w = submoduleWorld();
   jarl(w.hub, 'init', 'goal', '--committed');
-  jarl(w.hub, 'new', 'a', '--tier', 'light', '--repo', 'tool');
+  jarl(w.hub, 'new', 'a', '--acceptance', '[read] it works', '--tier', 'light', '--repo', 'tool');
   git(w.hub, 'add', '-A');
   git(w.hub, 'commit', '-qm', 'loop');
   const wt = join(tmp('jarl-elsewhere-'), 'hub-wt');
@@ -387,7 +387,7 @@ test('a bare repository under a name is refused as a bare repository', () => {
   mkdirSync(bare);
   git(bare, 'init', '-q', '--bare');
   assert.match(refuses(w.hub, 'new', 'x', '--tier', 'light', '--repo', 'tool'), /tool is a bare repository: it has no working tree to act on/);
-  R.newIssue(w.hub, 'a');
+  R.newIssue(w.hub, 'a', { acceptance: '[read] it works' });
   assert.match(refuses(w.hub, 'field', '1', 'Repo', '../tool'), /is a bare repository: it has no working tree to act on/);
   const file = join(w.hub, '.jarl', 'issues', readdirSync(join(w.hub, '.jarl', 'issues'))[0]);
   writeFileSync(file, readFileSync(file, 'utf8').replace(/^(\*\*Files:\*\*.*)$/m, '$1\n**Repo:** ../tool'));
@@ -401,7 +401,7 @@ test('a loop outside git looks for a name beside its own directory', () => {
   mkdirSync(root);
   const tool = repoAt(join(parent, 'tool'));
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'named', '--tier', 'light', '--repo', 'tool');
+  jarl(root, 'new', 'named', '--acceptance', '[read] it works', '--tier', 'light', '--repo', 'tool');
   assert.match(readFileSync(join(root, '.jarl', 'issues', readdirSync(join(root, '.jarl', 'issues'))[0]), 'utf8'), /^\*\*Repo:\*\* tool$/m);
   assert.equal(L.repoOf(root, 'tool'), tool);
 });
@@ -710,7 +710,7 @@ function nestedWorld() {
   R.setStatus(w.hub, '001', 'in-progress', '', { branch: 'jarl/1-x', worker: 'w1' });
   fileAsBefore(w.hub, 'second');
   R.setStatus(w.hub, '002', 'in-progress', '', { branch: 'jarl/2-y', worker: 'w2' });
-  R.addEvidence(w.hub, '002', undefined, { ran: 't', saw: 'ok' });
+  R.addEvidence(w.hub, '002', undefined, { line: 1, ran: 't', saw: 'ok' });
   R.review(w.hub, '002', 'approve', 'read the diff, nothing found here', { by: 'rev' });
   const merged = oldJarl(w.hub, 'merged', {}, ['001', { sha, ci: 'green', repo: 'api' }]);
   assert.equal(merged.ok, true, merged.error);
@@ -719,8 +719,8 @@ function nestedWorld() {
 }
 const branchesOf = (dir) => git(dir, 'branch', '--list', '--format=%(refname:short)').split('\n');
 const TRIGGERS = {
-  'a name': (w) => R.newIssue(w.hub, 'named', { repo: 'lib' }),
-  'a plain issue number on new': (w) => jarl(w.hub, 'new', 'plain', '--tier', 'light'),
+  'a name': (w) => R.newIssue(w.hub, 'named', { acceptance: '[read] it works', repo: 'lib' }),
+  'a plain issue number on new': (w) => jarl(w.hub, 'new', 'plain', '--acceptance', '[read] it works', '--tier', 'light'),
   'import': (w) => {
     const dir = tmp('report-2026-10-01-');
     writeFileSync(join(dir, 'findings.json'), JSON.stringify([{ id: 'f-1', kind: 'defect', priority: 'high', title: 'a defect', where: 'x:1', evidence: 'e', proposal: 'p', effort: 'S' }]));
@@ -769,7 +769,7 @@ test('a free note shaped like a merge line, and a merge line of no issue of the 
   const w = nestedWorld();
   jarl(w.hub, 'log', `release merged ${w.sha} in api · CI green`);
   writeFileSync(join(w.hub, '.jarl', 'log.md'), `${w.log()}- 2026-10-01 10:00 · 77 merged ${w.sha} in api · CI green\n- 2026-10-01 10:01 · 001 merged ${w.sha} in api · odd segment\n`);
-  jarl(w.hub, 'new', 'plain', '--tier', 'light');
+  jarl(w.hub, 'new', 'plain', '--acceptance', '[read] it works', '--tier', 'light');
   const log = w.log();
   assert.match(log, new RegExp(`001 merged ${w.sha} in \\./api · CI green`), 'the tool\'s own merge line is rewritten');
   assert.match(log, new RegExp(`release merged ${w.sha} in api · CI green`));

@@ -27,14 +27,14 @@ const profileFile = (gate) => {
 function botLoop(gate = null, n = 3) {
   const root = makeLoop({ prefix: 'jarl-bot-', via: 'cli', initFlags: gate ? ['--profile', profileFile(gate)] : [] });
   for (let k = 1; k <= n; k += 1) {
-    jarl(root, 'new', `change ${k}`, '--acceptance', 'it works');
+    jarl(root, 'new', `change ${k}`, '--acceptance', '[read] it works');
     jarl(root, 'set', String(k), 'in-progress', '--worker', `w${k}`, '--branch', `jarl/${k}`, '--by', 'jarl');
-    jarl(root, 'evidence', String(k), '--ran', 'npm test', '--saw', 'pass 3, fail 0', '--by', `w${k}`);
+    jarl(root, 'evidence', String(k), '--line', '1', '--ran', 'npm test', '--saw', 'pass 3, fail 0', '--by', `w${k}`);
     jarl(root, 'merged', String(k), '--sha', 'abc1234', '--ci', 'none', '--by', 'jarl');
   }
-  jarl(root, 'new', 'a note with no code', '--acceptance', 'it reads well');
+  jarl(root, 'new', 'a note with no code', '--acceptance', '[read] it reads well');
   jarl(root, 'set', String(n + 1), 'in-progress', '--worker', 'wn', '--by', 'jarl');
-  jarl(root, 'evidence', String(n + 1), '--ran', 'proofread', '--saw', 'reads well', '--by', 'wn');
+  jarl(root, 'evidence', String(n + 1), '--line', '1', '--ran', 'proofread', '--saw', 'reads well', '--by', 'wn');
   return root;
 }
 const done = (root, id) => run(root, ['set', id, 'done', 'the gate holds', '--by', 'jarl']);
@@ -106,7 +106,7 @@ test('a loop may require a bot\'s approve and a fresh one together: either alone
   review(root, '2', 'rev-b');
   run(root, ['review', '2', 'changes', '--by', 'coderabbit', 'Important: the edge case is not handled']);
   review(root, '2', 'rev-b');
-  assert.match(refuses(root, 'set', '2', 'done', 'approved again', '--by', 'jarl'), /the approves it holds are by rev-b \(fresh\)/);
+  assert.match(refuses(root, 'set', '2', 'done', 'approved again', '--by', 'jarl'), /changes verdict by coderabbit .* stands until a round or a new commit/);
 });
 
 test('the done gate\'s clears is checked: a word it does not know, a bot with no name, an empty alternative and clears beside approve none are refused', () => {
@@ -123,7 +123,7 @@ test('the first bot verdict raises a loop of format 1 to format 3, which both re
   const root = makeLoop({ prefix: 'jarl-bot-format-', via: 'cli' });
   const id = fileAsBefore(root, 'a change', { acceptance: 'it works' });
   jarl(root, 'set', id, 'in-progress', '--worker', 'w1', '--branch', 'jarl/1');
-  jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass');
+  jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass');
   jarl(root, 'review', id, 'approve', '--by', 'rev-a', FINDINGS);
   assert.equal(existsSync(join(root, '.jarl', 'profile.json')), false, 'a fresh verdict raises nothing');
   jarl(root, 'review', id, 'approve', '--by', 'coderabbit', '--bot', FINDINGS);

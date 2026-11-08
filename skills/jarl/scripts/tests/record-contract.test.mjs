@@ -300,19 +300,19 @@ test('the record through record.mjs: a loop opened, an issue carried to done and
     assert.equal(R.hasLiveLoop(root), false);
     R.initLoop(root, 'the goal', { committed: true });
     assert.equal(R.hasLiveLoop(root), true);
-    assert.equal(R.newIssue(root, 'first', { acceptance: 'it works' }).id, '001');
-    R.newIssue(root, 'second', { after: '1' });
+    assert.equal(R.newIssue(root, 'first', { acceptance: '[read] it works' }).id, '001');
+    R.newIssue(root, 'second', { acceptance: '[read] it works', after: '1' });
     assert.throws(() => R.setStatus(root, '1', 'done'), /no evidence yet/);
     const lease = R.setStatus(root, '1', 'in-progress', undefined, { worker: 'w1' });
     assert.equal(lease.worker, 'w1');
-    R.addEvidence(root, '1', undefined, { ran: 'npm test', saw: 'ok' });
+    R.addEvidence(root, '1', undefined, { line: 1, ran: 'npm test', saw: 'ok' });
     R.review(root, '1', 'approve', FINDINGS, { by: 'reviewer' });
     assert.equal(R.setStatus(root, '1', 'done').status, 'done');
     R.recordMerged(root, '1', { sha: 'abc1234', ci: 'green' });
     assert.deepEqual(R.mergedOf(R.findIssue(root, '1')), { sha: 'abc1234', repo: null, ci: 'green' });
     assert.deepEqual(R.evidenceRows(R.findIssue(root, '1')), [{ ran: 'npm test', saw: 'ok' }]);
     // A retracted row is struck through and is no longer an evidence row; the library call is the CLI's (opts { retract, by }).
-    R.addEvidence(root, '1', undefined, { ran: 'wrong check', saw: 'wrong result' });
+    R.addEvidence(root, '1', undefined, { line: 1, ran: 'wrong check', saw: 'wrong result' });
     assert.equal(R.evidenceRows(R.findIssue(root, '1')).length, 2);
     assert.equal(R.addEvidence(root, '1', 'it ran in the wrong place', { retract: '2', by: 'reviewer' }).retracted, 2);
     assert.deepEqual(R.evidenceRows(R.findIssue(root, '1')), [{ ran: 'npm test', saw: 'ok' }]);
@@ -355,7 +355,7 @@ test('the profile through record.mjs: a declared field is written by setField, n
     R.initLoop(root, 'g', { profile: file });
     assert.equal(R.describeProfile(R.loadProfile(root)).name, 'p');
     assert.deepEqual(R.describeProfile(R.DEFAULT_PROFILE).statuses.map((s) => s.name), ['open', 'in-progress', 'done', 'dropped', 'deferred']);
-    R.newIssue(root, 't');
+    R.newIssue(root, 't', { acceptance: '[read] it works' });
     assert.deepEqual(R.setField(root, '1', 'Area', 'b'), { id: '001', field: 'Area', value: 'b' });
     assert.throws(() => R.setField(root, '1', 'Area', 'z'), /Area must be one of/);
     assert.throws(() => R.setStatus(root, '1', 'area', 'b'), /is a field this loop's profile declares, not a status/);
@@ -370,7 +370,7 @@ test('set says who asked: the command line and the MCP tools pass caller cli, a 
     const file = join(root, 'profile.json');
     writeFileSync(file, JSON.stringify({ 'jarl-profile': R.PROFILE_VERSION, name: 'p', statuses: { open: ['dispatchable'], doing: { flags: ['holds-claim'], 'set-by': 'record' }, done: ['settles-dependents', 'terminal', 'closes-record'] } }));
     R.initLoop(root, 'g', { profile: file });
-    R.newIssue(root, 't');
+    R.newIssue(root, 't', { acceptance: '[read] it works' });
     const moves = () => readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').filter((l) => l.includes('001 → doing')).length;
     assert.throws(() => CLI.dispatch(root, 'set', ['1', 'doing'], {}), /set by the record only/, 'the command line asks as cli');
     assert.equal(moves(), 0, 'a refused move leaves no log line');

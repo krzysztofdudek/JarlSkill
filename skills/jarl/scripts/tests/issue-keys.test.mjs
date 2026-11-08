@@ -22,7 +22,7 @@ const STAMP = '(\\d{4})-(\\d{2})-(\\d{2}) (\\d{2}):(\\d{2})';
 test('new writes a key made of the filing stamp and four random letters into the header and the filed line, and raises the loop to format 3', () => {
   const root = loop();
   assert.equal(json(root, 'profile').format, 1);
-  jarl(root, 'new', 'one', '--files', 'a.mjs');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.mjs');
   const key = keyOf(root, 1);
   assert.match(key ?? '', /^\d{8}T\d{4}-[a-z]{4}$/, issueText(root, 1));
   const filed = new RegExp(`^- ${STAMP} key (\\S+) · filed 1 · one$`, 'm').exec(logOf(root));
@@ -31,16 +31,16 @@ test('new writes a key made of the filing stamp and four random letters into the
   assert.equal(key.slice(0, 13), `${filed[1]}${filed[2]}${filed[3]}T${filed[4]}${filed[5]}`, 'the key opens with the filing stamp');
   assert.equal(json(root, 'profile').format, 3);
   assert.equal(json(root, 'show', '1').fields.key, key);
-  jarl(root, 'new', 'two');
+  jarl(root, 'new', 'two', '--acceptance', '[read] it works');
   assert.notEqual(keyOf(root, 2), key, 'each issue has its own key');
 });
 
 test('every log line about a keyed issue carries its key after the stamp, and a line about the loop carries none', () => {
   const root = loop();
-  jarl(root, 'new', 'one', '--files', 'a.mjs');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.mjs');
   const key = keyOf(root, 1);
   jarl(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-one', '--worker', 'w1', '--by', 'odin');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'green');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'green');
   jarl(root, 'evidence', '1', 'a note');
   jarl(root, 'log', '1 looked at again');
   jarl(root, 'log', 'about the loop');
@@ -56,7 +56,7 @@ test('every log line about a keyed issue carries its key after the stamp, and a 
 
 test('the key is the tool\'s: no profile declares it, field refuses to write it, and a hand-written free note cannot pose as one', () => {
   const root = loop();
-  jarl(root, 'new', 'one');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works');
   assert.match(refuses(root, 'field', '1', 'Key', 'x'), /Key/);
   jarl(root, 'log', 'key 20260101T0000-abcd · a note that names a key');
   assert.match(logOf(root), new RegExp(`^- ${STAMP} · key 20260101T0000-abcd · a note that names a key$`, 'm'), 'text never reaches the key\'s place');
@@ -72,7 +72,7 @@ test('a loop already open with a profile that declares a field Key keeps its own
   mkdirSync(join(root, '.git'));
   R.initLoop(root, 'an older loop');
   writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, name: 'own-key', statuses: { open: ['dispatchable'], 'in-progress': ['holds-claim'], done: ['terminal', 'closes-record', 'settles-dependents'], dropped: ['terminal', 'needs-reason'] }, fields: { Key: {} } }));
-  jarl(root, 'new', 'tracked elsewhere', '--field', 'Key=PROJ-12');
+  jarl(root, 'new', 'tracked elsewhere', '--acceptance', '[read] it works', '--field', 'Key=PROJ-12');
   jarl(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-x', '--worker', 'w1');
   assert.equal(keyOf(root, 1), 'PROJ-12', 'the field is the profile\'s own');
   assert.doesNotMatch(logOf(root), / key /, 'no line names a key');
@@ -91,11 +91,11 @@ test('a loop filed before its raise keeps its unkeyed lines read by number, and 
   assert.equal(oldJarl(root, 'new', {}, ['filed by an older Jarl', {}]).ok, true);
   assert.equal(oldJarl(root, 'set', {}, ['001', 'in-progress', null, { branch: 'jarl/001-x', worker: 'w0' }]).ok, true);
   assert.equal(keyOf(root, '001'), null);
-  jarl(root, 'evidence', '001', '--ran', 'npm test', '--saw', 'green');
+  jarl(root, 'evidence', '001', '--line', '1', '--ran', 'npm test', '--saw', 'green');
   assert.match(logOf(root), new RegExp(`^- ${STAMP} · 001 evidence row · npm test`, 'm'), 'a write about an unkeyed issue names no key');
   assert.equal(json(root, 'profile').format, 1, 'and raises nothing');
   assert.equal(oldJarl(root, 'list', {}).ok, true, 'the frozen reader still reads it');
-  jarl(root, 'new', 'filed now');
+  jarl(root, 'new', 'filed now', '--acceptance', '[read] it works');
   assert.match(keyOf(root, '2') ?? '', /^\d{8}T\d{4}-[a-z]{4}$/);
   const one = json(root, 'show', '001');
   assert.equal(one.status, 'in-progress', 'the unkeyed lines still read by number');
@@ -115,12 +115,12 @@ test('a loop a composer keeps is never raised for a key: its issues are filed wi
   const file = join(repo, 'p.json');
   writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, format: 1, name: 'composer', statuses: { open: ['dispatchable'], running: ['holds-claim'], done: ['terminal', 'closes-record', 'settles-dependents'] }, 'external-scheduler': 'composer tick' }));
   jarl(repo, 'init', 'the composed goal', '--profile', file);
-  jarl(repo, 'new', 'one');
+  jarl(repo, 'new', 'one', '--acceptance', '[read] it works');
   assert.equal(keyOf(repo, '001'), null);
   assert.doesNotMatch(logOf(repo), / key /);
   assert.equal(json(repo, 'profile').format, 1);
   assert.equal(oldJarl(repo, 'list', {}).ok, true, 'the composer\'s own older reader still reads it');
-  R.newIssue(repo, 'two');
+  R.newIssue(repo, 'two', { acceptance: '[read] it works' });
   assert.equal(keyOf(repo, '002'), null, 'nor through the library');
 });
 

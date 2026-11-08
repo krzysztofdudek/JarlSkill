@@ -17,8 +17,8 @@ const header = (root, id) => readFileSync(R.findIssue(root, id).file, 'utf8');
 function twoOnOneFile() {
   const { dir, g } = gitRepo({ prefix: 'jarl-lease-' });
   jarl(dir, 'init', 'goal');
-  jarl(dir, 'new', 'one', '--files', 'f.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
-  jarl(dir, 'new', 'two', '--files', 'f.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
+  jarl(dir, 'new', 'one', '--acceptance', '[read] it works', '--files', 'f.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
+  jarl(dir, 'new', 'two', '--acceptance', '[read] it works', '--files', 'f.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
   return { root: dir, g };
 }
 
@@ -74,8 +74,8 @@ test('the holder is named without a slice when it has none, and a held resource 
 function twoLeasesOnTwoFiles() {
   const { dir: root } = gitRepo({ prefix: 'jarl-lease-after-' });
   jarl(root, 'init', 'goal');
-  jarl(root, 'new', 'one', '--files', 'f.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
-  jarl(root, 'new', 'two', '--files', 'g.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--files', 'f.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
+  jarl(root, 'new', 'two', '--acceptance', '[read] it works', '--files', 'g.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
   jarl(root, 'field', '1', 'resources', 'db-server');
   jarl(root, 'set', '1', 'in-progress', 'A', '--branch', 'jarl/1-one', '--worker', 'wA');
   jarl(root, 'set', '2', 'in-progress', 'C', '--branch', 'jarl/2-two', '--worker', 'wC');
@@ -105,7 +105,7 @@ test('declaring a resource after the lease that another lease holds is refused, 
 
 test('a call over several issues that one lease refuses writes nothing for any of them', () => {
   const root = twoLeasesOnTwoFiles();
-  jarl(root, 'new', 'three', '--files', 'h.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
+  jarl(root, 'new', 'three', '--acceptance', '[read] it works', '--files', 'h.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
   jarl(root, 'set', '3', 'in-progress', 'D', '--branch', 'jarl/3-three', '--worker', 'wD');
   const before = logText(root);
   assert.match(refuses(root, 'field', '2,3', 'files', '--add', 'f.txt'), /which 1 holds in its lease/);
@@ -115,7 +115,7 @@ test('a call over several issues that one lease refuses writes nothing for any o
 
 test('a resource one lease holds is refused for a later issue of a call, and no earlier issue of the call is written, whatever the order', () => {
   const root = twoLeasesOnTwoFiles();
-  jarl(root, 'new', 'three', '--files', 'h.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
+  jarl(root, 'new', 'three', '--acceptance', '[read] it works', '--files', 'h.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
   const before = logText(root);
   for (const ids of ['3,2', '2,3']) {
     for (const form of [['--add'], []]) {
@@ -129,7 +129,7 @@ test('a resource one lease holds is refused for a later issue of a call, and no 
 
 test('a file one lease holds is refused for a later issue of a call, and no earlier issue of the call is written, whatever the order', () => {
   const root = twoLeasesOnTwoFiles();
-  jarl(root, 'new', 'three', '--files', 'h.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
+  jarl(root, 'new', 'three', '--acceptance', '[read] it works', '--files', 'h.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
   const before = logText(root);
   for (const ids of ['3,2', '2,3']) {
     for (const form of [['--add'], []]) {
@@ -144,7 +144,7 @@ test('a file one lease holds is refused for a later issue of a call, and no earl
 
 test('issues of one call in two leases cannot both declare a file or a resource nobody holds yet: the call is refused whole, naming the issue it would make the holder', () => {
   const root = twoLeasesOnTwoFiles();
-  jarl(root, 'new', 'three', '--files', 'h.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
+  jarl(root, 'new', 'three', '--acceptance', '[read] it works', '--files', 'h.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
   jarl(root, 'set', '3', 'in-progress', 'D', '--branch', 'jarl/3-three', '--worker', 'wD');
   const before = logText(root);
   for (const ids of ['2,3', '3,2']) {
@@ -168,7 +168,7 @@ test('declaring a file or a resource an issue may take is not refused: its own l
   jarl(root, 'field', '2', 'files', 'g.txt, k.txt');
   jarl(root, 'field', '2', 'resources', 'cache');
   jarl(root, 'field', '2', 'files', '--clear');
-  jarl(root, 'new', 'open one', '--files', 'm.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
+  jarl(root, 'new', 'open one', '--acceptance', '[read] it works', '--files', 'm.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
   jarl(root, 'field', '3', 'files', 'f.txt');
   jarl(root, 'field', '3', 'resources', 'db-server');
   // An issue that joins the holder's lease declares what the lease holds.
@@ -179,11 +179,11 @@ test('declaring a file or a resource an issue may take is not refused: its own l
 test('issues leased in one call, or added to the lease that holds their file, share it', () => {
   const { root } = twoOnOneFile();
   jarl(root, 'set', '1,2', 'in-progress', 'a package', '--branch', 'jarl/1-pkg', '--worker', 'wA');
-  jarl(root, 'new', 'three', '--files', 'f.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
+  jarl(root, 'new', 'three', '--acceptance', '[read] it works', '--files', 'f.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
   jarl(root, 'set', '3', 'in-progress', 'joins the package', '--branch', 'jarl/1-pkg', '--worker', 'wA');
   assert.equal(JSON.parse(jarl(root, 'show', '3', '--json')).fields.branch, 'jarl/1-pkg');
   // The same branch with another worker is another lease.
-  jarl(root, 'new', 'four', '--files', 'f.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
+  jarl(root, 'new', 'four', '--acceptance', '[read] it works', '--files', 'f.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
   assert.match(refuses(root, 'set', '4', 'in-progress', 'x', '--branch', 'jarl/1-pkg', '--worker', 'wZ'), /4 declares f\.txt, which 1 holds/);
 });
 
@@ -254,7 +254,7 @@ test('the frozen readers read a handover as the lease it is, with no raise of th
 
 test('the record library holds the lease the same way and takes handover as an option', () => {
   const root = loop({ prefix: 'jarl-lease-lib-' });
-  R.newIssue(root, 'one', {});
+  R.newIssue(root, 'one', { acceptance: '[read] it works', });
   R.setStatus(root, '001', 'in-progress', 'A', { branch: 'jarl/001-a', worker: 'wA' });
   assert.throws(() => R.setStatus(root, '001', 'in-progress', 'B', { branch: 'jarl/001-b', worker: 'wB' }), /001 is leased already/);
   const out = R.setStatus(root, '001', 'in-progress', 'fresh worker after three rounds', { branch: 'jarl/001-b', worker: 'wB', handover: true });
@@ -280,7 +280,7 @@ test('in a loop its composer schedules, two leases on one file and a second leas
   }));
   R.initLoop(composed, 'a composed goal', { profile: file });
   // Every issue of one node declares that node's log, and the composer runs them at once.
-  for (const t of ['first issue', 'second issue']) R.newIssue(composed, t, { files: '.yggdrasil/model/orders/log.md, src/orders.mjs' });
+  for (const t of ['first issue', 'second issue']) R.newIssue(composed, t, { acceptance: '[read] it works', files: '.yggdrasil/model/orders/log.md, src/orders.mjs' });
   R.setStatus(composed, '001,002', 'queued', 'planned');
   R.setStatus(composed, '001', 'running', 'tick', { branch: 'composer-x/001', worker: 'agent-1' });
   R.setStatus(composed, '002', 'running', 'tick', { branch: 'composer-x/002', worker: 'agent-2' });

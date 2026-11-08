@@ -46,7 +46,7 @@ function run(file, version, root, command, flags, args) {
 // number has three digits and it carries no key. Returns the id. A test of what an older reader makes of a loop this Jarl
 // writes into files its issues this way, because this Jarl's own filing writes a key, which raises the loop to format 3.
 export function fileAsBefore(root, title, flags = {}) {
-  const r = oldJarl(root, 'new', {}, [title, flags]);
+  const r = oldJarl(root, 'new', {}, [title, { acceptance: 'it works', ...flags }]);
   if (!r.ok) throw new Error(`the pinned Jarl 6.1.0 did not file "${title}": ${r.error}`);
   return r.value.id;
 }

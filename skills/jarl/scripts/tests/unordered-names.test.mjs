@@ -14,8 +14,8 @@ const unordered = (text) => noteLines(text).filter((l) => / in What, Why or Acce
 // A loop of four issues; the fourth names the first two in its Acceptance.
 function named() {
   const root = makeLoop({ prefix: 'jarl-unordered-', via: 'cli' });
-  for (const t of ['first', 'second', 'third']) jarl(root, 'new', t, '--what', 'plain text');
-  jarl(root, 'new', 'fourth', '--what', 'plain text', '--acceptance', 'works once issue 1 and #2 are in');
+  for (const t of ['first', 'second', 'third']) jarl(root, 'new', t, '--acceptance', '[read] it works', '--what', 'plain text');
+  jarl(root, 'new', 'fourth', '--what', 'plain text', '--acceptance', '[read] works once issue 1 and #2 are in');
   return root;
 }
 
@@ -110,9 +110,9 @@ test('verify notes each open issue whose text names an unordered open issue, nam
 
 test('the command the note ends with adds to After and keeps what After held: run filled, an issue already waiting on another waits on both', () => {
   const root = makeLoop({ prefix: 'jarl-unordered-keep-', via: 'cli' });
-  for (const t of ['first', 'second', 'third']) jarl(root, 'new', t, '--what', 'plain text');
+  for (const t of ['first', 'second', 'third']) jarl(root, 'new', t, '--acceptance', '[read] it works', '--what', 'plain text');
   jarl(root, 'field', '3', 'After', '1');
-  jarl(root, 'new', 'fourth', '--what', 'plain text');
+  jarl(root, 'new', 'fourth', '--acceptance', '[read] it works', '--what', 'plain text');
   const said = run(root, ['field', '3', 'What', 'relies on issue 4 for its data']);
   assert.equal(said.status, 0, said.stderr);
   const note = unordered(`${said.stdout}\n${said.stderr}`)[0];
@@ -146,12 +146,12 @@ test('a named issue that waits on the naming one is behind it and is not noted, 
 
 test('new and body print the same note on stderr as verify, once, and no other command or record line carries it', () => {
   const root = makeLoop({ prefix: 'jarl-unordered-', via: 'cli' });
-  jarl(root, 'new', 'first', '--what', 'plain text');
-  jarl(root, 'new', 'second', '--what', 'plain text');
-  const filed = run(root, ['new', 'third', '--what', 'builds on issue 1', '--kind', 'gap', '--prio', '2', '--tier', 'standard']);
+  jarl(root, 'new', 'first', '--acceptance', '[read] it works', '--what', 'plain text');
+  jarl(root, 'new', 'second', '--acceptance', '[read] it works', '--what', 'plain text');
+  const filed = run(root, ['new', 'third', '--acceptance', '[read] it works', '--what', 'builds on issue 1', '--kind', 'gap', '--prio', '2', '--tier', 'standard']);
   assert.equal(filed.status, 0);
   assert.deepEqual(unordered(filed.stderr).map((l) => l.replace(/ — .*$/, '')), ['note: issue 3: names issue 1 in What, Why or Acceptance, which is neither done nor dropped, and no After orders it with 3']);
-  const body = run(root, ['field', '3', 'Acceptance', 'issue 2 is merged first and issue 1 too']);
+  const body = run(root, ['field', '3', 'Acceptance', '[read] issue 2 is merged first and issue 1 too']);
   assert.equal(body.status, 0);
   assert.equal(body.stdout, '3 Acceptance: issue 2 is merged first and issue 1 too');
   const said = unordered(body.stderr);
@@ -170,9 +170,9 @@ test('new and body print the same note on stderr as verify, once, and no other c
 
 test('a library call files and rewrites the same text with no note in its result', async () => {
   const root = makeLoop({ prefix: 'jarl-unordered-', via: 'library' });
-  R.newIssue(root, 'first', { what: 'plain text' });
-  const second = R.newIssue(root, 'second', { what: 'builds on issue 1' });
+  R.newIssue(root, 'first', { acceptance: '[read] it works', what: 'plain text' });
+  const second = R.newIssue(root, 'second', { acceptance: '[read] it works', what: 'builds on issue 1' });
   assert.equal(second.note, undefined);
   const { cmdBody } = await import('../jarl-lib.mjs');
-  assert.equal(cmdBody(root, second.id, { acceptance: 'issue 1 is in' }).note, undefined);
+  assert.equal(cmdBody(root, second.id, { acceptance: '[read] issue 1 is in' }).note, undefined);
 });

@@ -21,11 +21,11 @@ function refactorLoop() {
   jarl(dir, 'goal', '--set', 'Model (light): m-light');
   jarl(dir, 'goal', '--set', 'Model (strong): m-strong');
   for (const [title, file, tags] of [['split the renderer', 'render.mjs', ['--tags', 'identical-output']], ['split the parser', 'parse.mjs', []]]) {
-    jarl(dir, 'new', title, '--tier', 'standard', '--files', file, '--acceptance', 'the output is byte for byte the same', ...tags);
+    jarl(dir, 'new', title, '--tier', 'standard', '--files', file, '--acceptance', '[read] the output is byte for byte the same', ...tags);
   }
   for (const id of ['1', '2']) {
     jarl(dir, 'set', id, 'in-progress', 'go', '--branch', `jarl/${id}-split`, '--worker', `w${id}`, '--model', 'm-strong');
-    jarl(dir, 'evidence', id, '--ran', 'node render.mjs > after.txt && cmp before.txt after.txt', '--saw', 'cmp printed nothing, exit 0');
+    jarl(dir, 'evidence', id, '--line', '1', '--ran', 'node render.mjs > after.txt && cmp before.txt after.txt', '--saw', 'cmp printed nothing, exit 0');
   }
   return dir;
 }
@@ -51,7 +51,7 @@ test('a light approve of a change meant to alter nothing is said to be enough, a
 
 test('the briefs of a change meant to alter nothing say what its worker records and what its reviewer checks', () => {
   const root = refactorLoop();
-  assert.match(jarl(root, 'brief', '1'), /^note: 1 is a change meant to alter nothing \(tag identical-output\): its comparison of the output before and after is a proof row, the command and what it printed — jarl\.mjs evidence 1 --ran "<command>" --saw "<what-it-printed>"$/m);
+  assert.match(jarl(root, 'brief', '1'), /^note: 1 is a change meant to alter nothing \(tag identical-output\): its comparison of the output before and after is a proof row, the command and what it printed — jarl\.mjs evidence 1 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by "<who>"$/m);
   assert.match(jarl(root, 'brief', '1', '--role', 'reviewer'), /^note: 1 is a change meant to alter nothing \(tag identical-output\): its review may be a light one, and it checks that the comparison in its proof rows covers everything the change touched; the comparison never stands in for the review$/m);
   assert.doesNotMatch(jarl(root, 'brief', '2', '--role', 'reviewer'), /meant to alter nothing \(tag/);
 });
@@ -73,9 +73,9 @@ function taggedLoop(reviewer) {
     2: ['no tag with a comparison row', [], 'node parse.mjs > after.txt && cmp before.txt after.txt', 'cmp printed nothing, exit 0'],
     3: ['tag with a row that compares nothing', ['--tags', 'identical-output'], 'npm test', 'pass 4, fail 0'] };
   for (const [id, [title, tags, ran, saw]] of Object.entries(rows)) {
-    jarl(root, 'new', title, '--acceptance', 'the output is the same', ...tags);
+    jarl(root, 'new', title, '--acceptance', '[read] the output is the same', ...tags);
     jarl(root, 'set', id, 'in-progress', 'go', '--worker', `w${id}`, '--model', 'm-strong');
-    jarl(root, 'evidence', id, '--ran', ran, '--saw', saw);
+    jarl(root, 'evidence', id, '--line', '1', '--ran', ran, '--saw', saw);
   }
   return root;
 }
@@ -98,7 +98,7 @@ test('under "model-rank" done refuses a light approve of a tagged change with no
   lightApprove(root, '3');
   assert.match(jarl(root, 'set', '1', 'done', 'the comparison covers the change', '--by', 'jarl'), /1 → done/);
   assert.match(refuses(root, 'set', '3', 'done', 'x', '--by', 'jarl'), /^3's live approve is by rev-3 on m-light, which ranks below the worker's model \(m-strong\)/);
-  jarl(root, 'evidence', '3', '--ran', 'diff before.txt after.txt', '--saw', 'no difference');
+  jarl(root, 'evidence', '3', '--line', '1', '--ran', 'diff before.txt after.txt', '--saw', 'no difference');
   assert.match(jarl(root, 'set', '3', 'done', 'the comparison is on record now', '--by', 'jarl'), /3 → done/);
 });
 
@@ -106,16 +106,16 @@ test('a comparison row recorded before the last round or reopen of a tagged chan
   const root = taggedLoop('model-rank');
   // A round sends the work back: the comparison recorded before it compared code other than the change as it stands.
   jarl(root, 'round', '1', 'the split dropped a case', '--by', 'jarl');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 5, fail 0');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'pass 5, fail 0');
   lightApprove(root, '1');
   assert.match(refuses(root, 'set', '1', 'done', 'x', '--by', 'jarl'), /^1's live approve is by rev-1 on m-light, which ranks below the worker's model \(m-strong\)/);
   assert.match(lightApprove(root, '1').stderr, /\(the tag identical-output lets a light review clear only with a proof row that names the comparison of the output before and after, and 1 holds none since its last round or reopen\)/);
-  jarl(root, 'evidence', '1', '--ran', 'node render.mjs > after.txt && cmp before.txt after.txt', '--saw', 'cmp printed nothing, exit 0');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'node render.mjs > after.txt && cmp before.txt after.txt', '--saw', 'cmp printed nothing, exit 0');
   assert.match(jarl(root, 'set', '1', 'done', 'the comparison covers the change', '--by', 'jarl'), /1 → done/);
   // A reopen and a new start: the comparison of the first lease is not the proof of the second.
   jarl(root, 'set', '1', 'open', 'the output differs after all', '--by', 'jarl');
   jarl(root, 'set', '1', 'in-progress', 'again', '--worker', 'w9', '--model', 'm-strong', '--by', 'jarl');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 5, fail 0');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'pass 5, fail 0');
   lightApprove(root, '1');
   assert.match(refuses(root, 'set', '1', 'done', 'x', '--by', 'jarl'), /^1's live approve is by rev-1 on m-light, which ranks below the worker's model \(m-strong\)/);
 });

@@ -13,7 +13,7 @@ const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
 const goal = (root, text) => appendFileSync(join(root, '.jarl', 'goal.md'), text);
 const loop = (n) => {
   const root = makeLoop({ prefix: 'jarl-banner-', via: 'cli' });
-  for (let k = 1; k <= n; k += 1) jarl(root, 'new', `issue ${k}`, '--acceptance', 'it works');
+  for (let k = 1; k <= n; k += 1) jarl(root, 'new', `issue ${k}`, '--acceptance', '[read] it works');
   return root;
 };
 const merge = (root, id, ran) => jarl(root, 'merged', String(id), '--sha', 'abc1234', ...(ran ? ['--ran', ran, '--saw', 'pass'] : []));
@@ -85,7 +85,7 @@ test('the counts are per repository, and a row matching the other repository\'s 
   for (const name of ['app', 'lib']) { mkdirSync(join(parent, name)); spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: join(parent, name), timeout: SPAWN_TIMEOUT }); }
   const root = join(parent, 'app');
   jarl(root, 'init', 'two repositories');
-  for (let k = 1; k <= 4; k += 1) jarl(root, 'new', `issue ${k}`, '--acceptance', 'it works');
+  for (let k = 1; k <= 4; k += 1) jarl(root, 'new', `issue ${k}`, '--acceptance', '[read] it works');
   for (const id of [3, 4]) jarl(root, 'field', String(id), 'Repo', '../lib');
   goal(root, '\nCheck (app): yg check\nCheck (lib): npm test\n');
   merge(root, 1, 'yg check');

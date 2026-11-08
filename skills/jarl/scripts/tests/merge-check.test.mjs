@@ -31,7 +31,7 @@ const loop = (n = 0, goal = 'goal', padded = false) => {
   const root = makeLoop({ prefix: 'jarl-mcheck-', goal, via: 'cli' });
   for (let k = 1; k <= n; k += 1) {
     if (padded) fileAsBefore(root, `issue ${k}`, { acceptance: 'it works' });
-    else jarl(root, 'new', `issue ${k}`, '--acceptance', 'it works');
+    else jarl(root, 'new', `issue ${k}`, '--acceptance', '[read] it works');
   }
   return root;
 };
@@ -41,7 +41,7 @@ function twoRepos(n, inLib) {
   for (const name of ['app', 'lib']) { mkdirSync(join(parent, name)); git(join(parent, name), 'init', '-q', '-b', 'main'); }
   const root = join(parent, 'app');
   jarl(root, 'init', 'two repositories');
-  for (let k = 1; k <= n; k += 1) jarl(root, 'new', `issue ${k}`, '--acceptance', 'it works');
+  for (let k = 1; k <= n; k += 1) jarl(root, 'new', `issue ${k}`, '--acceptance', '[read] it works');
   for (const id of inLib) jarl(root, 'field', String(id), 'Repo', '../lib');
   return root;
 }
@@ -61,7 +61,7 @@ test('merged --ran --saw records the check in the merge record, as a Merge check
   const root = loop(2);
   assert.equal(jarl(root, 'merged', '1,2', '--sha', 'abc1234', '--ran', 'npm test', '--saw', 'pass 12'), '1, 2 merged abc1234 · check npm test');
   for (const id of [1, 2]) {
-    assert.doesNotMatch(issueText(root, id), /\*\*ran:\*\*/);
+    assert.doesNotMatch(issueText(root, id), /\*\*ran(?: \(line [0-9a-f, ]+\))?:\*\*/);
     assert.match(issueText(root, id), /^\*\*Merge check:\*\* npm test · saw pass 12$/m);
     assert.match(issueText(root, id), /^\*\*Merged:\*\* abc1234$/m);
     assert.doesNotMatch(issueText(root, id), /\*\*CI:\*\*/);
@@ -116,7 +116,7 @@ test('merged --red <id> records a landing on a red check whose cause another iss
   assert.equal(check.landsOn, 'testimony', 'a red landing is no passing check');
   // done notes nothing about an unrecorded CI for a merge that carries its check or its red.
   jarl(root, 'review', '1', 'approve', '--by', 'rev', 'read the diff and found nothing');
-  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'fail in lib, tracked in 3');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'fail in lib, tracked in 3');
   const done = run(root, 'set', '1', 'done', 'merged');
   assert.equal(done.status, 0);
   assert.doesNotMatch(done.stderr, /CI not recorded/);
@@ -126,7 +126,7 @@ test('done notes no unrecorded CI for a merge that carries a passing check row, 
   const root = loop(2);
   jarl(root, 'merged', '1', '--sha', 'abc1234', '--ran', 'npm test', '--saw', 'pass 3');
   jarl(root, 'merged', '2', '--sha', 'abc1234');
-  for (const id of ['1', '2']) { jarl(root, 'review', id, 'approve', '--by', 'rev', 'read the diff and found nothing'); jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 3'); }
+  for (const id of ['1', '2']) { jarl(root, 'review', id, 'approve', '--by', 'rev', 'read the diff and found nothing'); jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass 3'); }
   assert.doesNotMatch(run(root, 'set', '1', 'done', 'merged').stderr, /CI not recorded/);
   assert.match(run(root, 'set', '2', 'done', 'merged').stderr, /2 merged abc1234, CI not recorded/);
 });

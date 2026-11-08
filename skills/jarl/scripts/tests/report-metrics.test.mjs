@@ -48,7 +48,7 @@ test('a loop whose merges carry no check row is marked in status and report; a C
   appendFileSync(join(dir, '.jarl', 'goal.md'), '\n- **Check:** `npm test`\nCheck: yg check\n');
   assert.match(jarl(dir, 'status'), /testimony/);
   assert.deepEqual(json(dir, 'status').check, { declared: true, checks: ['npm test', 'yg check'], landsOn: 'testimony', ...empty });
-  jarl(dir, 'new', 'one', '--acceptance', 'it works');
+  jarl(dir, 'new', 'one', '--acceptance', '[read] it works');
   jarl(dir, 'merged', '1', '--sha', 'abc1234', '--ran', 'npm test', '--saw', 'pass 3');
   assert.doesNotMatch(jarl(dir, 'status'), /testimony/);
   const declared = json(dir, 'report');
@@ -74,7 +74,7 @@ test('an empty loop reports every metric as no data, never as zero', () => {
 
 test('approves from before --by give no data for the fresh share, not a share of zero', () => {
   const dir = loop();
-  jarl(dir, 'new', 'one');
+  jarl(dir, 'new', 'one', '--acceptance', '[read] it works');
   fields(dir, '1', { Status: 'done' });
   journal(dir, ['2026-09-01 10:00 · filed 1 · one', '2026-09-01 10:10 · 1 → in-progress · go', '2026-09-01 11:00 · 1 review approve · looks fine', '2026-09-01 11:10 · 1 → done · ok']);
   const f = json(dir, 'report').metrics.freshReviews;
@@ -86,7 +86,7 @@ test('approves from before --by give no data for the fresh share, not a share of
 
 test('the metrics are read from the journal and the issues, with the numbers a reader would count by hand', () => {
   const dir = loop();
-  for (const t of ['a', 'b', 'c', 'd', 'e', 'f', 'g']) jarl(dir, 'new', t);
+  for (const t of ['a', 'b', 'c', 'd', 'e', 'f', 'g']) jarl(dir, 'new', t, '--acceptance', '[read] it works');
   // 1: code, fresh approve, merged, CI red then green; one round and one changes verdict; reopened once after done.
   // 2: code, coordinator approve, merged with no CI. 3: no code, approved by the jarl, CI still pending.
   // 4: deferred and brought back — not a reopening. 5: filed 3 days after 1 closed, found by 1's reviewer: a
@@ -176,7 +176,7 @@ test('the library reads the same metrics the report prints', () => {
 
 test('report prints the loop metrics before the lists of issues', () => {
   const dir = loop();
-  jarl(dir, 'new', 'one', '--acceptance', 'it works');
+  jarl(dir, 'new', 'one', '--acceptance', '[read] it works');
   const text = jarl(dir, 'report');
   const metrics = text.indexOf('## Loop metrics');
   assert.ok(metrics > 0, 'the report carries the loop metrics');
@@ -185,7 +185,7 @@ test('report prints the loop metrics before the lists of issues', () => {
 
 test('report --metrics prints the title, the goal and the loop metrics, and no list of issues', () => {
   const dir = loop('metrics alone');
-  jarl(dir, 'new', 'one', '--acceptance', 'it works');
+  jarl(dir, 'new', 'one', '--acceptance', '[read] it works');
   const text = jarl(dir, 'report', '--metrics');
   assert.match(text, /^# Report$/m);
   assert.match(text, /^metrics alone$/m);
@@ -196,14 +196,14 @@ test('report --metrics prints the title, the goal and the loop metrics, and no l
 
 test('report --metrics prints the same metric lines the full report prints', () => {
   const dir = loop();
-  jarl(dir, 'new', 'one');
+  jarl(dir, 'new', 'one', '--acceptance', '[read] it works');
   const block = (text) => text.slice(text.indexOf('## Loop metrics')).split('\n\n')[0];
   assert.equal(block(jarl(dir, 'report', '--metrics')), block(jarl(dir, 'report')));
 });
 
 test('report --metrics stays under 10 KB on a loop of hundreds of issues, where the full report is larger', () => {
   const dir = loop('a loop of hundreds of issues');
-  for (let i = 0; i < 300; i++) R.newIssue(dir, `item ${i} of the size check`);
+  for (let i = 0; i < 300; i++) R.newIssue(dir, `item ${i} of the size check`, { acceptance: '[read] it works' });
   const short = Buffer.byteLength(jarl(dir, 'report', '--metrics'));
   const full = Buffer.byteLength(jarl(dir, 'report'));
   assert.ok(short < 10_000, `the metrics alone take ${short} bytes`);
@@ -212,7 +212,7 @@ test('report --metrics stays under 10 KB on a loop of hundreds of issues, where 
 
 test('report --json keeps every key and every issue row, with or without --metrics', () => {
   const dir = loop();
-  jarl(dir, 'new', 'one', '--acceptance', 'it works');
+  jarl(dir, 'new', 'one', '--acceptance', '[read] it works');
   const keys = ['done', 'dropped', 'deferred', 'left', 'found', 'reviews', 'byRepo', 'issues', 'text', 'check', 'metrics', 'closedGate'];
   const full = json(dir, 'report');
   assert.deepEqual(Object.keys(full), keys);
@@ -224,7 +224,7 @@ test('report --json keeps every key and every issue row, with or without --metri
 
 test('the testimony mark is printed once, as the first line of the loop metrics', () => {
   const dir = loop();
-  jarl(dir, 'new', 'one');
+  jarl(dir, 'new', 'one', '--acceptance', '[read] it works');
   const text = jarl(dir, 'report');
   assert.equal(text.match(/^no check is declared/gm).length, 1);
   assert.match(text, /^## Loop metrics\nno check is declared/m);

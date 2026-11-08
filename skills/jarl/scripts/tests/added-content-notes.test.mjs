@@ -14,7 +14,7 @@ const MARKERS = ['<<<<<<< HEAD', 'ours', '=======', 'theirs', '>>>>>>> feature']
 function leased() {
   const { dir, g } = gitRepo({ prefix: 'jarl-added-', branch: 'main' });
   jarl(dir, 'init', 'goal');
-  jarl(dir, 'new', 'one', '--files', 'a.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
+  jarl(dir, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.txt', '--tier', 'standard', '--kind', 'gap', '--prio', '2');
   g('checkout', '-q', '-b', 'jarl/1-x');
   jarl(dir, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/1-x', '--worker', 'w-one');
   const commit = (message) => { g('add', '-A'); g('-c', 'commit.gpgsign=false', 'commit', '-qm', message); };

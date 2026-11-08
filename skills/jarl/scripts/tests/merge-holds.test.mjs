@@ -26,7 +26,7 @@ function fixture() {
   git(repo, 'init', '-q', '-b', 'main');
   commit(repo, 'a.txt', 'a\n');
   jarl(repo, 'init', 'goal');
-  jarl(repo, 'new', 'issue one', '--acceptance', 'it works');
+  jarl(repo, 'new', 'issue one', '--acceptance', '[read] it works');
   git(repo, 'checkout', '-q', '-b', 'jarl/1-x');
   commit(repo, 'b.txt', 'b\n');
   git(repo, 'checkout', '-q', 'main');
@@ -84,7 +84,7 @@ function declaredBaseFixture(initFlags = []) {
   const [hub, tool] = ['hub', 'tool'].map((name) => join(parent, name));
   for (const dir of [hub, tool]) { mkdirSync(dir); git(dir, 'init', '-q', '-b', 'main'); commit(dir, 'a.txt', 'a\n'); }
   jarl(hub, 'init', 'goal', ...initFlags);
-  jarl(hub, 'new', 'issue one', '--repo', '../tool', '--acceptance', 'it works');
+  jarl(hub, 'new', 'issue one', '--repo', '../tool', '--acceptance', '[read] it works');
   git(tool, 'checkout', '-q', '-b', 'release');
   commit(tool, 'r.txt', 'r\n');
   git(tool, 'checkout', '-q', '-b', 'jarl/1-x', 'main');
@@ -131,7 +131,7 @@ test('scope, branches and the merge queue of resume read the declared base, as t
     const queue = JSON.parse(jarl(hub, 'resume', '--json')).queue.repos.find((r) => r.repo === 'tool');
     return { scope: [scope.base, scope.items.find((i) => i.name === 'commits beyond base').ok], ahead: row.ahead, queue: [queue.base, queue.rows.map((r) => r.branch)] };
   };
-  jarl(hub, 'evidence', '1', '--ran', 'npm test', '--saw', 'all green');
+  jarl(hub, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'all green');
   jarl(hub, 'review', '1', 'approve', '--by', 'rev-fresh', 'read the diff, nothing found');
   assert.deepEqual(views(), { scope: ['main', false], ahead: 0, queue: ['main', []] }, 'no base is declared: the open branch, which holds the merge, is the base');
   jarl(hub, 'base', 'tool', 'release');
@@ -146,7 +146,7 @@ function landedGateProfile() {
   return ['--profile', file];
 }
 const readyToClose = (hub) => {
-  jarl(hub, 'evidence', '1', '--ran', 'npm test', '--saw', 'all green');
+  jarl(hub, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'all green');
   jarl(hub, 'review', '1', 'approve', '--by', 'rev-fresh', 'read the diff, nothing found');
 };
 
@@ -177,7 +177,7 @@ test('the cleanup after a merge keeps the declared base when an issue is leased 
   git(tool, 'checkout', '-q', '-b', 'integration', 'main');
   commit(tool, 'i.txt', 'i\n');
   git(tool, 'checkout', '-q', 'main');
-  jarl(hub, 'new', 'issue two', '--repo', '../tool', '--acceptance', 'it works');
+  jarl(hub, 'new', 'issue two', '--repo', '../tool', '--acceptance', '[read] it works');
   jarl(hub, 'set', '2', 'in-progress', 'start', '--branch', 'integration', '--worker', 'w-two');
   jarl(hub, 'base', 'tool', 'integration');
   git(tool, 'merge', '-q', '--no-ff', '-m', 'merge integration', 'integration');
@@ -234,7 +234,7 @@ test('an issue closed on a merge that never recorded a check is named by status,
   git(repo, 'merge', '-q', '--no-ff', '-m', 'merge 1', 'jarl/1-x');
   const sha = git(repo, 'rev-parse', 'HEAD');
   jarl(repo, 'merged', '1', '--sha', sha, '--keep');
-  jarl(repo, 'evidence', '1', '--ran', 'npm test', '--saw', 'all green');
+  jarl(repo, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'all green');
   assert.doesNotMatch(jarl(repo, 'status'), /closed with no check/, 'an open issue is waiting for its check, not closed without one');
   assert.equal(jarl(repo, 'set', '1', 'done', 'merged'), '1 → done');
   assert.doesNotMatch(jarl(repo, 'status'), /waiting for its check/);
@@ -247,7 +247,7 @@ test('an issue closed on a merge that never recorded a check is named by status,
 
 test('a merge recorded on a red check with its cause is not shown as waiting for its check', () => {
   const { repo } = fixture();
-  jarl(repo, 'new', 'the cause', '--acceptance', 'it is found');
+  jarl(repo, 'new', 'the cause', '--acceptance', '[read] it is found');
   git(repo, 'merge', '-q', '--no-ff', '-m', 'merge 1', 'jarl/1-x');
   jarl(repo, 'merged', '1', '--sha', git(repo, 'rev-parse', 'HEAD'), '--red', '2', '--keep');
   assert.doesNotMatch(jarl(repo, 'status'), /waiting for its check/);
@@ -269,7 +269,7 @@ test('merged without --sha on an issue whose lease records no branch says so, an
   git(repo, 'init', '-q', '-b', 'main');
   commit(repo, 'a.txt', 'a\n');
   jarl(repo, 'init', 'goal');
-  jarl(repo, 'new', 'issue one', '--acceptance', 'it works');
+  jarl(repo, 'new', 'issue one', '--acceptance', '[read] it works');
   const out = refuses(repo, 'merged', '1', '--ci', 'green');
   assert.match(out, /records no merge yet/);
   assert.match(out, /its lease records no branch, so no head is offered/);
@@ -416,7 +416,7 @@ test('an approve that carries no tip, as one recorded before the branch existed,
   git(repo, 'init', '-q', '-b', 'main');
   commit(repo, 'a.txt', 'a\n');
   jarl(repo, 'init', 'goal');
-  jarl(repo, 'new', 'issue one', '--acceptance', 'it works');
+  jarl(repo, 'new', 'issue one', '--acceptance', '[read] it works');
   jarl(repo, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/1-x', '--worker', 'w-one');
   jarl(repo, 'review', '1', 'approve', '--by', 'rev-fresh', 'read the plan, nothing found');
   git(repo, 'checkout', '-q', '-b', 'jarl/1-x');
@@ -430,7 +430,7 @@ test('an approve that carries no tip, as one recorded before the branch existed,
 test('a review recorded after the note is the approve the gate stands on, and done closes the issue', () => {
   const { repo, later } = approved();
   later('late.txt');
-  jarl(repo, 'evidence', '1', '--ran', 'npm test', '--saw', 'all green');
+  jarl(repo, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'all green');
   git(repo, 'merge', '-q', '--no-ff', '-m', 'merge 1', 'jarl/1-x');
   assert.match(said(repo, 'merged', '1', '--sha', git(repo, 'rev-parse', 'HEAD'), '--keep'), APPROVED_ELSEWHERE);
   jarl(repo, 'review', '1', 'approve', '--by', 'rev-fresh-2', 'read the late commit, nothing found');
@@ -448,7 +448,7 @@ test('an issue of several repositories is noted per repository whose tip moved a
   }
   const { hub, tool, lib, doc } = dirs;
   jarl(hub, 'init', 'goal');
-  jarl(hub, 'new', 'cross', '--repo', '../tool,../lib,../doc', '--acceptance', 'it works');
+  jarl(hub, 'new', 'cross', '--repo', '../tool,../lib,../doc', '--acceptance', '[read] it works');
   for (const r of [tool, lib, doc]) { git(r, 'checkout', '-q', '-b', 'jarl/1-x'); commit(r, 'b.txt', 'b\n'); git(r, 'checkout', '-q', 'main'); }
   jarl(hub, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/1-x', '--worker', 'w-one');
   jarl(hub, 'review', '1', 'approve', '--by', 'rev-fresh', 'read the diff, nothing found');
@@ -476,7 +476,7 @@ function twoRepositoriesMovedInTool() {
   }
   const { hub, tool, lib } = dirs;
   jarl(hub, 'init', 'goal');
-  jarl(hub, 'new', 'cross', '--repo', '../tool,../lib', '--acceptance', 'it works');
+  jarl(hub, 'new', 'cross', '--repo', '../tool,../lib', '--acceptance', '[read] it works');
   for (const r of [tool, lib]) { git(r, 'checkout', '-q', '-b', 'jarl/1-x'); commit(r, 'b.txt', 'b\n'); git(r, 'checkout', '-q', 'main'); }
   jarl(hub, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/1-x', '--worker', 'w-one');
   jarl(hub, 'review', '1', 'approve', '--by', 'rev-fresh', 'read the diff, nothing found');
@@ -518,7 +518,7 @@ function twoRepositoriesOneAway() {
   }
   const { hub, tool, lib } = dirs;
   jarl(hub, 'init', 'goal');
-  jarl(hub, 'new', 'cross', '--repo', '../tool,../lib', '--acceptance', 'it works');
+  jarl(hub, 'new', 'cross', '--repo', '../tool,../lib', '--acceptance', '[read] it works');
   for (const r of [tool, lib]) { git(r, 'checkout', '-q', '-b', 'jarl/1-x'); commit(r, 'b.txt', 'b\n'); git(r, 'checkout', '-q', 'main'); }
   jarl(hub, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/1-x', '--worker', 'w-one');
   jarl(hub, 'review', '1', 'approve', '--by', 'rev-fresh', 'read the diff, nothing found');

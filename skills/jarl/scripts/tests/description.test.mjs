@@ -20,9 +20,9 @@ function profiledLoop() {
   const file = join(dir, 'profile.json');
   writeFileSync(file, JSON.stringify(PROFILE));
   const root = makeLoop({ prefix: 'jarl-description-', goal: 'a goal', via: 'cli', initFlags: ['--profile', file] });
-  jarl(root, 'new', 'first title', '--kind', 'gap', '--prio', '2', '--tier', 'standard', '--found-by', 'owner', '--field', 'Area=core', '--what', 'old what', '--why', 'old why', '--acceptance', 'old line', '--changelog', 'Fixed: old entry', '--section', 'Design=old design');
-  jarl(root, 'new', 'second', '--tier', 'light');
-  jarl(root, 'new', 'third', '--tier', 'light');
+  jarl(root, 'new', 'first title', '--kind', 'gap', '--prio', '2', '--tier', 'standard', '--found-by', 'owner', '--field', 'Area=core', '--what', 'old what', '--why', 'old why', '--acceptance', '[read] old line', '--changelog', 'Fixed: old entry', '--section', 'Design=old design');
+  jarl(root, 'new', 'second', '--acceptance', '[read] it works', '--tier', 'light');
+  jarl(root, 'new', 'third', '--acceptance', '[read] it works', '--tier', 'light');
   return root;
 }
 const logLines = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').map((l) => l.replace(/^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)? · /, ''));
@@ -179,7 +179,7 @@ test('field --add adds to a section after what it holds, and logs the line a rep
   assert.equal(lastLine(root), '1 body · what · was "old what" (8 characters)', 'the line says what the section held before the append');
   jarl(root, 'field', '1', 'Why', 'more why', '--add', '--by', 'w-two');
   assert.equal(lastLine(root), '1 body · why · was "old why" (7 characters) · by w-two');
-  jarl(root, 'field', '1', 'Acceptance', 'line b', '--add');
+  jarl(root, 'field', '1', 'Acceptance', '[read] line b', '--add');
   assert.equal(R.findIssue(root, '1').sections.acceptance.trim(), '- old line\n- line b', 'the new line joins the list the section held');
   assert.equal(lastLine(root), '1 body · acceptance · was "old line" (8 characters)');
   jarl(root, 'field', '1', 'Changelog', 'Added: new entry', '--add');

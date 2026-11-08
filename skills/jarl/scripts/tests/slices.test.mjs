@@ -13,7 +13,7 @@ const tagsOf = (root, id) => json(root, 'show', id).tags;
 
 test('field Tags and new refuse a second slice: tag on one issue, and say how to move the issue', () => {
   const root = loop();
-  jarl(root, 'new', 'one', '--tags', 'docs,slice:odin', '--files', 'a.mjs');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--tags', 'docs,slice:odin', '--files', 'a.mjs');
   assert.deepEqual(tagsOf(root, '1'), ['docs', 'slice:odin']);
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   const file = readFileSync(json(root, 'show', '1').file, 'utf8');
@@ -48,9 +48,9 @@ test('status names each coordinator of the Coordinators line with its slice, and
   const root = loop();
   jarl(root, 'goal', '--set', 'Coordinators: odin, thor');
   assert.doesNotMatch(jarl(root, 'status'), /^slices:/m, 'no slice tag in the loop: nothing to say');
-  jarl(root, 'new', 'one', '--tags', 'slice:odin', '--files', 'a.mjs');
-  jarl(root, 'new', 'two', '--tags', 'slice:odin', '--files', 'b.mjs');
-  jarl(root, 'new', 'three', '--tags', 'slice:loki', '--files', 'c.mjs');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--tags', 'slice:odin', '--files', 'a.mjs');
+  jarl(root, 'new', 'two', '--acceptance', '[read] it works', '--tags', 'slice:odin', '--files', 'b.mjs');
+  jarl(root, 'new', 'three', '--acceptance', '[read] it works', '--tags', 'slice:loki', '--files', 'c.mjs');
   jarl(root, 'set', '2', 'dropped', 'not needed');
   assert.match(jarl(root, 'status'), /^slices: odin runs slice:odin \(1 in play\) · thor runs slice:thor \(none in play\) · slice:loki has no coordinator on the goal's Coordinators line \(1 in play\): its approve counts as fresh until the line names loki$/m);
   assert.deepEqual(json(root, 'status').slices, [
@@ -67,11 +67,11 @@ test('status names each coordinator of the Coordinators line with its slice, and
 function twoSlices() {
   const root = loop();
   jarl(root, 'goal', '--set', 'Coordinators: odin, thor');
-  jarl(root, 'new', 'odin first', '--tags', 'slice:odin', '--files', 'a.mjs', '--prio', '1');   // 1
-  jarl(root, 'new', 'odin second', '--tags', 'slice:odin', '--files', 'a.mjs');                 // 2
-  jarl(root, 'new', 'thor first', '--tags', 'slice:thor', '--files', 'a.mjs');                  // 3
-  jarl(root, 'new', 'the jarl\'s', '--files', 'b.mjs');                                         // 4
-  jarl(root, 'new', 'thor leased', '--tags', 'slice:thor', '--files', 'c.mjs');                 // 5
+  jarl(root, 'new', 'odin first', '--acceptance', '[read] it works', '--tags', 'slice:odin', '--files', 'a.mjs', '--prio', '1');   // 1
+  jarl(root, 'new', 'odin second', '--acceptance', '[read] it works', '--tags', 'slice:odin', '--files', 'a.mjs');                 // 2
+  jarl(root, 'new', 'thor first', '--acceptance', '[read] it works', '--tags', 'slice:thor', '--files', 'a.mjs');                  // 3
+  jarl(root, 'new', 'the jarl\'s', '--acceptance', '[read] it works', '--files', 'b.mjs');                                         // 4
+  jarl(root, 'new', 'thor leased', '--acceptance', '[read] it works', '--tags', 'slice:thor', '--files', 'c.mjs');                 // 5
   jarl(root, 'set', '5', 'in-progress', 'go', '--worker', 'w5', '--branch', 'jarl/5');
   return root;
 }
@@ -132,12 +132,12 @@ test('status --slice and resume --slice are scoped to the slice, the way status 
 
 test('next --as <coordinator> holds its slice\'s ready issues, leases, proofs with no verdict and changes verdicts; the jarl keeps the issues in no slice and what follows an approve', () => {
   const root = twoSlices();
-  jarl(root, 'new', 'odin proof', '--tags', 'slice:odin', '--files', 'd.mjs');     // 6
-  jarl(root, 'new', 'odin changes', '--tags', 'slice:odin', '--files', 'e.mjs');   // 7
-  jarl(root, 'new', 'thor approved', '--tags', 'slice:thor', '--files', 'f.mjs');  // 8
+  jarl(root, 'new', 'odin proof', '--acceptance', '[read] it works', '--tags', 'slice:odin', '--files', 'd.mjs');     // 6
+  jarl(root, 'new', 'odin changes', '--acceptance', '[read] it works', '--tags', 'slice:odin', '--files', 'e.mjs');   // 7
+  jarl(root, 'new', 'thor approved', '--acceptance', '[read] it works', '--tags', 'slice:thor', '--files', 'f.mjs');  // 8
   for (const id of ['6', '7', '8']) {
     jarl(root, 'set', id, 'in-progress', 'go', '--worker', `w${id}`, '--branch', `jarl/${id}`);
-    jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'green');
+    jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'green');
   }
   jarl(root, 'review', '7', 'changes', '--by', 'rev', 'Important: the empty case fails');
   jarl(root, 'review', '8', 'approve', '--by', 'rev', 'Checked every acceptance line against the diff; nothing left open');
@@ -155,7 +155,7 @@ test('next --as <coordinator> holds its slice\'s ready issues, leases, proofs wi
 
 test('the issues waiting on a slice\'s issue, through After or a file it reserves, wait on its coordinator', () => {
   const root = twoSlices();
-  jarl(root, 'new', 'after odin\'s first', '--after', '1', '--files', 'g.mjs');   // 6
+  jarl(root, 'new', 'after odin\'s first', '--acceptance', '[read] it works', '--after', '1', '--files', 'g.mjs');   // 6
   // 2 waits on 1 too: 1 reserves a.mjs within odin's slice.
   assert.deepEqual(json(root, 'next', '--as', 'odin', '--all').waiting.map((w) => [w.id, w.on, w.via]), [['2', 'odin', ['1']], ['6', 'odin', ['1']]]);
   assert.deepEqual(json(root, 'next', '--as', 'jarl', '--all').waiting, [], 'nothing waits on the jarl');
@@ -215,11 +215,11 @@ test('a loop holding an escalation is refused by the frozen reader of formats 1 
 
 test('the goal\'s Merger line names the one holder that raises the merger: every approve not merged is on it, in every slice', () => {
   const root = twoSlices();
-  jarl(root, 'new', 'odin approved', '--tags', 'slice:odin', '--files', 'd.mjs');   // 6
-  jarl(root, 'new', 'thor approved', '--tags', 'slice:thor', '--files', 'e.mjs');   // 7
+  jarl(root, 'new', 'odin approved', '--acceptance', '[read] it works', '--tags', 'slice:odin', '--files', 'd.mjs');   // 6
+  jarl(root, 'new', 'thor approved', '--acceptance', '[read] it works', '--tags', 'slice:thor', '--files', 'e.mjs');   // 7
   for (const id of ['6', '7']) {
     jarl(root, 'set', id, 'in-progress', 'go', '--worker', `w${id}`, '--branch', `jarl/${id}`);
-    jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'green');
+    jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'green');
     jarl(root, 'review', id, 'approve', '--by', 'rev', 'Checked every acceptance line against the diff; nothing left open');
   }
   const merges = (who) => json(root, 'next', '--as', who, '--all').rows.filter((r) => r.what === 'merge').map((r) => r.id);
@@ -238,9 +238,9 @@ test('the goal\'s Merger line names the one holder that raises the merger: every
 test('with more than one slice in play, a lease on an issue that declares no Files or Resources is refused, ending with the form that declares them, its ids a placeholder', () => {
   const root = loop();
   jarl(root, 'goal', '--set', 'Coordinators: odin, thor');
-  jarl(root, 'new', 'odin bare', '--tags', 'slice:odin');                     // 1
-  jarl(root, 'new', 'thor files', '--tags', 'slice:thor', '--files', 'a.mjs'); // 2
-  jarl(root, 'new', 'no slice, bare');                                         // 3
+  jarl(root, 'new', 'odin bare', '--acceptance', '[read] it works', '--tags', 'slice:odin');                     // 1
+  jarl(root, 'new', 'thor files', '--acceptance', '[read] it works', '--tags', 'slice:thor', '--files', 'a.mjs'); // 2
+  jarl(root, 'new', 'no slice, bare', '--acceptance', '[read] it works');                                         // 3
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   for (const id of ['1', '3']) {
     assert.match(refuses(root, 'set', id, 'in-progress', 'go', '--worker', 'w', '--branch', `jarl/${id}`), new RegExp(`^${id} declares no Files or Resources, and 3 slices are in play \\(slice:odin, slice:thor, the issues in no slice\\): across slices only leases hold, and a lease holds only what its issue declares — declare them first, its files or its resources \\(jarl\\.mjs field "<ids>" Resources "<resource-name>"\\)\njarl\\.mjs field "<ids>" Files "<paths>"\njarl\\.mjs set "<ids>" "<status>" "<why>" --worker "<the-new-worker>" --branch "<worker-branch>"\n$`));
@@ -251,8 +251,8 @@ test('with more than one slice in play, a lease on an issue that declares no Fil
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1');
   // One slice in play: nothing to collide with across slices, and the lease goes through as before.
   const one = loop();
-  jarl(one, 'new', 'odin bare', '--tags', 'slice:odin');
-  jarl(one, 'new', 'thor done', '--tags', 'slice:thor');
+  jarl(one, 'new', 'odin bare', '--acceptance', '[read] it works', '--tags', 'slice:odin');
+  jarl(one, 'new', 'thor done', '--acceptance', '[read] it works', '--tags', 'slice:thor');
   jarl(one, 'set', '2', 'dropped', 'not needed');
   jarl(one, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1');
 });
@@ -310,8 +310,8 @@ test('a refused question in a format-1 loop writes nothing and raises nothing, w
 test('issues in no slice count as one more slice in play: beside one coordinator\'s slice, a lease on an issue that declares nothing is refused', () => {
   const root = loop();
   jarl(root, 'goal', '--set', 'Coordinators: odin');
-  jarl(root, 'new', 'odin bare', '--tags', 'slice:odin');   // 1
-  jarl(root, 'new', 'the jarl\'s, bare');                    // 2
+  jarl(root, 'new', 'odin bare', '--acceptance', '[read] it works', '--tags', 'slice:odin');   // 1
+  jarl(root, 'new', 'the jarl\'s, bare', '--acceptance', '[read] it works');                    // 2
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   for (const id of ['1', '2']) {
     assert.match(refuses(root, 'set', id, 'in-progress', 'go', '--worker', 'w', '--branch', `jarl/${id}`), new RegExp(`^${id} declares no Files or Resources, and 2 slices are in play \\(slice:odin, the issues in no slice\\): across slices only leases hold`), `issue ${id}`);
@@ -319,14 +319,14 @@ test('issues in no slice count as one more slice in play: beside one coordinator
   assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), log, 'nothing was written');
   // Issues in no slice alone are one slice: the lease goes through as before.
   const alone = loop();
-  jarl(alone, 'new', 'the jarl\'s, bare');
-  jarl(alone, 'new', 'another of the jarl\'s, bare');
+  jarl(alone, 'new', 'the jarl\'s, bare', '--acceptance', '[read] it works');
+  jarl(alone, 'new', 'another of the jarl\'s, bare', '--acceptance', '[read] it works');
   jarl(alone, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1');
 });
 
 test('the issues behind an issue an escalation holds wait on the jarl, not on the owner', () => {
   const root = twoSlices();
-  jarl(root, 'new', 'after the jarl\'s', '--after', '4', '--files', 'h.mjs');   // 6
+  jarl(root, 'new', 'after the jarl\'s', '--acceptance', '[read] it works', '--after', '4', '--files', 'h.mjs');   // 6
   jarl(root, 'ask', 'is 4 ours?', '--kind', 'escalation', '--issue', '4');
   const waits = (who) => json(root, 'next', '--as', who, '--all').waiting.map((w) => [w.id, w.on, w.via]);
   assert.deepEqual(waits('owner'), []);
@@ -340,8 +340,8 @@ test('the issues behind an issue an escalation holds wait on the jarl, not on th
 test('an acceptance line only the owner ticks is on the slice\'s coordinator while its material is produced, then on the owner, and so are the issues that wait on it', () => {
   const root = makeLoop({ prefix: 'jarl-slice-owner-', via: 'cli' });
   jarl(root, 'goal', '--set', 'Coordinators: odin');
-  jarl(root, 'new', 'cut', '--tags', 'slice:odin', '--files', 'film.md', '--acceptance', 'the cut renders', '--acceptance', '[owner] the first cut reads well · material: renders/cut.txt · check: the pacing');   // 1
-  jarl(root, 'new', 'publish', '--files', 'p.md', '--after', '1', '--acceptance', 'it is published');   // 2
+  jarl(root, 'new', 'cut', '--tags', 'slice:odin', '--files', 'film.md', '--acceptance', '[read] the cut renders', '--acceptance', '[owner] the first cut reads well · material: renders/cut.txt · check: the pacing');   // 1
+  jarl(root, 'new', 'publish', '--files', 'p.md', '--after', '1', '--acceptance', '[read] it is published');   // 2
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1');
   const lines = (who) => json(root, 'next', '--as', who, '--all');
   const signOff = (who) => lines(who).rows.filter((r) => r.what === 'sign-off').map((r) => [r.id, r.line]);
@@ -352,7 +352,7 @@ test('an acceptance line only the owner ticks is on the slice\'s coordinator whi
   assert.deepEqual(waits('jarl'), []);
   mkdirSync(join(root, 'renders'), { recursive: true });
   writeFileSync(join(root, 'renders', 'cut.txt'), 'the cut\n');
-  jarl(root, 'evidence', '1', '--ran', 'render the cut', '--saw', 'renders/cut.txt written');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'render the cut', '--saw', 'renders/cut.txt written');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', 'Checked every acceptance line against the diff; nothing left open');
   assert.deepEqual(signOff('owner'), [['1', 2]]);
   assert.deepEqual(waits('owner'), [['2', ['1']]], 'with its material there, the wait is the owner\'s');

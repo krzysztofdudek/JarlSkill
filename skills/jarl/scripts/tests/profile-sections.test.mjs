@@ -41,6 +41,6 @@ test('sections of other names are accepted, and a loop already open with a reser
   mkdirSync(join(root, '.git'));
   R.initLoop(root, 'an older loop');
   writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, name: 'own', statuses: STATUSES, sections: ['Notes'] }));
-  assert.match(jarl(root, 'new', 'one', '--section', 'Notes=kept'), /filed 1/);
+  assert.match(jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--section', 'Notes=kept'), /filed 1/);
   assert.deepEqual(JSON.parse(jarl(root, 'profile', '--json')).sections, ['Notes']);
 });

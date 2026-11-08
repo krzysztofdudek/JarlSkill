@@ -23,25 +23,25 @@ const marker = (root) => join(root, '.jarl', 'profile.json');
 // A parent with three acceptance lines and two issues filed for its parts: 1 the export, 2 the csv writer, 3 the json writer.
 function exportLoop() {
   const root = loop();
-  jarl(root, 'new', 'the export', '--acceptance', 'it writes csv', '--acceptance', 'it writes json', '--acceptance', 'the docs describe both', '--files', 'docs/export.md');
-  jarl(root, 'new', 'the csv writer', '--files', 'src/csv.mjs');
-  jarl(root, 'new', 'the json writer', '--files', 'src/json.mjs', '--acceptance', 'json is valid');
+  jarl(root, 'new', 'the export', '--acceptance', '[read] it writes csv', '--acceptance', '[read] it writes json', '--acceptance', '[read] the docs describe both', '--files', 'docs/export.md');
+  jarl(root, 'new', 'the csv writer', '--acceptance', '[read] it works', '--files', 'src/csv.mjs');
+  jarl(root, 'new', 'the json writer', '--files', 'src/json.mjs', '--acceptance', '[read] json is valid');
   return root;
 }
 // Proof and an approve on an issue in a lease, then done.
 function finish(root, id) {
   jarl(root, 'set', id, 'in-progress', 'go', '--worker', `w${id}`);
-  jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'all pass');
+  jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'all pass');
   jarl(root, 'review', id, 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'set', id, 'done', 'finished');
 }
 
 test('an open stuck or stop question that names a parent holds back every issue under it until it is answered, and one on a sub-issue holds only that one', () => {
   const root = exportLoop();
-  jarl(root, 'new', 'the csv header', '--files', 'src/csv-header.mjs');
+  jarl(root, 'new', 'the csv header', '--acceptance', '[read] it works', '--files', 'src/csv-header.mjs');
   jarl(root, 'field', '2,3', 'Parent', '1');
   jarl(root, 'field', '4', 'Parent', '2');
-  jarl(root, 'new', 'outside the tree', '--files', 'src/other.mjs');
+  jarl(root, 'new', 'outside the tree', '--acceptance', '[read] it works', '--files', 'src/other.mjs');
   const groups = (r) => Object.fromEntries(json(r, 'next', '--all').map((row) => [row.id, [row.group, row.questions || []]]));
   jarl(root, 'ask', 'csv or tsv first?', '--kind', 'stop', '--issue', '1');
   assert.deepEqual(groups(root), { 1: ['waiting-sub', []], 2: ['waiting-sub', []], 3: ['held-by-question', ['1']], 4: ['held-by-question', ['1']], 5: ['ready', []] });
@@ -54,7 +54,7 @@ test('an open stuck or stop question that names a parent holds back every issue 
 
 test('a question on a parent holds up every issue under it on the owner\'s list, each counted', () => {
   const root = loop();
-  for (const name of ['export', 'csv', 'json', 'docs', 'logo']) jarl(root, 'new', `the ${name}`, '--files', `src/${name}.mjs`);
+  for (const name of ['export', 'csv', 'json', 'docs', 'logo']) jarl(root, 'new', `the ${name}`, '--acceptance', '[read] it works', '--files', `src/${name}.mjs`);
   jarl(root, 'field', '2,3,4', 'Parent', '1');
   jarl(root, 'ask', 'which logo?', '--kind', 'stuck', '--issue', '5');
   jarl(root, 'ask', 'csv or tsv first?', '--kind', 'stuck', '--issue', '1');
@@ -103,7 +103,7 @@ test('field Parent names the parent of an issue, a sub-issue has sub-issues of i
 
 test('a parent the loop does not hold, the issue itself, one of its own sub-issues and a wait in a circle are refused, with nothing written', () => {
   const root = loop();
-  for (const t of ['one', 'two', 'three', 'four']) jarl(root, 'new', t);
+  for (const t of ['one', 'two', 'three', 'four']) jarl(root, 'new', t, '--acceptance', '[read] it works');
   jarl(root, 'field', '2', 'Parent', '1');
   jarl(root, 'field', '3', 'Parent', '2');
   const before = () => [logText(root), textOf(root, '1'), textOf(root, '2'), textOf(root, '3'), textOf(root, '4')];
@@ -128,8 +128,8 @@ test('in a loop a composer runs, a parent is off: field Parent and split are ref
   const profile = join(mkdtempSync(join(tmpdir(), 'jarl-tree-profile-')), 'profile.json');
   writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: L.BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }, null, 2));
   jarl(dir, 'init', 'a composed goal', '--profile', profile);
-  jarl(dir, 'new', 'one', '--acceptance', 'a', '--acceptance', 'b');
-  jarl(dir, 'new', 'two');
+  jarl(dir, 'new', 'one', '--acceptance', '[read] a', '--acceptance', '[read] b');
+  jarl(dir, 'new', 'two', '--acceptance', '[read] it works');
   const log = logText(dir);
   assert.match(refuses(dir, 'field', '2', 'Parent', '1'), /^the parent of a sub-issue needs record format 3, and this loop stays at format 1: its profile names an external scheduler \(the composer tick\).*nothing was written$/m);
   assert.match(refuses(dir, 'split', '1', '--line', '1=2', '--line', '2=1'), /^the parent of a sub-issue needs record format 3, and this loop stays at format 1/m);
@@ -143,8 +143,8 @@ test('in a loop a composer runs, a parent is off: field Parent and split are ref
 
 test('next offers only issues with no open sub-issues, and an After on a parent holds its sub-issues back too', () => {
   const root = exportLoop();
-  jarl(root, 'new', 'the schema', '--files', 'src/schema.mjs');                 // 4
-  jarl(root, 'new', 'the release notes', '--files', 'notes.md', '--after', '1'); // 5
+  jarl(root, 'new', 'the schema', '--acceptance', '[read] it works', '--files', 'src/schema.mjs');                 // 4
+  jarl(root, 'new', 'the release notes', '--acceptance', '[read] it works', '--files', 'notes.md', '--after', '1'); // 5
   jarl(root, 'field', '2,3', 'Parent', '1');
   jarl(root, 'field', '1', 'After', '4');
   const ready = () => json(root, 'next').map((r) => r.id);
@@ -179,10 +179,10 @@ test('a parent an open question names is held by it as well as waiting on its su
 
 test('a question on a parent holds every issue under it, a parent in the middle of a tree too: it shows under both groups, and each issue under the question is held by it', () => {
   const root = loop();
-  jarl(root, 'new', 'the export', '--acceptance', 'it writes csv');
-  jarl(root, 'new', 'the writers', '--acceptance', 'both writers work');
-  jarl(root, 'new', 'the csv writer', '--files', 'src/csv.mjs');
-  jarl(root, 'new', 'the json writer', '--files', 'src/json.mjs');
+  jarl(root, 'new', 'the export', '--acceptance', '[read] it writes csv');
+  jarl(root, 'new', 'the writers', '--acceptance', '[read] both writers work');
+  jarl(root, 'new', 'the csv writer', '--acceptance', '[read] it works', '--files', 'src/csv.mjs');
+  jarl(root, 'new', 'the json writer', '--acceptance', '[read] it works', '--files', 'src/json.mjs');
   jarl(root, 'field', '2', 'Parent', '1');
   jarl(root, 'field', '3,4', 'Parent', '2');
   jarl(root, 'ask', 'which writer comes first?', '--kind', 'stuck', '--issue', '1');
@@ -212,17 +212,17 @@ test('a split moves each acceptance line to a named issue or keeps it on the par
   assert.match(log, /^- \S+ \S+ key \S+ · 1 body · acceptance · was "- it writes csv" \(\d+ characters\) · by odin$/m);
   assert.match(log, /^- \S+ \S+ key \S+ · 3 body · acceptance · was "json is valid" \(13 characters\) · by odin$/m);
   // A sub-issue can be split in turn: the tree goes deeper, and the ids stay flat numbers.
-  jarl(root, 'new', 'the csv header');                                                                   // 4
+  jarl(root, 'new', 'the csv header', '--acceptance', '[read] it works');                                                                   // 4
   assert.equal(jarl(root, 'split', '2', '--line', '1=4'), '2 split: line 1 → 4 · sub-issues 4');
   assert.deepEqual(json(root, 'show', '4').parent, '2');
 });
 
 test('a split that moves a line nowhere is refused, naming the line, and so are a line named twice or out of range, an issue the loop does not hold, one under another parent and one finished; nothing is written', () => {
   const root = exportLoop();
-  jarl(root, 'new', 'another parent');   // 4
-  jarl(root, 'new', 'under it');         // 5
+  jarl(root, 'new', 'another parent', '--acceptance', '[read] it works');   // 4
+  jarl(root, 'new', 'under it', '--acceptance', '[read] it works');         // 5
   jarl(root, 'field', '5', 'Parent', '4');
-  jarl(root, 'new', 'finished');         // 6
+  jarl(root, 'new', 'finished', '--acceptance', '[read] it works');         // 6
   finish(root, '6');
   const state = () => [logText(root), ...['1', '2', '3', '5', '6'].map((id) => textOf(root, id))];
   const before = state();
@@ -250,7 +250,7 @@ test('a parent whose sub-issues are all closed holds the ball on its coordinator
   jarl(root, 'field', '1', 'Tags', '--add', 'slice:odin');
   jarl(root, 'split', '1', '--line', '1=2', '--line', '2=3', '--line', '3=1');
   // Proof and an approve made before the whole exists are not the check.
-  jarl(root, 'evidence', '1', '--ran', 'read the docs', '--saw', 'they name csv');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'read the docs', '--saw', 'they name csv');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   const subsOpen = refuses(root, 'set', '1', 'done', 'finished');
   assert.match(subsOpen, /^1 has sub-issues not closed: 2 \(open\), 3 \(open\) — a parent is closed once each of its sub-issues is done or dropped and its own acceptance is then checked against the whole\njarl\.mjs show 1\njarl\.mjs set "<ids>" "<status>" "<why>"\n$/);
@@ -263,12 +263,12 @@ test('a parent whose sub-issues are all closed holds the ball on its coordinator
   finish(root, '2');
   finish(root, '3');
   // The whole is complete: the parent is on its coordinator, in next --as, status and resume.
-  assert.match(odin(), /^- 1 the export: its sub-issues are closed \(2 done, 3 done\): check its own acceptance against the whole, and record what the check ran and printed — jarl\.mjs evidence 1 --ran "<command>" --saw "<what-it-printed>"$/m);
+  assert.match(odin(), /^- 1 the export: its sub-issues are closed \(2 done, 3 done\): check its own acceptance against the whole, and record what the check ran and printed — jarl\.mjs evidence 1 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by "<who>"$/m);
   assert.deepEqual(json(root, 'next', '--as', 'jarl').rows.map((r) => r.id), [], 'the check is the coordinator\'s, not the jarl\'s');
   assert.match(jarl(root, 'status'), /^parent 1 · sub-issues 2 done, 3 done · odin checks its own acceptance against the whole and records the check$/m);
   assert.match(jarl(root, 'resume'), /^## Parents whose sub-issues are closed \(1\)\n- 1 the export · sub-issues 2 done, 3 done\n {2}→ odin checks its own acceptance against the whole and records the check$/m);
   assert.match(refuses(root, 'set', '1', 'done', 'finished'), /^1 has no --ran\/--saw evidence row recorded since its last sub-issue, 3, closed \(\S+ \S+\) — a parent's own acceptance is checked against the whole once every sub-issue is closed, and a row written before that is not that check/m);
-  jarl(root, 'evidence', '1', '--ran', 'run the export end to end', '--saw', 'csv and json written, the docs name both');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'run the export end to end', '--saw', 'csv and json written, the docs name both');
   assert.match(odin(), /^- 1 the export: checked against the whole, no verdict; raise a reviewer — jarl\.mjs review 1 "<verdict>" --by "<reviewer>" "<text>"$/m);
   assert.match(refuses(root, 'set', '1', 'done', 'finished'), /^1 has no approving review newer than its last round or reopen, nor one since its last sub-issue, 3, closed/m, 'the approve from before the whole does not count');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
@@ -281,7 +281,7 @@ test('a sub-issue inherits its parent\'s slice, so a slice can be a subtree, and
   const root = exportLoop();
   jarl(root, 'goal', '--set', 'Coordinators: odin, thor');
   jarl(root, 'field', '1', 'Tags', '--add', 'slice:odin');
-  jarl(root, 'new', 'deeper', '--files', 'src/deep.mjs');   // 4
+  jarl(root, 'new', 'deeper', '--acceptance', '[read] it works', '--files', 'src/deep.mjs');   // 4
   jarl(root, 'field', '2,3', 'Parent', '1');
   jarl(root, 'field', '4', 'Parent', '2');
   assert.deepEqual(json(root, 'next', '--slice', 'odin').map((r) => r.id), ['3', '4'], 'the subtree of a parent in the slice is the slice');
@@ -297,8 +297,8 @@ test('a sub-issue inherits its parent\'s slice, so a slice can be a subtree, and
 
 test('a rule whose selector names an issue reaches that issue\'s sub-issues, at every depth, and no other issue', () => {
   const root = exportLoop();
-  jarl(root, 'new', 'deeper');        // 4
-  jarl(root, 'new', 'elsewhere');     // 5
+  jarl(root, 'new', 'deeper', '--acceptance', '[read] it works');        // 4
+  jarl(root, 'new', 'elsewhere', '--acceptance', '[read] it works');     // 5
   jarl(root, 'field', '2,3', 'Parent', '1');
   jarl(root, 'field', '4', 'Parent', '2');
   jarl(root, 'decide', 'export-rule', 'Every writer of the export streams its output.', '--applies-to', 'issue 1 and role worker', '--by', 'jarl');
@@ -320,15 +320,15 @@ test('a parent is dropped or deferred with its unfinished sub-issues in the same
   assert.match(refuses(root, 'set', '3', 'open', 'back'), /^3 is under 1, which is deferred: an issue is in play only under issues in play, so move 1 back into play in the same call, or first$/m);
   jarl(root, 'set', '1,3', 'open', 'back to it');
   jarl(root, 'set', '3', 'dropped', 'not needed');
-  jarl(root, 'new', 'late');    // 4
+  jarl(root, 'new', 'late', '--acceptance', '[read] it works');    // 4
   finish(root, '1');
   assert.match(refuses(root, 'field', '4', 'Parent', '1'), /^1 is done: its own acceptance was checked against a whole that a sub-issue added now would not be part of — reopen it first\njarl\.mjs set 1 open "<why>"\njarl\.mjs field "<ids>" Parent "<id>"\n$/);
 });
 
 test('list shows the tree, each sub-issue indented under its parent, and one whose parent it does not list names it; show and report name the parent and the sub-issues', () => {
   const root = exportLoop();
-  jarl(root, 'new', 'deeper');           // 4
-  jarl(root, 'new', 'on its own', '--prio', '1');   // 5
+  jarl(root, 'new', 'deeper', '--acceptance', '[read] it works');           // 4
+  jarl(root, 'new', 'on its own', '--acceptance', '[read] it works', '--prio', '1');   // 5
   jarl(root, 'field', '2,3', 'Parent', '1');
   jarl(root, 'field', '4', 'Parent', '2');
   assert.equal(jarl(root, 'list'), [
@@ -348,7 +348,7 @@ test('list shows the tree, each sub-issue indented under its parent, and one who
 
 test('verify names a parent the loop does not hold, a parent that is the issue itself, parents that run in a circle and an open issue under a finished one, all written by hand', () => {
   const root = loop();
-  for (const t of ['one', 'two', 'three', 'four', 'five']) jarl(root, 'new', t);
+  for (const t of ['one', 'two', 'three', 'four', 'five']) jarl(root, 'new', t, '--acceptance', '[read] it works');
   jarl(root, 'field', '5', 'Parent', '4');
   assert.match(jarl(root, 'verify'), /^issues\/: clean$/m);
   const edit = (id, parent) => { const f = json(root, 'show', id).file; writeFileSync(f, readFileSync(f, 'utf8').replace(/^\*\*Where:\*\*.*$/m, (w) => `${w}\n**Parent:** ${parent}`)); };
@@ -368,8 +368,8 @@ test('verify names a parent the loop does not hold, a parent that is the issue i
 
 test('an open issue under a finished parent, written by hand, is a finding of verify', () => {
   const root = loop();
-  jarl(root, 'new', 'parent');
-  jarl(root, 'new', 'child');
+  jarl(root, 'new', 'parent', '--acceptance', '[read] it works');
+  jarl(root, 'new', 'child', '--acceptance', '[read] it works');
   jarl(root, 'field', '2', 'Parent', '1');
   jarl(root, 'set', '1,2', 'dropped', 'not needed');
   const f = json(root, 'show', '2').file;

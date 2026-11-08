@@ -11,7 +11,7 @@ import { BAD, SOURCE, composed, findingsFile, good, imports, json, loop, refused
 
 test('a refusal after an adoption leaves the adopted issue without the Source, and the log as it was', () => {
   const root = loop();
-  jarl(root, 'new', 'an issue that names finding-1', '--what', 'it covers finding-1 of the report');
+  jarl(root, 'new', 'an issue that names finding-1', '--acceptance', '[read] it works', '--what', 'it covers finding-1 of the report');
   const file = findingsFile([good(1), good(2), BAD]);
   const said = refusedImport(root, file, '--adopt');
   assert.match(said, /^finding "finding-bad" cannot be filed/);
@@ -28,7 +28,7 @@ test('a required field of the profile that a finding would leave empty refuses t
   const profile = join(mkdtempSync(join(tmpdir(), 'jarl-atomic-profile-')), 'profile.json');
   writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, name: 'areas', statuses: BUILTIN_STATUSES, fields: { Area: { required: true, enum: ['web', 'api'] } } }));
   jarl(root, 'init', 'goal', '--profile', profile);
-  jarl(root, 'new', 'names finding-1', '--field', 'Area=web', '--what', 'it covers finding-1');
+  jarl(root, 'new', 'names finding-1', '--acceptance', '[read] it works', '--field', 'Area=web', '--what', 'it covers finding-1');
   const file = findingsFile([good(1), good(2)]);
   const said = refusedImport(root, file, '--adopt');
   assert.match(said, /^finding "finding-2" cannot be filed: Area is required by this loop's profile/);
@@ -93,8 +93,8 @@ test('on a loop that stays at its record format and holds no number for the firs
 
 test('an adoption of an issue whose number two files carry is refused by the dry run as by the import, with nothing written', () => {
   const root = loop();
-  jarl(root, 'new', 'an issue that names finding-1', '--what', 'it covers finding-1 of the report');
-  jarl(root, 'new', 'another issue');
+  jarl(root, 'new', 'an issue that names finding-1', '--acceptance', '[read] it works', '--what', 'it covers finding-1 of the report');
+  jarl(root, 'new', 'another issue', '--acceptance', '[read] it works');
   const dir = join(root, '.jarl', 'issues');
   const second = readdirSync(dir).find((f) => /^0*2-/.test(f));
   const twin = second.replace(/^0*2-/, (m) => m.replace('2', '1'));
@@ -108,7 +108,7 @@ test('an adoption of an issue whose number two files carry is refused by the dry
 
 test('an import that is not refused still files, adopts and logs as it did', () => {
   const root = loop();
-  jarl(root, 'new', 'an issue that names finding-1', '--what', 'it covers finding-1 of the report');
+  jarl(root, 'new', 'an issue that names finding-1', '--acceptance', '[read] it works', '--what', 'it covers finding-1 of the report');
   const out = JSON.parse(imports(root, findingsFile([good(1), good(2), good(3)]), '--adopt', '--json'));
   assert.deepEqual(out.filed.map((f) => f.finding), ['finding-2', 'finding-3']);
   assert.deepEqual(out.adopted.map((a) => a.finding), ['finding-1']);

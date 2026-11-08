@@ -20,14 +20,14 @@ const marker = (root) => join(root, '.jarl', 'profile.json');
 function leased() {
   const root = loop();
   jarl(root, 'goal', '--set', 'Coordinators: odin');
-  jarl(root, 'new', 'the export', '--acceptance', 'it writes csv');
+  jarl(root, 'new', 'the export', '--acceptance', '[read] it writes csv');
   jarl(root, 'set', '1', 'in-progress', 'start', '--worker', 'w1');
   return root;
 }
 
 test('a line added to the acceptance of a leased issue prints a note naming it, and its log line carries the mark', () => {
   const root = leased();
-  const r = run(root, ['field', '1', 'Acceptance', 'it writes json', '--add', '--by', 'odin']);
+  const r = run(root, ['field', '1', 'Acceptance', '[read] it writes json', '--add', '--by', 'odin']);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout, '1 Acceptance: - it writes csv - it writes json');
   assert.match(r.stderr, /^note: 1 is leased \(in-progress\), and its scope grew after the lease: line 2 "it writes json" — an issue's scope does not grow once it is leased: a new ask is a new issue, jarl\.mjs new "<title>" --acceptance "<line>"$/m);
@@ -36,16 +36,16 @@ test('a line added to the acceptance of a leased issue prints a note naming it, 
 
 test('a rewritten line counts as growth, a change that only takes lines away does not, and neither does a change before the lease', () => {
   const root = loop();
-  jarl(root, 'new', 'the export', '--acceptance', 'it writes csv', '--acceptance', 'it writes json');
-  const open = run(root, ['field', '1', 'Acceptance', 'it writes csv\nit writes json\nthe docs name both']);
+  jarl(root, 'new', 'the export', '--acceptance', '[read] it writes csv', '--acceptance', '[read] it writes json');
+  const open = run(root, ['field', '1', 'Acceptance', '[read] it writes csv\n[read] it writes json\n[read] the docs name both']);
   assert.doesNotMatch(open.stderr, /grew after the lease/, 'an open issue is held by no lease');
   assert.doesNotMatch(logText(root), /grew after the lease/);
   jarl(root, 'set', '1', 'in-progress', 'start', '--worker', 'w1');
-  const rewritten = run(root, ['field', '1', 'Acceptance', 'it writes csv with a header\nit writes json\nthe docs name both']);
+  const rewritten = run(root, ['field', '1', 'Acceptance', '[read] it writes csv with a header\n[read] it writes json\n[read] the docs name both']);
   assert.match(rewritten.stderr, /its scope grew after the lease: line 1 "it writes csv with a header"/);
   assert.match(logText(root), /· 1 body · acceptance · was "- it writes csv" \(\d+ characters\) · grew after the lease: line 1$/m);
   const lines = logText(root).split('\n').length;
-  const narrowed = run(root, ['field', '1', 'Acceptance', 'it writes csv with a header\nit writes json']);
+  const narrowed = run(root, ['field', '1', 'Acceptance', '[read] it writes csv with a header\n[read] it writes json']);
   assert.doesNotMatch(narrowed.stderr, /grew after the lease/, 'a line taken away narrows the scope');
   assert.equal(logText(root).split('\n').length, lines + 1, 'the change is logged as any description change is');
   assert.doesNotMatch(logText(root).trim().split('\n').pop(), /grew after the lease/);
@@ -54,8 +54,8 @@ test('a rewritten line counts as growth, a change that only takes lines away doe
 test('split moving a line to a leased sub-issue marks the sub-issue that grew, not the parent that gave it', () => {
   const root = loop();
   jarl(root, 'goal', '--set', 'Coordinators: odin');
-  jarl(root, 'new', 'the export', '--acceptance', 'it writes csv', '--acceptance', 'it writes json');
-  jarl(root, 'new', 'the json writer', '--acceptance', 'json is valid');
+  jarl(root, 'new', 'the export', '--acceptance', '[read] it writes csv', '--acceptance', '[read] it writes json');
+  jarl(root, 'new', 'the json writer', '--acceptance', '[read] json is valid');
   jarl(root, 'set', '2', 'in-progress', 'start', '--worker', 'w2');
   const r = run(root, ['split', '1', '--line', '1=1', '--line', '2=2', '--by', 'odin']);
   assert.equal(r.status, 0, r.stderr);
@@ -66,12 +66,12 @@ test('split moving a line to a leased sub-issue marks the sub-issue that grew, n
 
 test('report counts the changes that grew a scope after its lease per writer, and marks a writer that is no coordinator', () => {
   const root = leased();
-  jarl(root, 'new', 'the import', '--acceptance', 'it reads csv');
+  jarl(root, 'new', 'the import', '--acceptance', '[read] it reads csv');
   jarl(root, 'set', '2', 'in-progress', 'start', '--worker', 'w2');
-  jarl(root, 'field', '1', 'Acceptance', 'it writes json', '--add', '--by', 'odin');
-  jarl(root, 'field', '2', 'Acceptance', 'it reads json', '--add', '--by', 'odin');
-  jarl(root, 'field', '1', 'Acceptance', 'it writes xml', '--add', '--by', 'w1');
-  jarl(root, 'field', '2', 'Acceptance', 'it reads xml', '--add');
+  jarl(root, 'field', '1', 'Acceptance', '[read] it writes json', '--add', '--by', 'odin');
+  jarl(root, 'field', '2', 'Acceptance', '[read] it reads json', '--add', '--by', 'odin');
+  jarl(root, 'field', '1', 'Acceptance', '[read] it writes xml', '--add', '--by', 'w1');
+  jarl(root, 'field', '2', 'Acceptance', '[read] it reads xml', '--add');
   assert.deepEqual(json(root, 'report').metrics.slips.scopeGrew, [
     { writer: 'odin', coordinator: true, count: 2, issues: ['1', '2'] },
     { writer: 'w1', coordinator: false, count: 1, issues: ['1'] },
@@ -85,7 +85,7 @@ test('the mark raises no record format: the frozen readers read a loop whose lea
   const root = loop();
   fileAsBefore(root, 'the export', { acceptance: 'it writes csv' });
   assert.equal(oldJarl(root, 'set', {}, ['001', 'in-progress', null, { branch: 'jarl/001-export', worker: 'w1' }]).ok, true);
-  const r = run(root, ['field', '1', 'Acceptance', 'it writes json', '--add']);
+  const r = run(root, ['field', '1', 'Acceptance', '[read] it writes json', '--add']);
   assert.match(r.stderr, /its scope grew after the lease: line 2 "it writes json"/);
   assert.match(logText(root), /· 001 body · acceptance · was "it writes csv" \(13 characters\) · grew after the lease: line 2$/m);
   assert.equal(existsSync(marker(root)), false, 'the loop stays in format 1');

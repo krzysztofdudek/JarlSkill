@@ -129,7 +129,7 @@ test('ask takes --kind as an option that defaults to stuck, as the reference wri
 test('close --force closes with issues still open, as the reference says, and refuses without it', () => {
   const { dir } = gitRepo({ prefix: 'jarl-docs-close-' });
   jarl(dir, 'init', 'g');
-  jarl(dir, 'new', 'still open');
+  jarl(dir, 'new', 'still open', '--acceptance', '[read] it works');
   assert.match(refuses(dir, 'close'), /still open or in progress.*close --force removes it with them\)\njarl\.mjs ask "<question-for-the-owner>"\n$/);
   assert.match(jarl(dir, 'close', '--force'), /^removed /);
   assert.equal(existsSync(join(dir, '.jarl')), false);
@@ -149,7 +149,7 @@ test('branches without --repo reads the loop\'s repository, every repository an 
     repo.g('checkout', '-q', 'feature');
   }
   jarl(main.dir, 'init', 'g');
-  for (const [title, repo] of [['one', open], ['two', kept], ['three', dropped]]) jarl(main.dir, 'new', title, '--repo', repo.dir);
+  for (const [title, repo] of [['one', open], ['two', kept], ['three', dropped]]) jarl(main.dir, 'new', title, '--acceptance', '[read] it works', '--repo', repo.dir);
   jarl(main.dir, 'set', '2', 'in-progress', 'go', '--branch', 'jarl/2-b', '--worker', 'w');
   jarl(main.dir, 'set', '2', 'deferred', 'later');
   jarl(main.dir, 'set', '3', 'in-progress', 'go', '--branch', 'jarl/3-c', '--worker', 'w');
@@ -166,8 +166,8 @@ test('branches without --repo reads the loop\'s repository, every repository an 
 test('next prints the issues ready to start and the groups only with --all, as the texts say', () => {
   const { dir } = gitRepo({ prefix: 'jarl-docs-next-' });
   jarl(dir, 'init', 'g');
-  jarl(dir, 'new', 'ready one', '--files', 'a.mjs');
-  jarl(dir, 'new', 'waits', '--files', 'b.mjs', '--after', '1');
+  jarl(dir, 'new', 'ready one', '--acceptance', '[read] it works', '--files', 'a.mjs');
+  jarl(dir, 'new', 'waits', '--acceptance', '[read] it works', '--files', 'b.mjs', '--after', '1');
   const ready = jarl(dir, 'next');
   assert.match(ready, /ready one/);
   assert.doesNotMatch(ready, /waits/);
@@ -181,8 +181,8 @@ test('next prints the issues ready to start and the groups only with --all, as t
 test('self is --by self, anyone who held the issue\'s lease across takeovers, and the workers of other issues on the same Branch', () => {
   const { dir } = gitRepo({ prefix: 'jarl-docs-self-' });
   jarl(dir, 'init', 'g');
-  jarl(dir, 'new', 'one', '--files', 'a.txt');
-  jarl(dir, 'new', 'two', '--files', 'b.txt');
+  jarl(dir, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.txt');
+  jarl(dir, 'new', 'two', '--acceptance', '[read] it works', '--files', 'b.txt');
   jarl(dir, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-shared', '--worker', 'w1');
   jarl(dir, 'set', '2', 'in-progress', 'go', '--branch', 'jarl/1-shared', '--worker', 'w2');
   jarl(dir, 'set', '1', 'open', 'takeover');
@@ -242,7 +242,7 @@ test('record.md lists every path the tool writes in .jarl/, in the count it stat
   const profile = join(mkdtempSync(join(tmpdir(), 'jarl-docs-profile-')), 'profile.json');
   writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, statuses: { open: ['dispatchable'], 'in-progress': ['lease'], done: ['settles-dependents', 'terminal', 'closes-record'], dropped: ['settles-dependents', 'terminal', 'needs-reason'] } }));
   jarl(repo.dir, 'init', 'g', '--committed', '--profile', profile);
-  jarl(repo.dir, 'new', 'one', '--repo', basename(sibling.dir));
+  jarl(repo.dir, 'new', 'one', '--acceptance', '[read] it works', '--repo', basename(sibling.dir));
   jarl(repo.dir, 'ask', 'which way?');
   jarl(repo.dir, 'decide', 'a-ruling', 'a ruling', '--by', 'coordinator');
   note(repo.dir);
@@ -403,7 +403,7 @@ test('every tool is described as it behaves: Read-only tools write nothing and W
   }
   const { dir } = gitRepo({ prefix: 'jarl-docs-tools-' });
   jarl(dir, 'init', 'g');
-  jarl(dir, 'new', 'one', '--files', 'a.txt', '--acceptance', 'it works');
+  jarl(dir, 'new', 'one', '--files', 'a.txt', '--acceptance', '[read] it works');
   jarl(dir, 'ask', 'which way?');
   jarl(dir, 'decide', 'a-ruling', 'a ruling', '--by', 'coordinator');
   const before = snapshot(dir);
@@ -441,14 +441,14 @@ test('a reviewer is held to the worker\'s model, not to the issue\'s tier, and a
   jarl(dir, 'init', 'g');
   jarl(dir, 'goal', '--set', 'Model (standard): m-std');
   jarl(dir, 'goal', '--set', 'Model (strong): m-strong');
-  jarl(dir, 'new', 'code', '--tier', 'standard', '--files', 'a.txt');
+  jarl(dir, 'new', 'code', '--acceptance', '[read] it works', '--tier', 'standard', '--files', 'a.txt');
   jarl(dir, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-code', '--worker', 'w', '--model', 'm-strong');
   const note = run(dir, ['review', '1', 'approve', '--by', 'rev', '--model', 'm-std', 'read the diff and found nothing wrong']);
   assert.equal(note.status, 0);
   assert.match(note.stderr, /m-std ranks below the worker's model \(m-strong\)/);
-  jarl(dir, 'new', 'a ruling');
+  jarl(dir, 'new', 'a ruling', '--acceptance', '[read] it works');
   jarl(dir, 'review', '2', 'approve', '--by', 'jarl', 'the ruling reads right and matches the goal');
-  jarl(dir, 'evidence', '2', '--ran', 'read the ruling', '--saw', 'it matches the goal');
+  jarl(dir, 'evidence', '2', '--line', '1', '--ran', 'read the ruling', '--saw', 'it matches the goal');
   assert.match(jarl(dir, 'set', '2', 'done', 'settled'), /2 → done/);
 });
 
@@ -480,7 +480,7 @@ test('a loop kept in a subdirectory is reached through the loop root and not thr
   const sub = join(dir, 'releases', 'x');
   mkdirSync(sub, { recursive: true });
   jarl(sub, 'init', 'kept in a subdirectory');
-  jarl(sub, 'new', 'one');
+  jarl(sub, 'new', 'one', '--acceptance', '[read] it works');
   assert.match(jarl(sub, 'status'), /open 1/);
   assert.match(jarl(dir, 'status'), /open 0/, 'the main checkout reads an empty loop');
 });

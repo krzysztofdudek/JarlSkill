@@ -20,10 +20,10 @@ let seq = 0;
 function units(root, n, { model, changed = 0 } = {}) {
   for (let k = 0; k < n; k += 1) {
     seq += 1;
-    const { id } = R.newIssue(root, `unit ${seq}`, { kind: 'bug', tier: 'standard', acceptance: 'it works' });
+    const { id } = R.newIssue(root, `unit ${seq}`, { kind: 'bug', tier: 'standard', acceptance: '[read] it works' });
     R.setStatus(root, id, 'in-progress', '', { branch: `jarl/${id}-x`, worker: 'w-x', ...(model ? { model } : {}) });
-    R.addEvidence(root, id, undefined, { ran: 'npm test', saw: 'pass' });
-    if (k < changed) R.review(root, id, 'changes', 'Important: the case is not handled', { by: 'rev-a' });
+    R.addEvidence(root, id, undefined, { line: 1, ran: 'npm test', saw: 'pass' });
+    if (k < changed) R.review(root, id, 'changes', 'Important: the case is not handled', { by: 'rev-a' }); R.addRound(root, id, 'fixed');
     R.review(root, id, 'approve', 'read the diff, nothing found', { by: 'rev-a' });
     R.recordMerged(root, id, { sha: 'abc1234' }); R.setStatus(root, id, 'done', 'merged', {});
   }
