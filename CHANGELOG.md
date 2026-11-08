@@ -49,6 +49,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `scope` and the recording of a merge now point out each added line that starts a conflict marker and each added file over 64 MiB, the largest file Jarl accepts as an attachment, with its file. They only say so and never stop a merge.
 - The record check and the resume now list each ruling in force that names tasks it settles which are not yet done or dropped, so a ruling nobody carried out no longer goes unnoticed. It is only a note and never makes the check fail.
 - A loop can keep a series of tasks apart by number, such as films from 1000, with a line `Range (film): 1000-1999` in its goal, and file a task in it with `new --range film`. Other tasks keep counting on their own, and a file numbered by hand moves no other series. The first task filed in a range moves the loop to format 3.
+- A loop that is already running can get a new section or a new field on its tasks with `extend section "<name>"` or `extend field "<name>"`, checked by the same rules as a new loop's profile and noted in the log, instead of editing the profile file by hand. Tasks already filed stay as they are until you fill the new part in.
 
 ### Changed
 

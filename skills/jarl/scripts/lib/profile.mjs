@@ -479,9 +479,13 @@ export function readProfileFile(file, { argument = false } = {}) {
   let json;
   try { json = JSON.parse(readText(file)); } catch (e) { refuse(`${file} is not JSON: ${e.message}`, ['jarl.mjs', 'profile', '<profile.json>']); }
   const profile = validateProfile(json, file);
-  const reserved = reservedNamesProblem(profile) || keyFieldProblem(profile) || parentFieldProblem(profile) || sectionNamesProblem(profile);
+  const reserved = reservedProblem(profile);
   need(!reserved, `${file} is not a valid profile: ${reserved}`, () => afterView(['jarl.mjs', 'profile', file]));
   return { json, profile };
+}
+// What a profile to be opened, or a part to be added to a live loop's, declares of a name Jarl reserves, as one refusal, or null.
+function reservedProblem(profile) {
+  return reservedNamesProblem(profile) || keyFieldProblem(profile) || parentFieldProblem(profile) || sectionNamesProblem(profile);
 }
 // What a profile file to be opened declares of the names the built-in promise and wait use, as one refusal, or null: a
 // field named Person or Check when, and promise or wait among its own kinds. A loop already open with such a profile is
@@ -549,4 +553,4 @@ export function cmdProfile(root, file) {
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { SLOT_NAME_RE, forgetProfile, formatOffText, numberWidth };
+export { SLOT_NAME_RE, forgetProfile, formatOffText, numberWidth, reservedProblem };

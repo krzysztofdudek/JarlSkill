@@ -9,7 +9,7 @@ import { git, gitBytes, gitRun } from './git.mjs';
 import { canonical, issuesDir, jarlDir, normalPath, portablePath, stamp, today } from './where.mjs';
 import { readText, renameRetry, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, branchNameProblem, cmpId, expandIds, idKey, idRe, isBulk, itemNaming, needsRaisedFormat, newIssueKey, newNumber } from './ids.mjs';
-import { DEFAULT_PROFILE, FORMAT_LINES, PARENT_FIELD, TOOL_FIELDS, formatState, loadProfile, numberWidth, profilePath, readProfileFile } from './profile.mjs';
+import { BUILTIN_STATUSES, DEFAULT_PROFILE, FORMAT_LINES, LIFECYCLE_OPS, PARENT_FIELD, PROFILE_VERSION, TOOL_FIELDS, describeProfile, forgetProfile, formatState, loadProfile, numberWidth, profilePath, readProfileFile, reservedProblem, validateProfile } from './profile.mjs';
 import { appendLog, appendLogLines, decisionsPath, goalLines, goalPath, logPath, readGoal } from './journal.mjs';
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
@@ -932,6 +932,42 @@ function notWrittenByField(profile, key) {
   if (['notes', 'proof'].includes(key)) return `a note or a row of proof is added by evidence: ${jarlLine('evidence', '<ids>', '<text>')}, or ${jarlLine('evidence', '<ids>', '--ran', '<command>', '--saw', '<what-it-printed>')}`;
   if (key === 'evidence' || key === 'reviews') return `the history is never edited: a note or a row is added by evidence and a verdict by review, a row or an approve is taken back by retract, a ruling replaced by decide --supersedes: ${jarlLine('retract', '<id>', '<n>', '--by', '<who>', '<text>')}`;
   return `no other part goes by that name: a field or a section the loop's profile declares is among the names above, and the profile lists them: ${jarlLine('profile')}`;
+}
+
+// extend section "<name>" | extend field "<name>" [--values <a,b>] [--default <value>] [--required]: the profile of a live
+// loop gains one section or one field, checked as profile <file> checks a profile file, with a log line written first. A
+// loop with no profile of its own gets one: the built-in statuses and the part, in the record format the loop is in. The
+// issues already filed are not rewritten: each carries the part once field writes it, and a new issue is filed with it (a
+// field's default, when it has one and none is given). Kind and Tier keep the values the loop was opened with. The profile
+// of a loop a composer runs is the composer's, and is never changed here.
+export function cmdExtend(root, part, name, flags = {}) {
+  needLiveLoop(root, '');
+  const profile = loadProfile(root);
+  const kept = LIFECYCLE_OPS.some((op) => profile.lifecycle[op] === 'record');
+  if (profile.scheduler !== null || kept) refuse(`this loop is run by a composer (its profile, ${profile.name}, ${profile.scheduler !== null ? 'names an external scheduler' : 'keeps its lifecycle to the record'}), and its profile is the composer's: extend changes nothing in it — nothing was written`, profile.scheduler ?? profile.lifecycle.command ? { external: profile.scheduler ?? profile.lifecycle.command } : afterView(['jarl.mjs', 'profile']));
+  const kind = String(part ?? '').trim().toLowerCase();
+  need(kind === 'section' || kind === 'field', `extend adds a section or a field to the loop's profile (got ${JSON.stringify(String(part ?? ''))})`, () => ({ arg: 0, value: hole('<section-or-field>') }));
+  const label = typeof name === 'string' ? name.trim() : '';
+  need(label, `extend ${kind} needs the name of the ${kind}`, () => ({ arg: 1, value: hole('<name>') }));
+  const fieldFlags = ['values', 'default', 'required'].filter((k) => flags[k] !== undefined);
+  need(kind === 'field' || !fieldFlags.length, `--${fieldFlags[0]} goes with a field, not with a section`, () => fieldFlags.map((k) => ({ drop: `--${k}` })));
+  need(!['kind', 'tier'].includes(label.toLowerCase()), `${label} is built in, and its values are the ones the loop was opened with: extend adds a field of the loop's own`, () => ({ arg: 1, value: hole('<name>') }));
+  const held = kind === 'section' ? sectionsOf(profile).some((s) => s.toLowerCase() === label.toLowerCase()) : profile.declaredFields.some((f) => f.key === label.toLowerCase());
+  need(!held, `the profile already declares the ${kind} ${label}: ${jarlLine('profile')}`, () => ({ arg: 1, value: hole('<name>') }));
+  const spec = kind === 'field' ? { ...(flags.values !== undefined ? { enum: splitList(flags.values) } : {}), ...(flags.default !== undefined ? { default: String(flags.default) } : {}), ...(flags.required === true ? { required: true } : {}) } : null;
+  const path = profilePath(root);
+  const raw = existsSync(path) ? JSON.parse(readText(path)) : null;
+  const base = raw && profile.declared ? raw : { 'jarl-profile': PROFILE_VERSION, ...(raw && raw.format !== undefined ? { format: raw.format } : {}), statuses: BUILTIN_STATUSES, initial: 'open' };
+  const json = kind === 'section' ? { ...base, sections: [...(base.sections || []), label] } : { ...base, fields: { ...(base.fields || {}), [label]: spec } };
+  let next;
+  try { next = validateProfile(json, `the profile with the ${kind} ${label}`); } catch (e) { if (e instanceof Refusal) refuse(e.reason, { retry: true }); throw e; }
+  const reserved = reservedProblem(validateProfile({ 'jarl-profile': PROFILE_VERSION, statuses: BUILTIN_STATUSES, ...(kind === 'section' ? { sections: [label] } : { fields: { [label]: spec } }) }));
+  need(!reserved, `the ${kind} ${label} is not added: ${reserved}`, () => ({ arg: 1, value: hole('<name>') }));
+  const words = kind === 'section' ? `section ${label}` : `field ${label}${[spec.enum && `values ${spec.enum.join(', ')}`, spec.default && `default ${spec.default}`, spec.required && 'required'].filter(Boolean).map((w) => `; ${w}`).join('').replace(/^; /, ': ')}`;
+  appendLog(root, `profile extended · ${noSeparators(words)}`);
+  writeAtomic(path, `${JSON.stringify(json, null, 2)}\n`);
+  forgetProfile(root);
+  return { part: kind, name: label, ...(spec ? { spec } : {}), profile: describeProfile(next) };
 }
 
 // field <ids> <section> "<text>": a section of the description, as body writes it, with the body line it logs. A value

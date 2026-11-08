@@ -177,6 +177,7 @@ const FLAG_MEANINGS = {
   ran: ['a command that ran', ['evidence', 'merged']], saw: ['what the command printed', ['evidence', 'merged']], file: ['the file of an attachment', ['evidence']], slot: ['the slot of an attachment', ['evidence']],
   add: ['add to a part of the description', ['field']], remove: ['take items off a part of the description', ['field']], clear: ['empty a part of the description', ['field']],
   line: ['an acceptance line of a parent and the issue it goes to', ['split']],
+  values: ['the values a field added to the profile may take', ['extend']], default: ['the value a field added to the profile takes when none is given', ['extend']], required: ['a field added to the profile that every new issue must give', ['extend']],
   status: ['the status the list keeps', ['list']], tag: ['the tag the view keeps', ['list', 'status']], grep: ['the text the list keeps', ['list']], match: ['a field value the list keeps', ['list']],
   all: ['every row, not only the first or the unfinished', ['list', 'next']], full: ['the whole issue file', ['show']],
   branch: ['a branch: the lease\'s, or the one measured', ['set', 'scope']], worker: ['the worker of a lease', ['set']], model: ['the model the agent was raised on', ['set', 'review']],
