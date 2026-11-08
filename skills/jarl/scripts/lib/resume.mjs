@@ -11,7 +11,7 @@ import { checkWaitingText, metricsOf, renderMetrics } from './metrics.mjs';
 import { ago } from './rounds.mjs';
 import { cmdTips, renderTips } from './tips.mjs';
 import { reasonWord, waitingOn, waitsOf } from './commands.mjs';
-import { handoffAge, handoffPath } from './questions.mjs';
+import { handoffAge, handoffPath, unsettledRulings, unsettledText } from './questions.mjs';
 import { answeredLines } from './journal.mjs';
 import { loopRules, ruleLines, rulesFor, withUnder } from './rules.mjs';
 import { jarlDir, today } from './where.mjs';
@@ -134,7 +134,7 @@ export function cmdResume(root, flags = {}) {
   // since its first contract; gh is taken there too, with the same meaning.
   return {
     goal: status.goal, opened: status.opened, lastActivity: status.lastActivity, archived: status.archived, status, ...(slice !== null ? { slice } : {}),
-    rulings, rules, inFlight, waiting,
+    rulings, unsettled: unsettledRulings(loop), rules, inFlight, waiting,
     questions: asks.filter((a) => a.kind !== 'ratify' && a.kind !== 'escalation' && a.kind !== 'rule'), escalations: asks.filter((a) => a.kind === 'escalation'), proposed: asks.filter((a) => a.kind === 'rule'), ratify: asks.filter((a) => a.kind === 'ratify'),
     held, kept: keptRows, next: ready.slice(0, readyN).map((r) => ({ id: r.id, title: r.title, priority: r.priority, ...(r.noAcceptance ? { noAcceptance: true } : {}), ...(r.model ? { model: r.model } : {}), ...declared(byId.get(r.id)) })), readyTotal: scheduled ? null : ready.length,
     ...(scheduled ? { scheduler: profile.scheduler } : {}),
@@ -173,6 +173,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null, asked = 
     // The rulings are counted, not printed: a reader is given the rules that match it, and decisions --live lists them all.
     `${o.rulings.length} ruling(s) in force: ${jarlLine('decisions', '--live')}${asked ? '' : '; resume --as <who> adds the rules that match whoever asks'}`,
     '',
+    ...sec(`Rulings whose issues are not closed (${(o.unsettled || []).length})`, (o.unsettled || []).map((u) => `- ${u.slug} · ${unsettledText(u)}`)),
     ...(asked ? [] : sec(`Rules for the whole loop (${o.rules.length})`, o.rules.flatMap(ruleLines), '- (none)')),
     ...sec(`The files disagree with the log (${(st.disagreements || []).length})`, (st.disagreements || []).map(disagreementText)),
     ...sec(`Read from their headers (${(st.headerRead || []).length})`, (st.headerRead || []).map((n) => `- ${n.line}`)),

@@ -47,6 +47,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Importing research findings can put every task it files under one parent task with `--parent <id>`, so a set of outside requirements is filed as a tree in one call instead of one command per task.
 - Opening a loop whose goal has no line naming the models per tier now says so, with the command that adds one, as it already does for a missing check. The first lease that raises an agent with a model in such a loop says the same once in its own answer, naming the strongest tier for the jarl and the standard tier for the coordinators; nothing else offers it again.
 - `scope` and the recording of a merge now point out each added line that starts a conflict marker and each added file over 64 MiB, the largest file Jarl accepts as an attachment, with its file. They only say so and never stop a merge.
+- The record check and the resume now list each ruling in force that names tasks it settles which are not yet done or dropped, so a ruling nobody carried out no longer goes unnoticed. It is only a note and never makes the check fail.
 
 ### Changed
 

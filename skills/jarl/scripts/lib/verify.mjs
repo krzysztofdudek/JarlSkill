@@ -14,7 +14,7 @@ import { REPOS_DECLARED_IN, declaredNames, issueRepos, repoIdentity, repoValueKi
 import { headerReadNotes, readLoop, recordDisagreements, unorderedNamings, unorderedText } from './loop.mjs';
 import { attachmentFindings } from './attachments.mjs';
 import { hasLiveLoop } from './commands.mjs';
-import { issuesNaming, loadAsks } from './questions.mjs';
+import { issuesNaming, loadAsks, unsettledRulings, unsettledText } from './questions.mjs';
 
 // ---- verify: the record read strictly, with nothing written ----------------------------------------------------
 //
@@ -22,7 +22,8 @@ import { issuesNaming, loadAsks } from './questions.mjs';
 // loadDecisions, and validateProfile, which lists every problem it finds) and reports what each one did not place. It
 // adds no grammar of its own: a line is placed by the reader that owns it, and what verify adds is what the readers do
 // not see — a retraction that points at nothing, the record format a line needs, the header that disagrees with the log,
-// the repositories the issues name, the worktrees the leases hold and the open issues that cite a superseded ruling. It
+// the repositories the issues name, the worktrees the leases hold, the open issues that cite a superseded ruling and, as
+// notes, the rulings in force whose settled issues are not closed. It
 // takes no lock and no network and writes nothing; its exit status is the caller's (2 when it found something).
 
 // The checks in the order they print, with the part of the loop each one reads.
@@ -161,6 +162,8 @@ export function cmdVerify(root) {
   for (const [slug, by] of supersededBy) {
     for (const i of issuesNaming(root, slug)) add('superseded', `issue ${i.id}`, `cites the ruling ${slug} in What, Why or Acceptance, and ${by} supersedes it`);
   }
+  // A ruling in force whose settled issues are not all closed is work not yet carried out: said, never a finding.
+  for (const u of unsettledRulings(loop)) notes.push({ where: `ruling ${u.slug}`, what: `${unsettledText(u)}, which ${u.issues.length === 1 ? 'is' : 'are'} neither done nor dropped` });
   for (const f of attachmentFindings(root, loop)) add('attachments', `issue ${f.id}`, f.what);
   // The format of the loop, and the lines of a higher format that are off where a composer keeps it.
   const format = formatState(profile);
