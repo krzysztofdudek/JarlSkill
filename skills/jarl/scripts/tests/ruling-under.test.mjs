@@ -71,7 +71,7 @@ test('a ruling shown as made under another is marked when the one it names is su
   mandate(root);
   jarl(root, 'decide', 'pick-a', 'Take option a.', '--by', 'jarl', '--under', 'standing-mandate', '--applies-to', 'loop');
   rejected(root, 'area-rule');
-  // Rulings an older writer or a hand wrote: the marker is read whatever the slug names.
+  // Rulings written into the file outside decide: the marker is read whatever the slug names.
   const byHand = (slug, under) => `\n## 2026-01-01 · ${slug}\nWritten by hand.\n\n${under ? `Made under: ${under}\n\n` : ''}**Applies to:** loop${under ? '' : ' · until 2026-01-02'}\n**By:** jarl\n`;
   writeFileSync(join(root, '.jarl', 'decisions.md'), `${decisionsText(root)}${byHand('kept-rule', null)}${byHand('on-nothing', 'no-such-ruling')}${byHand('on-rejected', 'area-rule')}${byHand('on-ended', 'kept-rule')}`);
   assert.match(jarl(root, 'decisions'), /pick-a · by jarl · under standing-mandate · applies to loop — /, 'a ruling in force is shown as it was');
