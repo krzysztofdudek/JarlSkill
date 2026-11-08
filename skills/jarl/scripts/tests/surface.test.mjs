@@ -39,9 +39,9 @@ test('field writes every section of the description: a value replaces it, --add 
   jarl(root, 'field', '1', 'Why', 'because');
   assert.equal(issue(root, '1').sections.why.trim(), 'because');
   jarl(root, 'field', '1', 'Acceptance', '[read] line a\n[read] line b');
-  assert.equal(issue(root, '1').sections.acceptance.trim(), '- line a\n- line b', 'Acceptance takes one item per line');
+  assert.equal(issue(root, '1').sections.acceptance.trim(), '- [read] line a\n- [read] line b', 'Acceptance takes one item per line');
   jarl(root, 'field', '1', 'Acceptance', '[read] line c', '--add');
-  assert.equal(issue(root, '1').sections.acceptance.trim(), '- line a\n- line b\n- line c', '--add gives the list a line');
+  assert.equal(issue(root, '1').sections.acceptance.trim(), '- [read] line a\n- [read] line b\n- [read] line c', '--add gives the list a line');
   jarl(root, 'field', '1', 'Changelog', 'Fixed: one');
   jarl(root, 'field', '1', 'Changelog', 'Added: two', '--add');
   assert.equal(issue(root, '1').sections.changelog.trim(), '- Fixed: one\n- Added: two');
@@ -183,7 +183,7 @@ const FLAG_MEANINGS = {
   all: ['every row, not only the first or the unfinished', ['list', 'next']], full: ['the whole issue file', ['show']],
   branch: ['a branch: the lease\'s, or the one measured', ['set', 'scope']], worker: ['the worker of a lease', ['set']], model: ['the model the agent was raised on', ['set', 'review']],
   worktree: ['the worktree a lease is checked against', ['set']], handover: ['a lease handed to a new worker', ['set']], header: ['the header rewritten from the log', ['set']],
-  'without-rows': ['the reason a close leaves acceptance lines no counted row names, apart from the reason of the move', ['set']],
+  'at-lease': ['prints the lines as they were at the lease and as they are now', ['show']],
   limit: ['how many ready issues', ['next']], as: ['the holder whose list is asked for', ['next', 'resume', 'status']], slice: ['a coordinator\'s slice', ['next', 'ask', 'resume', 'status', 'brief']],
   role: ['the role a brief is written for', ['brief']],
   relayed: ['a verdict recorded in the reviewer\'s name', ['review']], bot: ['a verdict recorded as a bot\'s', ['review']], artifact: ['the render or file a verdict judged', ['review']], outside: ['a finding outside the reviewed issue, filed as a new issue', ['review']], findings: ['how many findings a red round left', ['round']], with: ['another loop to read', ['models']], archives: ['this loop\'s archives read too', ['models']],
@@ -372,10 +372,10 @@ test('the form a removed command ends with, filled with values the one quoting f
   runFilled(viaForm, why, { '<ids>': '1', '<text>': nasty[2], '<who>': "w-1's" });
   const acceptance = formOf(refuses(viaForm, 'body', '1', '--acceptance', nasty[0], '--by', "w-1's"));
   assert.equal(acceptance, "jarl.mjs field \"<ids>\" Acceptance \"<line>\" --by \"<who>\"");
-  runFilled(viaForm, acceptance, { '<ids>': '1', '<line>': `${nasty[0]}\n${nasty[1]}`, '<who>': "w-1's" });
+  runFilled(viaForm, acceptance, { '<ids>': '1', '<line>': `[read] ${nasty[0]}\n[read] ${nasty[1]}`, '<who>': "w-1's" });
   jarl(viaField, 'field', '1', 'What', nasty.join(' / '), '--by', "w-1's");
   jarl(viaField, 'field', '1', 'Why', nasty[2], '--by', "w-1's");
-  jarl(viaField, 'field', '1', 'Acceptance', `${nasty[0]}\n${nasty[1]}`, '--by', "w-1's");
+  jarl(viaField, 'field', '1', 'Acceptance', `[read] ${nasty[0]}\n[read] ${nasty[1]}`, '--by', "w-1's");
   assert.deepEqual(sectionsOf(viaForm, '1'), sectionsOf(viaField, '1'));
   assert.equal(R.findIssue(viaForm, '1').sections.acceptance.trim().split('\n').length, 2, 'two acceptance lines, not one holding a \\n');
   assert.match(tail(viaForm).join('\n'), /by w-1∙?'s|by w-1's/);

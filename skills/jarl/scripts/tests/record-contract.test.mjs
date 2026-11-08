@@ -302,7 +302,7 @@ test('the record through record.mjs: a loop opened, an issue carried to done and
     assert.equal(R.hasLiveLoop(root), true);
     assert.equal(R.newIssue(root, 'first', { acceptance: '[read] it works' }).id, '001');
     R.newIssue(root, 'second', { acceptance: '[read] it works', after: '1' });
-    assert.throws(() => R.setStatus(root, '1', 'done'), /no evidence yet/);
+    assert.throws(() => R.setStatus(root, '1', 'done'), /no approving review/);
     const lease = R.setStatus(root, '1', 'in-progress', undefined, { worker: 'w1' });
     assert.equal(lease.worker, 'w1');
     R.addEvidence(root, '1', undefined, { line: 1, ran: 'npm test', saw: 'ok' });
@@ -310,12 +310,12 @@ test('the record through record.mjs: a loop opened, an issue carried to done and
     assert.equal(R.setStatus(root, '1', 'done').status, 'done');
     R.recordMerged(root, '1', { sha: 'abc1234', ci: 'green' });
     assert.deepEqual(R.mergedOf(R.findIssue(root, '1')), { sha: 'abc1234', repo: null, ci: 'green' });
-    assert.deepEqual(R.evidenceRows(R.findIssue(root, '1')), [{ ran: 'npm test', saw: 'ok' }]);
+    assert.deepEqual(R.evidenceRows(R.findIssue(root, '1')).map(({ ran, saw }) => ({ ran, saw })), [{ ran: 'npm test', saw: 'ok' }]);
     // A retracted row is struck through and is no longer an evidence row; the library call is the CLI's (opts { retract, by }).
     R.addEvidence(root, '1', undefined, { line: 1, ran: 'wrong check', saw: 'wrong result' });
     assert.equal(R.evidenceRows(R.findIssue(root, '1')).length, 2);
     assert.equal(R.addEvidence(root, '1', 'it ran in the wrong place', { retract: '2', by: 'reviewer' }).retracted, 2);
-    assert.deepEqual(R.evidenceRows(R.findIssue(root, '1')), [{ ran: 'npm test', saw: 'ok' }]);
+    assert.deepEqual(R.evidenceRows(R.findIssue(root, '1')).map(({ ran, saw }) => ({ ran, saw })), [{ ran: 'npm test', saw: 'ok' }]);
     assert.equal(R.addRound(root, '2', 'failed once').round, 1);
     R.decide(root, 'one', 'first ruling');
     R.decide(root, 'two', 'second ruling', { supersedes: 'one', settles: '2' });

@@ -225,7 +225,7 @@ export function issueView(root, issue, { full = false, places = true } = {}) {
       if (hidden.has(i)) return null;
       const r = rows.find((x) => x.start === i);
       // A row names its lines by digest: shown by the numbers they carry now, so a reader sees which line it proves.
-      if (r) return (r.lines.length ? l.replace(/\(line [0-9a-f, ]+\)/, `(line ${shownRowLines(issue, r.lines).join(', ')})`) : l).replace(/^- /, `- [${r.n}] `);
+      if (r) return (r.lines.length && !full ? l.replace(/\(line [0-9a-f, ]+\)/, `(line ${shownRowLines(issue, r.lines).join(', ')})`) : l).replace(/^- /, `- [${r.n}] `);
       const m = notes.find((x) => x.start === i);
       if (!m) return l;
       // A waiver whose ruling does not count (superseded, or otherwise void) keeps its words and says why it waives nothing.

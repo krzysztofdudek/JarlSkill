@@ -153,7 +153,7 @@ test('new and body print the same note on stderr as verify, once, and no other c
   assert.deepEqual(unordered(filed.stderr).map((l) => l.replace(/ — .*$/, '')), ['note: issue 3: names issue 1 in What, Why or Acceptance, which is neither done nor dropped, and no After orders it with 3']);
   const body = run(root, ['field', '3', 'Acceptance', '[read] issue 2 is merged first and issue 1 too']);
   assert.equal(body.status, 0);
-  assert.equal(body.stdout, '3 Acceptance: issue 2 is merged first and issue 1 too');
+  assert.equal(body.stdout, '3 Acceptance: [read] issue 2 is merged first and issue 1 too');
   const said = unordered(body.stderr);
   assert.equal(said.length, 1);
   assert.match(said[0], /^note: issue 3: names issues 1, 2 in What, Why or Acceptance, which are neither done nor dropped/);

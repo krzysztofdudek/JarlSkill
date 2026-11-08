@@ -29,9 +29,9 @@ test('a line added to the acceptance of a leased issue prints a note naming it, 
   const root = leased();
   const r = run(root, ['field', '1', 'Acceptance', '[read] it writes json', '--add', '--by', 'odin']);
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(r.stdout, '1 Acceptance: - it writes csv - it writes json');
-  assert.match(r.stderr, /^note: 1 is leased \(in-progress\), and its scope grew after the lease: line 2 "it writes json" — an issue's scope does not grow once it is leased: a new ask is a new issue, jarl\.mjs new "<title>" --acceptance "<line>"$/m);
-  assert.match(logText(root), /^- \S+ \S+ key \S+ · 1 body · acceptance · was "it writes csv" \(13 characters\) · grew after the lease: line 2 · by odin$/m);
+  assert.equal(r.stdout, '1 Acceptance: - [read] it writes csv - [read] it writes json');
+  assert.match(r.stderr, /^note: 1 is leased \(in-progress\), and its scope grew after the lease: line 2 "\[read\] it writes json" — an issue's scope does not grow once it is leased: a new ask is a new issue, jarl\.mjs new "<title>" --acceptance "<line>"$/m);
+  assert.match(logText(root), /^- \S+ \S+ key \S+ · 1 body · acceptance · was "\[read\] it writes csv" · grew after the lease: line 2 · by odin$/m);
 });
 
 test('a rewritten line counts as growth, a change that only takes lines away does not, and neither does a change before the lease', () => {
@@ -42,8 +42,8 @@ test('a rewritten line counts as growth, a change that only takes lines away doe
   assert.doesNotMatch(logText(root), /grew after the lease/);
   jarl(root, 'set', '1', 'in-progress', 'start', '--worker', 'w1');
   const rewritten = run(root, ['field', '1', 'Acceptance', '[read] it writes csv with a header\n[read] it writes json\n[read] the docs name both']);
-  assert.match(rewritten.stderr, /its scope grew after the lease: line 1 "it writes csv with a header"/);
-  assert.match(logText(root), /· 1 body · acceptance · was "- it writes csv" \(\d+ characters\) · grew after the lease: line 1$/m);
+  assert.match(rewritten.stderr, /its scope grew after the lease: line 1 "\[read\] it writes csv with a header"/);
+  assert.match(logText(root), /· 1 body · acceptance · was "- \[read\] it writes csv.*" · grew after the lease: line 1$/m);
   const lines = logText(root).split('\n').length;
   const narrowed = run(root, ['field', '1', 'Acceptance', '[read] it writes csv with a header\n[read] it writes json']);
   assert.doesNotMatch(narrowed.stderr, /grew after the lease/, 'a line taken away narrows the scope');
@@ -59,9 +59,9 @@ test('split moving a line to a leased sub-issue marks the sub-issue that grew, n
   jarl(root, 'set', '2', 'in-progress', 'start', '--worker', 'w2');
   const r = run(root, ['split', '1', '--line', '1=1', '--line', '2=2', '--by', 'odin']);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stderr, /^note: 2 is leased \(in-progress\), and its scope grew after the lease: line 2 "it writes json"/m);
-  assert.match(logText(root), /· 2 body · acceptance · was "json is valid" \(13 characters\) · grew after the lease: line 2 · by odin$/m);
-  assert.match(logText(root), /· 1 body · acceptance · was "- it writes csv" \(\d+ characters\) · by odin$/m);
+  assert.match(r.stderr, /^note: 2 is leased \(in-progress\), and its scope grew after the lease: line 2 "\[read\] it writes json"/m);
+  assert.match(logText(root), /· 2 body · acceptance · was "\[read\] json is valid" · grew after the lease: line 2 · by odin$/m);
+  assert.match(logText(root), /· 1 body · acceptance · was "- \[read\] it writes csv.*" · by odin$/m);
 });
 
 test('report counts the changes that grew a scope after its lease per writer, and marks a writer that is no coordinator', () => {
@@ -86,8 +86,8 @@ test('the mark raises no record format: the frozen readers read a loop whose lea
   fileAsBefore(root, 'the export', { acceptance: 'it writes csv' });
   assert.equal(oldJarl(root, 'set', {}, ['001', 'in-progress', null, { branch: 'jarl/001-export', worker: 'w1' }]).ok, true);
   const r = run(root, ['field', '1', 'Acceptance', '[read] it writes json', '--add']);
-  assert.match(r.stderr, /its scope grew after the lease: line 2 "it writes json"/);
-  assert.match(logText(root), /· 001 body · acceptance · was "it writes csv" \(13 characters\) · grew after the lease: line 2$/m);
+  assert.match(r.stderr, /its scope grew after the lease: line 2 "\[read\] it writes json"/);
+  assert.match(logText(root), /· 001 body · acceptance · was "it writes csv" · grew after the lease: line 2$/m);
   assert.equal(existsSync(marker(root)), false, 'the loop stays in format 1');
   for (const [reader, read] of [['the reader of format 1', oldJarl], ['the reader of formats 1 and 2', formatTwoJarl]]) {
     for (const view of ['list', 'status', 'report']) {

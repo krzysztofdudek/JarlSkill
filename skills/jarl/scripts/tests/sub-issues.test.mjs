@@ -24,7 +24,7 @@ const marker = (root) => join(root, '.jarl', 'profile.json');
 function exportLoop() {
   const root = loop();
   jarl(root, 'new', 'the export', '--acceptance', '[read] it writes csv', '--acceptance', '[read] it writes json', '--acceptance', '[read] the docs describe both', '--files', 'docs/export.md');
-  jarl(root, 'new', 'the csv writer', '--acceptance', '[read] it works', '--files', 'src/csv.mjs');
+  jarl(root, 'new', 'the csv writer', '--files', 'src/csv.mjs');
   jarl(root, 'new', 'the json writer', '--files', 'src/json.mjs', '--acceptance', '[read] json is valid');
   return root;
 }
@@ -143,6 +143,7 @@ test('in a loop a composer runs, a parent is off: field Parent and split are ref
 
 test('next offers only issues with no open sub-issues, and an After on a parent holds its sub-issues back too', () => {
   const root = exportLoop();
+  jarl(root, 'field', '2', 'Acceptance', '[read] it works');
   jarl(root, 'new', 'the schema', '--acceptance', '[read] it works', '--files', 'src/schema.mjs');                 // 4
   jarl(root, 'new', 'the release notes', '--acceptance', '[read] it works', '--files', 'notes.md', '--after', '1'); // 5
   jarl(root, 'field', '2,3', 'Parent', '1');
@@ -203,8 +204,8 @@ test('a split moves each acceptance line to a named issue or keeps it on the par
   const root = exportLoop();
   const out = json(root, 'split', '1', '--line', '1=2', '--line', '2=3', '--line', '3=1', '--by', 'odin');
   assert.deepEqual(out, { id: '1', subs: ['2', '3'], lines: [{ line: 1, to: '2', kept: false }, { line: 2, to: '3', kept: false }, { line: 3, to: '1', kept: true }] });
-  assert.deepEqual(json(root, 'show', '1').sections.acceptance.trim(), '- the docs describe both');
-  assert.equal(json(root, 'show', '2').sections.acceptance.trim(), 'it writes csv');
+  assert.deepEqual(json(root, 'show', '1').sections.acceptance.trim(), '- [read] the docs describe both');
+  assert.equal(json(root, 'show', '2').sections.acceptance.trim(), '[read] it writes csv');
   assert.equal(json(root, 'show', '3').sections.acceptance.trim(), '- json is valid\n- it writes json', 'a moved line follows the lines the issue holds');
   assert.deepEqual(['2', '3'].map((id) => json(root, 'show', id).parent), ['1', '1']);
   const log = logText(root);
@@ -228,8 +229,8 @@ test('a split that moves a line nowhere is refused, naming the line, and so are 
   const before = state();
   const lost = refuses(root, 'split', '1', '--line', '1=2', '--line', '2=3');
   // The form holds a place for each line the call gave and names each line still to place, so filled it is the whole split.
-  assert.match(lost, /^line 3 of 1 is moved nowhere: a split names every acceptance line of the parent, moved to a sub-issue or kept on 1, so no line is lost — 3: "the docs describe both"\njarl\.mjs split "<id>" --line "<line=id>" --line "<line=id>" --line '3=<id>'\n$/);
-  assert.match(refuses(root, 'split', '1', '--line', '1=2', '--by', 'odin'), /^lines 2, 3 of 1 are moved nowhere: .* — 2: "it writes json"; 3: "the docs describe both"\njarl\.mjs split "<id>" --line "<line=id>" --line '2=<id>' --line '3=<id>' --by "<who>"\n$/);
+  assert.match(lost, /^line 3 of 1 is moved nowhere: a split names every acceptance line of the parent, moved to a sub-issue or kept on 1, so no line is lost — 3: "\[read\] the docs describe both"\njarl\.mjs split "<id>" --line "<line=id>" --line "<line=id>" --line '3=<id>'\n$/);
+  assert.match(refuses(root, 'split', '1', '--line', '1=2', '--by', 'odin'), /^lines 2, 3 of 1 are moved nowhere: .* — 2: "\[read\] it writes json"; 3: "\[read\] the docs describe both"\njarl\.mjs split "<id>" --line "<line=id>" --line '2=<id>' --line '3=<id>' --by "<who>"\n$/);
   assert.match(refuses(root, 'split', '1', '--line', '1=2', '--line', '2=3', '--line', '3=<id>'), /placeholder/, 'the form pasted with a line left unfilled writes nothing');
   assert.match(refuses(root, 'split', '1'), /^split names where each acceptance line of 1 goes, --line <n>=<id>, an acceptance line's number and the issue it goes to \(1 itself to keep it there\), for each of its 3 lines$/m);
   assert.match(refuses(root, 'split', '1', '--line', '1=2', '--line', '1=3', '--line', '2=3', '--line', '3=1'), /^line 1 of 1 is named twice \("1=2" and "1=3"\): a line goes to one issue$/m);
@@ -267,7 +268,7 @@ test('a parent whose sub-issues are all closed holds the ball on its coordinator
   assert.deepEqual(json(root, 'next', '--as', 'jarl').rows.map((r) => r.id), [], 'the check is the coordinator\'s, not the jarl\'s');
   assert.match(jarl(root, 'status'), /^parent 1 · sub-issues 2 done, 3 done · odin checks its own acceptance against the whole and records the check$/m);
   assert.match(jarl(root, 'resume'), /^## Parents whose sub-issues are closed \(1\)\n- 1 the export · sub-issues 2 done, 3 done\n {2}→ odin checks its own acceptance against the whole and records the check$/m);
-  assert.match(refuses(root, 'set', '1', 'done', 'finished'), /^1 has no --ran\/--saw evidence row recorded since its last sub-issue, 3, closed \(\S+ \S+\) — a parent's own acceptance is checked against the whole once every sub-issue is closed, and a row written before that is not that check/m);
+  assert.match(refuses(root, 'set', '1', 'done', 'finished'), /^1 has no approving review newer than its last round or reopen, nor one since its last sub-issue, 3, closed/m);
   jarl(root, 'evidence', '1', '--line', '1', '--ran', 'run the export end to end', '--saw', 'csv and json written, the docs name both');
   assert.match(odin(), /^- 1 the export: checked against the whole, no verdict; raise a reviewer — jarl\.mjs review 1 "<verdict>" --by "<reviewer>" "<text>"$/m);
   assert.match(refuses(root, 'set', '1', 'done', 'finished'), /^1 has no approving review newer than its last round or reopen, nor one since its last sub-issue, 3, closed/m, 'the approve from before the whole does not count');
@@ -310,6 +311,7 @@ test('a rule whose selector names an issue reaches that issue\'s sub-issues, at 
 
 test('a parent is dropped or deferred with its unfinished sub-issues in the same call, a sub-issue is not reopened under a finished parent, and nothing is put under a finished parent', () => {
   const root = exportLoop();
+  jarl(root, 'field', '2', 'Acceptance', '[read] it works');
   jarl(root, 'field', '2,3', 'Parent', '1');
   finish(root, '2');
   const log = logText(root);

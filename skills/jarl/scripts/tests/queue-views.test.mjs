@@ -190,7 +190,7 @@ test('changelog: an issue naming several repositories prints under each; --repo 
 test('new --template reads .jarl/templates/<name>.md: its fields are defaults, its sections the body, flags win', () => {
   const root = repo();
   mkdirSync(join(root, '.jarl', 'templates'));
-  writeFileSync(join(root, '.jarl', 'templates', 'release-phase.md'), '# release phase\n\n**Kind:** process\n**Priority:** 1\n**Tags:** release\n\n## What\nOne phase of the release checklist.\n\n## Why\nA step skipped here is found by a user.\n\n## Acceptance\n- the tag exists on the remote\n- CI is green on the tag\n');
+  writeFileSync(join(root, '.jarl', 'templates', 'release-phase.md'), '# release phase\n\n**Kind:** process\n**Priority:** 1\n**Tags:** release\n\n## What\nOne phase of the release checklist.\n\n## Why\nA step skipped here is found by a user.\n\n## Acceptance\n- [read] the tag exists on the remote\n- [read] CI is green on the tag\n');
   jarl(root, 'new', 'Phase A: tag', '--template', 'release-phase', '--why', 'Overridden.');
   const i = jarl(root, 'show', '1');
   assert.match(i, /\*\*Kind:\*\* process/);
@@ -198,7 +198,7 @@ test('new --template reads .jarl/templates/<name>.md: its fields are defaults, i
   assert.match(i, /\*\*Tags:\*\* release/);
   assert.match(i, /## What\nOne phase of the release checklist\.\n/);
   assert.match(i, /## Why\nOverridden\.\n/);
-  assert.match(i, /## Acceptance\n- the tag exists on the remote\n- CI is green on the tag\n/);
+  assert.match(i, /## Acceptance\n- \[read\] the tag exists on the remote\n- \[read\] CI is green on the tag\n/);
   jarl(root, 'new', 'Phase B', '--template', 'release-phase', '--kind', 'docs', '--after', '1');
   assert.match(jarl(root, 'show', '2'), /\*\*Kind:\*\* docs[\s\S]*\*\*After:\*\* 1/);
   assert.match(refuses(root, 'new', 'x', '--template', 'nope'), /no template nope in .*templates — templates here: release-phase/);

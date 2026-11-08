@@ -22,7 +22,7 @@ const loop = () => makeLoop({ prefix: 'jarl-testimony-', goal: three('goal'), vi
 
 test('three lines through every command that writes text: whole in the issue, the question and the ruling, and one line in the log', () => {
   const root = loop();
-  const id = JSON.parse(jarl(root, 'new', 'multi-line testimony', '--what', three('what'), '--why', three('why'), '--acceptance', three('acceptance'), '--changelog', 'Fixed: x', '--json')).id;
+  const id = JSON.parse(jarl(root, 'new', 'multi-line testimony', '--what', three('what'), '--why', three('why'), '--acceptance', three('acceptance').split('\n').map((l) => `[read] ${l}`).join('\n'), '--changelog', 'Fixed: x', '--json')).id;
   assert.equal(id, '1');
   const t = JSON.parse(jarl(root, 'new', three('title'), '--acceptance', '[read] it works', '--json')).id;
   assert.match(readFileSync(L.findIssue(root, t).file, 'utf8'), /^# 2 · title line one title line two title line three\n/, 'a title of three lines is one heading with every line');

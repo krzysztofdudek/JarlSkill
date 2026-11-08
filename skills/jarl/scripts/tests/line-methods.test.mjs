@@ -201,7 +201,8 @@ test('a row stores the digest of its line and not its number; after a rewording 
   assert.equal(stateOf(reworded)[2], 'unproved', 'a reworded line is a new requirement');
   approve(reworded);
   assert.match(refuses(reworded, 'set', '1', 'done', 'try'), /line 1 \[test\]/);
-  assert.match(jarl(reworded, 'show', '1', '--full'), /\*\*ran \(line [0-9a-f]{12} not a line now\):/, 'a digest with no line says so');
+  assert.match(jarl(reworded, 'show', '1'), /\*\*ran \(line [0-9a-f]{12} not a line now\):/, 'a digest with no line says so');
+  assert.match(jarl(reworded, 'show', '1', '--full'), /\*\*ran \(line [0-9a-f]{12}\):/, '--full is the file, the digest as it stands');
 });
 
 test('evidence --ran --saw without --line is refused, ending with the form that names it, and a free note is still taken', () => {

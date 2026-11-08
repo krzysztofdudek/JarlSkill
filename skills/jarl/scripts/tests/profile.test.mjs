@@ -180,7 +180,7 @@ test('a new issue starts in the initial status, and next offers only a dispatcha
 test('both holds-claim statuses carry the lease and hold their files; leaving them removes the lease', () => {
   const root = houseLoop();
   jarl(root, 'new', 'a', '--acceptance', '[read] it works', '--files', 'src/a.mjs');
-  jarl(root, 'new', 'b', '--acceptance', '[read] it works', '--files', 'src/a.mjs');
+  jarl(root, 'new', 'b', '--files', 'src/a.mjs');
   jarl(root, 'set', '1,2', 'queued', 'accepted');
   assert.match(refuses(root, 'set', '1', 'queued', 'x', '--worker', 'w'), /--worker goes with running or landed only/);
   jarl(root, 'set', '1', 'running', 'go', '--branch', 'b/1', '--worker', 'w1');
@@ -210,13 +210,13 @@ test('only a settles-dependents status releases a dependent; a drop here does no
 
 test('a closes-record status passes the done gate: evidence since the claim, and a live approve', () => {
   const root = houseLoop();
-  jarl(root, 'new', 'first', '--acceptance', '[read] it works');
-  jarl(root, 'new', 'second', '--acceptance', '[read] it works', '--after', '1');
+  jarl(root, 'new', 'first', '--acceptance', '[test] it works');
+  jarl(root, 'new', 'second', '--after', '1');
   jarl(root, 'set', '1,2', 'queued', 'accepted');
-  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'old');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'old', '--by', 'w1');
   jarl(root, 'set', '1', 'running', 'go', '--worker', 'w1');
-  assert.match(refuses(root, 'set', '1', 'merged'), /no --ran\/--saw evidence row recorded since it was moved → running/);
-  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', '12 pass');
+  assert.match(refuses(root, 'set', '1', 'merged'), /rows count since it was moved → running\): line 1 \[test\] unproved/);
+  for (const by of ['w1', 'rev']) jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', '12 pass', '--by', by);
   assert.match(refuses(root, 'set', '1', 'merged'), /no approving review/);
   assert.match(refuses(root, 'review', '1', 'approve', FINDINGS, '--by', 'w1'), /self-approve/);
   jarl(root, 'review', '1', 'approve', FINDINGS, '--by', 'reviewer');
@@ -227,7 +227,7 @@ test('a closes-record status passes the done gate: evidence since the claim, and
   assert.equal(st.statuses.merged, 1);
   // A reopen out of the closing status spends the approve, as a reopen out of done does.
   jarl(root, 'set', '1', 'queued', 'reopened');
-  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'again');
+  for (const by of ['w1', 'rev']) jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'again', '--by', by);
   assert.match(refuses(root, 'set', '1', 'merged'), /no approving review newer than its last round or reopen/);
 });
 
@@ -262,7 +262,7 @@ test('no profile: no profile file, the same issue file byte for byte, the same l
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· opened · g\n$/);
   jarl(root, 'new', 'plain issue', '--files', 'a.mjs', '--acceptance', '[read] it works');
   const file = readFileSync(join(root, '.jarl', 'issues', '1-plain-issue.md'), 'utf8').replace(/^\*\*Key:\*\* \d{8}T\d{4}-[a-z]{4}$/m, '**Key:** <key>');
-  assert.equal(file, '# 1 · plain issue\n\n**Status:** open\n**Kind:** bug\n**Priority:** 2\n**Tier:** standard\n**Key:** <key>\n**Tags:** \n**Files:** a.mjs\n**Found by:** jarl\n**Where:**\n\n## What\n\n\n## Why\n\n\n## Acceptance\nit works\n\n## Evidence\n\n');
+  assert.equal(file, '# 1 · plain issue\n\n**Status:** open\n**Kind:** bug\n**Priority:** 2\n**Tier:** standard\n**Key:** <key>\n**Tags:** \n**Files:** a.mjs\n**Found by:** jarl\n**Where:**\n\n## What\n\n\n## Why\n\n\n## Acceptance\n[read] it works\n\n## Evidence\n\n');
   const st = JSON.parse(jarl(root, 'status', '--json'));
   assert.deepEqual(Object.keys(st).slice(0, 5), ['open', 'in-progress', 'done', 'dropped', 'deferred']);
   assert.ok(!('profile' in st));
@@ -342,10 +342,10 @@ test('new writes the declared fields after Where, the extra sections after Accep
   assert.match(refuses(root, 'new', 't', '--kind', 'bug', '--field', 'area-2=core'), /--kind must be one of: feature, fix, chore/);
   jarl(root, 'new', 'a thing', '--field', 'area-2=core', '--section', 'Plan=first this\nthen that', '--acceptance', '[read] it runs', '--tier', 'max');
   const file = readFileSync(join(root, '.jarl', 'issues', '1-a-thing.md'), 'utf8').replace(/^\*\*Key:\*\* \d{8}T\d{4}-[a-z]{4}$/m, '**Key:** <key>');
-  assert.equal(file, '# 1 · a thing\n\n**Status:** proposed\n**Kind:** feature\n**Priority:** 2\n**Tier:** max\n**Key:** <key>\n**Tags:** \n**Files:** \n**Found by:** jarl\n**Where:**\n**Area-2:** core\n**Class:** b\n**Note:**\n\n## What\n\n\n## Why\n\n\n## Acceptance — evidence\nit runs\n\n## Plan\nfirst this\nthen that\n\n## Ports\n\n\n## Evidence\n\n');
+  assert.equal(file, '# 1 · a thing\n\n**Status:** proposed\n**Kind:** feature\n**Priority:** 2\n**Tier:** max\n**Key:** <key>\n**Tags:** \n**Files:** \n**Found by:** jarl\n**Where:**\n**Area-2:** core\n**Class:** b\n**Note:**\n\n## What\n\n\n## Why\n\n\n## Acceptance — evidence\n[read] it runs\n\n## Plan\nfirst this\nthen that\n\n## Ports\n\n\n## Evidence\n\n');
   const shown = JSON.parse(jarl(root, 'show', '1', '--json'));
   assert.equal(shown.fields['area-2'], 'core');
-  assert.equal(shown.sections.acceptance, 'it runs\n\n', 'the aliased heading reads as the acceptance');
+  assert.equal(shown.sections.acceptance, '[read] it runs\n\n', 'the aliased heading reads as the acceptance');
   assert.doesNotMatch(jarl(root, 'next'), /no acceptance/);
 });
 
@@ -360,7 +360,7 @@ test('an issue written with the aliased heading by another tool counts its accep
   jarl(root, 'field', '1', 'Acceptance', '[read] three');
   jarl(root, 'field', '1', 'Ports', 'in: a; out: b');
   const text = readFileSync(path, 'utf8');
-  assert.match(text, /## Acceptance — evidence\nthree\n\n## Plan/, 'field writes under the heading the file has');
+  assert.match(text, /## Acceptance — evidence\n\[read\] three\n\n## Plan/, 'field writes under the heading the file has');
   assert.doesNotMatch(text, /^## Acceptance$/m);
   assert.match(text, /## Ports\n+in: a; out: b\n/);
   assert.match(refuses(root, 'field', '1', 'Nope', 'x'), /Nope is not a part of the description, which field writes: .*Plan, Ports/);
@@ -414,12 +414,12 @@ test('list --match filters on any header field; list and resume show the declare
 test('a template fills declared fields and sections; import takes --field and files under the profile\'s kinds', () => {
   const root = fieldedLoop();
   mkdirSync(join(root, '.jarl', 'templates'));
-  writeFileSync(join(root, '.jarl', 'templates', 'area.md'), '# t\n\n**Area-2:** cli\n\n## Plan\nthe usual plan\n\n## Acceptance — evidence\n- it holds\n');
+  writeFileSync(join(root, '.jarl', 'templates', 'area.md'), '# t\n\n**Area-2:** cli\n\n## Plan\nthe usual plan\n\n## Acceptance — evidence\n- [read] it holds\n');
   jarl(root, 'new', 'from template', '--template', 'area');
   const t = JSON.parse(jarl(root, 'show', '1', '--json'));
   assert.equal(t.fields['area-2'], 'cli');
   assert.equal(t.sections.plan.trim(), 'the usual plan');
-  assert.equal(t.sections.acceptance.trim(), '- it holds');
+  assert.equal(t.sections.acceptance.trim(), '- [read] it holds');
   const f = join(mkdtempSync(join(tmpdir(), 'jarl-findings-')), 'findings.json');
   writeFileSync(f, JSON.stringify([{ id: 'F1', title: 'one', kind: 'defect' }]));
   assert.match(refuses(root, 'import', f), /Area-2 is required/);
@@ -506,7 +506,7 @@ test('branches: a branch is DONE → delete by flags — closed or given up (ter
 test('the merge queue of resume takes only work in play: a proposed or blocked issue with a fresh approve on a branch is never queued', () => {
   const { dir, g } = gitRepo();
   jarl(dir, 'init', 'g', '--profile', profileFile(HOUSE));
-  jarl(dir, 'new', 'a', '--acceptance', '[read] it works'); jarl(dir, 'new', 'b');
+  jarl(dir, 'new', 'a', '--acceptance', '[read] it works'); jarl(dir, 'new', 'b', '--acceptance', '[read] it works');
   jarl(dir, 'set', '1,2', 'queued', 'ok');
   jarl(dir, 'set', '1', 'running', 'go', '--branch', 'feat/a', '--worker', 'w');
   jarl(dir, 'set', '2', 'running', 'go', '--branch', 'feat/b', '--worker', 'w');

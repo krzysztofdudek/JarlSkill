@@ -42,8 +42,8 @@ test('show prints the gate window: current rows and verdicts, one line per earli
   jarl(root, 'review', id, 'approve', '--by', 'rev-d', 'Minor: a name. The rest reads right');
   const shown = jarl(root, 'show', id);
   assert.match(shown, /^# 1 · worked in rounds\n/);
-  assert.match(shown, /## Acceptance\nit works\n/);
-  for (const row of ['run one', 'run two', 'run three', 'run four']) assert.match(shown, new RegExp(`\\*\\*ran:\\*\\* ${row}`), 'every row since the start is shown');
+  assert.match(shown, /## Acceptance\n\[read\] it works\n/);
+  for (const row of ['run one', 'run two', 'run three', 'run four']) assert.match(shown, new RegExp(`\\*\\*ran(?: \\(line [0-9a-f, ]+\\))?:\\*\\* ${row}`), 'every row since the start is shown');
   assert.match(shown, /\*\*approve\*\* · by rev-d \(fresh\)/);
   assert.match(shown, /Minor: a name\. The rest reads right/, 'the current verdict is whole');
   assert.equal(shown.split('\n').filter((l) => l.startsWith('- earlier: ')).length, 0, 'every verdict since the last start is in full, whatever round it was made in');
