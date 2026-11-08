@@ -945,7 +945,7 @@ test('a value flag takes the next argument whatever it starts with; -- ends the 
 
 test('every flag the usage text names is one its command accepts', async () => {
   const { COMMAND_FLAGS } = await import(new URL('../jarl.mjs', import.meta.url).href);
-  const usage = readFileSync(SCRIPT, 'utf8').split('const USAGE = `')[1].split('`;')[0];
+  const usage = readFileSync(fileURLToPath(new URL('../jarl-usage.mjs', import.meta.url)), 'utf8').split('const USAGE = `')[1].split('`;')[0];
   for (const line of usage.split('\n')) {
     const m = /^ {2}([a-z]+) /.exec(line);
     if (!m || !COMMAND_FLAGS[m[1]]) continue;
