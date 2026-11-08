@@ -122,6 +122,19 @@ test('next offers only issues with no open sub-issues, and an After on a parent 
   assert.ok(!ready().includes('5'), 'an issue that waits on the parent waits until the parent itself is closed');
 });
 
+test('a parent an open question names is held by it as well as waiting on its sub-issues, and shows under both groups', () => {
+  const root = exportLoop();
+  jarl(root, 'field', '2,3', 'Parent', '1');
+  jarl(root, 'ask', 'which export format comes first?', '--kind', 'stuck', '--issue', '1');
+  const parent = json(root, 'next', '--all').filter((r) => r.id === '1');
+  assert.deepEqual(parent.map((r) => r.group), ['waiting-sub', 'held-by-question']);
+  assert.deepEqual(parent[1].questions.map(String), ['1']);
+  const text = jarl(root, 'next', '--all');
+  assert.match(text, /^Waiting on their sub-issues \(1\)\n1  P2  the export  \(sub-issues 2, 3 not closed\)$/m);
+  assert.match(text, /^Held by an open question \(1\)\n1  P2  the export  \(question a-1\)$/m);
+  assert.ok(!json(root, 'next').some((r) => r.id === '1'), 'a parent held by a question is not offered');
+});
+
 test('a split moves each acceptance line to a named issue or keeps it on the parent, the issues become its sub-issues, and the log says what each held', () => {
   const root = exportLoop();
   const out = json(root, 'split', '1', '--line', '1=2', '--line', '2=3', '--line', '3=1', '--by', 'odin');
