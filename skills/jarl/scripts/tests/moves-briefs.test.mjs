@@ -3,6 +3,7 @@
 // whole.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -210,25 +211,140 @@ test('next --as --json gives each raise-move its role, default model, branch and
   assert.equal(close, undefined, 'no worker row stands here');
 });
 
-test('the briefs hold their word caps, the issue\'s own text not counted: worker 700, examiner 500, merger 900', () => {
-  const { dir } = leased();
-  row(dir, '2', 1, 'w-7', 'npm test -- export', 'pass 4');
-  row(dir, '2', 2, 'w-7');
-  row(dir, '3', 1, 'w-7', 'node report.mjs', 'same');
-  row(dir, '3', 1, 'w-7', 'node report.mjs', 'same');
-  jarl(dir, 'evidence', '2', 'Assumed: an empty call means the empty list', '--by', 'w-7');
-  const counted = (args) => {
-    const o = json(dir, 'brief', ...args);
-    let text = jarl(dir, 'brief', ...args);
-    for (const issue of o.issues || []) text = text.replace(issue.text, '');
-    return { n: words(text), o };
+// A brief's own text, as the caps count it: without each issue's own block and without the sections of its record (rounds,
+// findings, proof rows), which grow with the issue and not with the role.
+const RECORD_SECTIONS = ['Proof to re-run', 'Rounds so far', 'Findings of the reviews'];
+function ownWords(root, args) {
+  const o = json(root, 'brief', ...args);
+  let text = jarl(root, 'brief', ...args);
+  for (const issue of o.issues || []) text = text.replace(issue.text, '');
+  text = text.split('\n## ').filter((part, k) => k === 0 || !RECORD_SECTIONS.some((s) => part.startsWith(s))).join('\n## ');
+  return words(text);
+}
+const LONG_GOAL = `${'The whole of the export work is to reach every caller without a break, and it says so at length. '.repeat(24)}The end.`;
+function longLoop() {
+  const { dir } = gitRepo({ prefix: 'jarl-brief-caps-', branch: 'feature' });
+  jarl(dir, 'init', LONG_GOAL);
+  const many = Array.from({ length: 20 }, (_, n) => ['--acceptance', `[test] behaviour number ${n + 1} of the export holds`]).flat();
+  jarl(dir, 'new', 'many lines', '--tier', 'standard', '--why', 'Needed', '--files', 'a.txt', ...many);   // 1
+  jarl(dir, 'new', 'its neighbour', '--tier', 'standard', '--why', 'Needed', '--files', 'b.txt', ...many);   // 2
+  lease(dir, '1,2', 'w-7', 'jarl/1-pack', 'sonnet-x');
+  for (let n = 1; n <= 20; n += 1) row(dir, '1', n, 'w-7', `npm test -- ${n}`, 'pass');
+  return dir;
+}
+
+test('the briefs hold their word caps with a long goal and many lines, the issue\'s own record not counted: worker 700, examiner 500, merger 900', () => {
+  const dir = longLoop();
+  const counts = {
+    workerOne: ownWords(dir, ['1,2']),
+    examiner: ownWords(dir, ['1,2', '--role', 'reviewer']),
+    merger: ownWords(dir, ['--role', 'merger']),
   };
-  const worker = counted(['2,3']);
-  assert.ok(worker.n <= 700, `worker ${worker.n} words`);
-  const single = counted(['2', '--role', 'worker']);
-  assert.ok(single.n <= 700, `worker of one issue ${single.n} words`);
-  const reviewer = counted(['2,3', '--role', 'reviewer']);
-  assert.ok(reviewer.n <= 500, `examiner ${reviewer.n} words`);
-  const merger = counted(['--role', 'merger']);
-  assert.ok(merger.n <= 900, `merger ${merger.n} words`);
+  assert.ok(counts.workerOne <= 700, `worker ${counts.workerOne} words`);
+  assert.ok(counts.examiner <= 500, `examiner ${counts.examiner} words`);
+  assert.ok(counts.merger <= 900, `merger ${counts.merger} words`);
+});
+
+test('the goal\'s first paragraph is cut at a fixed length with the pointer to where the rest is', () => {
+  const dir = longLoop();
+  const o = json(dir, 'brief', '1,2');
+  assert.ok(words(o.goal) <= 75, `${words(o.goal)} words`);
+  assert.match(o.goal, /… \(the rest of the goal: .*goal\.md\)$/);
+  assert.match(jarl(dir, 'brief', '--role', 'merger'), /the rest of the goal: .*goal\.md/);
+  const { dir: short } = leased();
+  assert.equal(json(short, 'brief', '2,3').goal, 'Make the export feature whole, end to end.', 'a short goal is whole');
+});
+
+test('a worker on an in-place issue is told it commits nothing', () => {
+  const { dir } = gitRepo({ prefix: 'jarl-brief-in-place-', branch: 'feature' });
+  jarl(dir, 'init', 'goal');
+  jarl(dir, 'new', 'the guide', '--tier', 'light', '--why', 'w', '--tags', 'in-place', '--files', 'docs/guide.md', '--acceptance', '[read] it reads well');
+  jarl(dir, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--by', 'jarl');
+  const text = jarl(dir, 'brief', '1');
+  assert.match(text, /you commit nothing/i);
+  assert.doesNotMatch(text, /Commit at the failing test/);
+  assert.doesNotMatch(text, /`git merge /);
+});
+
+test('the proof to re-run takes the rows themselves: each live row with its own command, none retracted, and a declared check the landing proves says so', () => {
+  const root = loop();
+  jarl(root, 'goal', '--set', 'Check: npm test');
+  jarl(root, 'new', 'a compare', '--tier', 'standard', '--why', 'w', '--acceptance', '[compare] same · by: node r.mjs', '--acceptance', '[check] the suite passes', '--acceptance', '[test] t', '--files', 'a.mjs');
+  lease(root, '1', 'w-1', 'jarl/1-a');
+  row(root, '1', 1, 'w-1', 'node r.mjs --before', 'same');
+  row(root, '1', 1, 'w-1', 'node r.mjs --after', 'same');
+  row(root, '1', 3, 'w-1', 'npm test -- wrong', 'pass');
+  jarl(root, 'retract', '1', '3', 'it was the wrong test', '--by', 'w-1');
+  row(root, '1', 3, 'w-1', 'npm test -- right', 'pass');
+  const text = jarl(root, 'brief', '1', '--role', 'reviewer');
+  assert.match(text, /1 line 1 \[compare\]: re-run node r\.mjs --before \(saw: same, by w-1\) · node r\.mjs --after \(saw: same, by w-1\)/);
+  assert.match(text, /1 line 3 \[test\]: re-run npm test -- right/);
+  assert.doesNotMatch(text, /npm test -- wrong/, 'a retracted row is gone');
+  assert.match(text, /1 line 2 \[check\]: on the declared check, which the landing proves: no row is owed/);
+});
+
+test('the merger\'s brief prints commands that run as printed, a commit step for its mode and a step for a worked-in-place issue', () => {
+  const root = loop();
+  const raw = JSON.parse(spawnJarl(root, ['brief', '--role', 'merger', '--json']).stdout);
+  const flags = raw.record.find((r) => /merge drivers/.test(r.what)).command;
+  assert.doesNotMatch(flags, /--root/, 'merge-driver flags names no loop');
+  const words_ = flags.split(' ');
+  const ran = spawnSync(process.execPath, words_.slice(1), { encoding: 'utf8', timeout: 60_000 });
+  assert.equal(ran.status, 0, ran.stderr);
+  const text = jarl(root, 'brief', '--role', 'merger');
+  assert.match(text, /worked in place/);
+  assert.match(text, /a commit of their own/);
+  assert.match(text, /never commits? `\.jarl\/`/);
+  const { dir } = gitRepo({ prefix: 'jarl-brief-committed-', branch: 'feature' });
+  jarl(dir, 'init', 'goal', '--committed');
+  const committed = jarl(dir, 'brief', '--role', 'merger');
+  assert.match(committed, /the loop is committed/i);
+  assert.match(committed, /commit `\.jarl\/` before each merge/i);
+});
+
+test('depth holds the tier at the lease too, and a line edited before a handover: the base is the first lease of the work, and the brief shows the change', () => {
+  const root = loop();
+  jarl(root, 'new', 'strong work', '--tier', 'strong', '--why', 'w', '--acceptance', '[test] t', '--files', 'a.mjs');   // 1
+  lease(root, '1', 'w-1', 'jarl/1-a');
+  jarl(root, 'field', '1', 'Tier', 'light', '--by', 'w-1');
+  const lowered = json(root, 'brief', '1', '--role', 'reviewer');
+  assert.deepEqual([lowered.depth.row, lowered.depth.tier], ['strongest', 'strong'], 'lowering the tier after the lease changes nothing');
+  assert.match(jarl(root, 'brief', '1', '--role', 'reviewer'), /Tier was strong, now light/);
+  jarl(root, 'new', 'judged', '--tier', 'standard', '--why', 'w', '--acceptance', '[read] by eye', '--files', 'b.mjs');   // 2
+  lease(root, '2', 'w-2', 'jarl/2-b');
+  jarl(root, 'field', '2', 'Acceptance', '[test] mechanical now', '--by', 'w-2');
+  jarl(root, 'set', '2', 'in-progress', 'the worker is gone', '--worker', 'w-3', '--handover', '--by', 'jarl');
+  const handed = json(root, 'brief', '2', '--role', 'reviewer');
+  assert.deepEqual([handed.depth.row, handed.depth.atLease], ['judged', 'judged'], 'the base holds across the handover');
+  const changes = jarl(root, 'brief', '2', '--role', 'reviewer').split('## Changes to the lines since the lease')[1].split('\n## ')[0];
+  assert.match(changes, /by w-2 · was: \[read\] by eye · now: \[test\] mechanical now/);
+});
+
+test('a takeover on a lease of two tiers raises the highest of them, on the whole lease', () => {
+  const root = loop();
+  jarl(root, 'goal', '--set', 'Takeover: 1');
+  jarl(root, 'goal', '--set', 'Model (light): haiku-x');
+  jarl(root, 'goal', '--set', 'Model (strong): opus-x');
+  jarl(root, 'new', 'light one', '--tier', 'light', '--why', 'w', '--acceptance', '[test] a', '--files', 'a.mjs');
+  jarl(root, 'new', 'strong one', '--tier', 'strong', '--why', 'w', '--acceptance', '[test] b', '--files', 'b.mjs');
+  lease(root, '1,2', 'w-1', 'jarl/1-pack');
+  row(root, '1', 1, 'w-1');
+  jarl(root, 'round', '1', 'red');
+  const raise = json(root, 'next', '--as', 'jarl', '--all').rows.find((r) => r.what === 'takeover').raise;
+  assert.equal(raise.model, 'opus-x');
+  assert.equal(raise.command, 'jarl.mjs brief 1,2');
+});
+
+test('a director\'s stuck is under one holder in resume and next --as: resume lists it apart from the owner\'s questions', () => {
+  const root = loop();
+  jarl(root, 'new', 'stuck on it', '--tier', 'light', '--why', 'w', '--acceptance', '[test] a', '--files', 'a.mjs');
+  lease(root, '1', 'w-1', 'jarl/1-a');
+  jarl(root, 'ask', 'the guard must go, may I?', '--kind', 'stuck', '--issue', '1', '--by', 'w-1');
+  jarl(root, 'ask', 'a question of the owner', '--kind', 'stuck');
+  const r = json(root, 'resume');
+  assert.deepEqual(r.questions.map((a) => a.question), ['a question of the owner']);
+  assert.deepEqual(r.toDirector.map((a) => [a.question, a.holder]), [['the guard must go, may I?', 'jarl']]);
+  const text = jarl(root, 'resume');
+  assert.match(text, /## Questions to the owner \(1\)\n- a-\d+ \(stuck\) · a question of the owner/);
+  assert.match(text, /## Questions to the director \(1\)\n- a-\d+ \(stuck\) issue 1 · on jarl · the guard must go, may I\?/);
 });

@@ -295,3 +295,61 @@ test('a Merger (<slice>) line for a slice the loop does not have is refused, and
   assert.match(refuses(root, 'goal', '--set', 'Merger (thor): mimir'), /^Merger \(thor\) names no slice of this loop: its slices are odin/);
   assert.match(refuses(root, 'goal', '--set', 'Merger (odin): a, b'), /a Merger line names one holder/);
 });
+
+test('while a slice\'s integration branch does not exist, its work is the feature branch\'s merger\'s alone, in next --as and the queue', () => {
+  const { dir } = repo();
+  jarl(dir, 'goal', '--set', 'Coordinators: odin');
+  jarl(dir, 'goal', '--set', 'Merger (odin): mimir');
+  jarl(dir, 'new', 'sliced', '--tier', 'light', '--acceptance', '[test] a', '--tags', 'slice:odin', '--files', 'a.txt');
+  lease(dir, '1', 'w1', 'jarl/1-sliced');
+  branchWith(dir, 'jarl/1-sliced', 'a.txt');
+  jarl(dir, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'pass', '--by', 'w1');
+  jarl(dir, 'review', '1', 'approve', '--by', 'rev-1', FINDINGS);
+  assert.ok(!rows(dir, 'mimir').some((r) => r.what === 'merge'), 'not on the slice\'s merger');
+  const move = rows(dir, 'jarl').find((r) => r.what === 'merge');
+  assert.deepEqual([move.id, move.target, move.raise.command], ['1', undefined, 'jarl.mjs brief --role merger']);
+  const q = queue(dir);
+  assert.deepEqual(q.repos.map((r) => r.base), ['feature']);
+  assert.deepEqual(q.repos[0].rows.map((r) => r.issues), [['1']]);
+});
+
+test('the idle row of a lease of several issues prints the form that moves the whole lease', async () => {
+  const W = await import('../lib/where.mjs');
+  const L = await import('../jarl-lib.mjs');
+  const root = loop();
+  jarl(root, 'new', 'one', '--tier', 'light', '--acceptance', '[test] a');
+  jarl(root, 'new', 'two', '--tier', 'light', '--acceptance', '[test] b');
+  jarl(root, 'set', '1,2', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1-pack', '--by', 'jarl');
+  W.setClock(Date.now() + 40 * 60_000);
+  try {
+    const row = L.cmdNextAs(root, { as: 'jarl', all: true }).rows.find((r) => r.what === 'idle');
+    assert.match(row.command, /^jarl\.mjs set 1,2 in-progress /);
+    assert.match(row.command, /--handover$/);
+  } finally { W.setClock(null); }
+});
+
+test('an issue approved after the round limit is on the merger, not on a takeover, in next --as as in the queue', () => {
+  const { dir } = repo();
+  jarl(dir, 'goal', '--set', 'Takeover: 2');
+  jarl(dir, 'new', 'hard', '--tier', 'light', '--acceptance', '[test] a');
+  lease(dir, '1', 'w1', 'jarl/1-hard');
+  branchWith(dir, 'jarl/1-hard', 'a.txt');
+  proof(dir, '1', 1, 'w1');
+  jarl(dir, 'round', '1', 'red');
+  proof(dir, '1', 1, 'w1');
+  jarl(dir, 'round', '1', 'red again');
+  proof(dir, '1', 1, 'w1');
+  jarl(dir, 'review', '1', 'approve', '--by', 'rev-1', FINDINGS);
+  assert.deepEqual(rows(dir, 'jarl').filter((r) => r.id === '1').map((r) => r.what), ['merge']);
+  assert.deepEqual(queue(dir).repos[0].rows.map((r) => r.branch), ['jarl/1-hard']);
+});
+
+test('an integration branch with commits and no recorded merge is in neither view', () => {
+  const { dir, g } = repo();
+  jarl(dir, 'goal', '--set', 'Coordinators: odin');
+  jarl(dir, 'goal', '--set', 'Merger (odin): mimir');
+  branchWith(dir, 'jarl/slice-odin', 'a.txt');
+  jarl(dir, 'new', 'sliced', '--tier', 'light', '--acceptance', '[test] a', '--tags', 'slice:odin');
+  assert.ok(!rows(dir, 'jarl').some((r) => r.integration));
+  assert.ok(!queue(dir).repos[0].rows.some((r) => r.branch === 'jarl/slice-odin'), shaOf(g, 'jarl/slice-odin'));
+});
