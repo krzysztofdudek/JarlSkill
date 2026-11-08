@@ -539,7 +539,7 @@ export function cmdRepoBase(root, name, branch) {
   need(name !== undefined && branch !== undefined, 'base takes a repository name and a branch', () => [...(name === undefined ? [{ arg: 0, value: '<name>' }] : []), { arg: 1, value: '<branch>' }]);
   const known = declaredRepos(root);
   // A loop that declares none takes the step that declares one first, on a line of its own: no name is a base's before it.
-  need(known.has(name), `${name} is not declared in this loop${known.size ? ` — it declares ${[...known.keys()].join(', ')}, names written as declared` : ''}; Jarl declares a repository the first time an issue names it (${jarlLine('field', '<id>', 'Repo', '<name-or-path>')})`, () => (known.size ? { arg: 0, value: hole('<name>') } : [{ first: ['jarl.mjs', 'field', hole('<id>'), 'Repo', hole('<name-or-path>')] }, { arg: 0, value: hole('<name>') }]));
+  need(known.has(name), `${name} is not declared in this loop${known.size ? ` — it declares ${[...known.keys()].join(', ')}, names written as declared` : ''}; Jarl declares a repository the first time an issue names it (${jarlLine('field', hole('<id>'), 'Repo', hole('<name-or-path>'))})`, () => (known.size ? { arg: 0, value: hole('<name>') } : [{ first: ['jarl.mjs', 'field', hole('<id>'), 'Repo', hole('<name-or-path>')] }, { arg: 0, value: hole('<name>') }]));
   const base = fieldText(branch);
   need(base && !/[\r\n]/.test(String(branch)) && !base.includes(' · '), 'the base is one branch name on one line', () => ({ replace: String(branch), value: '<branch>' }));
   const problem = branchNameProblem(base);

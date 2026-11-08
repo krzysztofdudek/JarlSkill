@@ -181,7 +181,8 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null, asked = 
     ...sec(`Waiting — After not settled (${o.waiting.filter((x) => !x.subs).length})`, o.waiting.filter((x) => !x.subs).map((x) => `- ${x.id} ${short(x.title)} (after ${x.after.join(', ')})${x.stale !== undefined ? ` · ${x.status === 'in-progress' ? 'in progress' : x.status}${lease(x) ? ` · ${lease(x)}` : ''}${x.stale.length ? ` · STALE: ${x.stale.join('; ')}` : ''}` : ''}`)),
     ...sec(`Waiting on their sub-issues (${o.waiting.filter((x) => x.subs).length})`, o.waiting.filter((x) => x.subs).map((x) => `- ${x.id} ${short(x.title)} (sub-issues ${x.subs.join(', ')} not closed)`)),
     ...sec(`Parents whose sub-issues are closed (${(o.parents || []).length})`, (o.parents || []).map((p) => `- ${p.id} ${short(p.title)} · sub-issues ${subsText(p.subs)}\n  → ${p.next}`)),
-    ...sec(`Questions to the owner (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`), '- (nothing)'),
+    // One row per question: a question of several lines has its lines joined; the whole text stays in the question's record.
+    ...sec(`Questions to the owner (${o.questions.length})`, o.questions.map((a) => `- a-${a.id} (${a.kind || 'stuck'})${a.issue ? ` issue ${a.issue}` : ''} · ${fieldText(a.question)}`), '- (nothing)'),
     ...sec(`Escalations to the jarl (${o.escalations.length})`, o.escalations.map((a) => `- a-${a.id}${a.slice ? ` slice:${a.slice}` : ''}${a.issue ? ` issue ${a.issue}` : ''} · ${a.question}`)),
     ...sec(`Rules proposed (${o.proposed.length})`, o.proposed.map((a) => `- a-${a.id} to ${a.to || 'jarl'} · ${a.appliesTo ? `applies to ${a.appliesTo}` : 'offered for promotion'} · ${a.question}`)),
     ...sec(`To ratify (${o.ratify.length})`, o.ratify.map((a) => `- a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${a.question}`)),

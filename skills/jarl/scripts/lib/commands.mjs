@@ -1295,7 +1295,10 @@ function setDeclaredField(root, rawIds, field, value, flags) {
   need(v || (!field.required && !field.builtin), `${field.name} cannot be emptied with --clear or an empty value${field.enum ? ` — one of: ${field.enum.join(', ')}` : ''}`, () => [{ drop: '--clear' }, { arg: 2, value: hole('<value>') }]);
   const issues = issuesFor(root, rawIds);
   if (field.key === 'kind' && profile.keptKind(v) === WAIT_KIND) {
-    for (const issue of issues) need(fieldText(issue.fields.person) && fieldText(issue.fields['check when']), `${issue.id} becomes a wait only with the outside person it is held by and when to check it — first ${jarlLine('field', issue.id, 'Person', '<name>')} and ${jarlLine('field', issue.id, 'Check when', '<date-or-event>')}`, () => { const lacking = issues.filter((i) => !fieldText(i.fields.person) || !fieldText(i.fields['check when'])).map((i) => i.id).join(','); return [{ first: ['jarl.mjs', 'field', lacking, 'Person', '<name>'] }, { first: ['jarl.mjs', 'field', lacking, 'Check when', '<date-or-event>'] }, { retry: true }]; });
+    // The reason names the issue; the forms carry a placeholder for the ids, as every refusal's form does.
+    const person = ['jarl.mjs', 'field', hole('<ids>'), 'Person', hole('<name>')];
+    const checkWhen = ['jarl.mjs', 'field', hole('<ids>'), 'Check when', hole('<date-or-event>')];
+    for (const issue of issues) need(fieldText(issue.fields.person) && fieldText(issue.fields['check when']), `${issue.id} becomes a wait only with the outside person it is held by and when to check it — first ${jarlLine(...person.slice(1))} and ${jarlLine(...checkWhen.slice(1))}`, () => [{ first: person }, { first: checkWhen }, { retry: true }]);
   }
   if (field.key === 'kind' && profile.keptKind(v) && issues.some((issue) => issue.kind !== v)) needFormat(root, 'promise-wait');
   logChanges(root, issues.map((issue) => fieldLine(issue.id, field.name, v, heldField(issue, field.name), by)));
@@ -1311,7 +1314,7 @@ function setKeptField(root, rawIds, name, value, flags) {
   const by = editorOf(flags.by);
   const v = value === '' ? '' : keptValue(name, value);
   const issues = issuesFor(root, rawIds);
-  for (const issue of issues) need(v || profile.keptKind(issue.kind) !== WAIT_KIND, `${issue.id} is a wait, held by its Person and checked when its Check when says: ${name} is never empty on it — give it another kind first (${jarlLine('field', issue.id, 'Kind', '<kind>')})`, () => (['jarl.mjs', 'field', issues[0]?.id ?? '<id>', 'Kind', '<kind>']));
+  for (const issue of issues) need(v || profile.keptKind(issue.kind) !== WAIT_KIND, `${issue.id} is a wait, held by its Person and checked when its Check when says: ${name} is never empty on it — give it another kind first (${jarlLine('field', hole('<ids>'), 'Kind', hole('<kind>'))})`, () => (['jarl.mjs', 'field', hole('<ids>'), 'Kind', hole('<kind>')]));
   if (v) needFormat(root, 'promise-wait', `the field ${name} of a wait`);
   logChanges(root, issues.map((issue) => fieldLine(issue.id, name, v, heldField(issue, name), by)));
   for (const issue of issues) writeAtomic(issue.file, v ? setField(readText(issue.file), name, v) : removeFields(readText(issue.file), [name]));
