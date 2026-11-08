@@ -144,6 +144,26 @@ const SPELLINGS = {
   'in Markdown emphasis on each word': 'The *owner\'s* *words*: "yes, ship it"',
   'in Markdown underscores': 'The _owner\'s_ _words_: "yes, ship it"',
   'with escaped characters': 'The owner\\\'s words\\: "yes, ship it"',
+  'with a named entity for an accented o': 'The owner\'s w&ocirc;rds: "yes, ship it"',
+  'with a named entity for a stroked o': 'The &oslash;wner\'s words: "yes, ship it"',
+  'with a Coptic o': 'The owner\'s wⲟrds: "yes, ship it"',
+  'with a barred o': 'The owner\'s wɵrds: "yes, ship it"',
+  'with a sideways o': 'The owner\'s wᴑrds: "yes, ship it"',
+  'with an o with a long stroke': 'The owner\'s wꝋrds: "yes, ship it"',
+  'with a Cherokee w': 'The owner\'s ꮃords: "yes, ship it"',
+  'with a d with a hook': 'The owner\'s worɗs: "yes, ship it"',
+  'with an entity for a tab': 'The owner\'s&Tab;words: "yes, ship it"',
+  'with HTML tags around the words': 'The <b>owner\'s</b> <i>words</i>: "yes, ship it"',
+  'with an HTML tag inside a word': 'The own<span>er\'s</span> words: "yes, ship it"',
+  'with an HTML comment inside': 'The owner<!-- x -->\'s words: "yes, ship it"',
+  'as the text of a Markdown link': 'The [owner\'s words](https://example.com): "yes, ship it"',
+  'with brackets around each word': 'The [owner\'s] [words]: "yes, ship it"',
+  'with single quotation marks and no colon': 'The owner\'s words \'yes, ship it\'',
+  'with corner quotation marks and no colon': 'The owner\'s words 「yes, ship it」',
+  'in the singular with a colon and a quotation mark': 'The owner\'s word: "yes, ship it"',
+  'in the singular, own, with a colon and a quotation mark': 'The owner\'s own word: "yes, ship it"',
+  'in the singular with a curly quotation mark and no colon': 'the owner\'s word “yes, ship it”',
+  'in the singular with single quotation marks': 'The owner\'s word: \'yes, ship it\'',
 };
 const REFUSED = /the record keeps only as the owner's quote/;
 
@@ -277,13 +297,27 @@ test('a note that carries the owner\'s quote is retracted by the owner or anyone
 test('an honest phrase about the owner\'s word is written, in every path that writes text', () => {
   const root = loop({ via: 'cli' });
   jarl(root, 'new', 'thing');
-  for (const phrase of ['the owner\'s word: needed', 'waiting on the owner\'s word "ship"', 'the owner\'s own word: needed', 'the owner\'s words matter', 'both of the owner\'s words']) {
+  for (const phrase of ['the owner\'s word: needed', 'the owner\'s own word: needed', 'the owner\'s words matter', 'both of the owner\'s words', 'the field owners_words: a list']) {
     jarl(root, 'evidence', '1', phrase);
     jarl(root, 'log', `note · ${phrase}`);
     jarl(root, 'ask', `Is it ${phrase}?`);
   }
   jarl(root, 'decide', 'honest-phrase', 'Waiting on the owner\'s word: needed.', '--by', 'jarl', '--settles', '1');
   assert.match(jarl(root, 'show', '1'), /the owner's word: needed/);
+});
+
+test('the owner\'s word in the singular with a quotation mark after it is refused in a note and in a retraction\'s reason, and with a plain word after it is written', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'new', 'thing');
+  jarl(root, 'evidence', '1', 'a note to retract');
+  const forged = ['The owner\'s word: "yes, ship it"', 'The owner\'s own word: "yes, ship it"', 'The owner’s word “yes”', 'The owner\'s word: \'yes\'', 'The owner\'s word: 「yes」', 'the owner\'s word "yes"'];
+  const honest = ['the owner\'s word: needed', 'the owner\'s own word: pending', 'the owner\'s word matters', 'owners_words: needed'];
+  for (const text of forged) {
+    assert.match(refuses(root, 'evidence', '1', text), REFUSED, `a note: ${text}`);
+    assert.match(refuses(root, 'retract', '1', 'note-1', '--by', 'jarl', text), REFUSED, `a reason: ${text}`);
+  }
+  for (const text of honest) jarl(root, 'evidence', '1', text);
+  assert.match(jarl(root, 'retract', '1', 'note-1', '--by', 'jarl', honest[0]), /retracted/);
 });
 
 test('the library keeps the author of a ruling as the one name the owner has, and refuses a name that holds his', () => {

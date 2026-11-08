@@ -324,7 +324,7 @@ function scopeOf(root, flags) {
 // `Made under: <slug>`), the earlier ruling it replaces — marked **Superseded by:** in place, so a reader of the decisions, and decisions --live,
 // see it is not in force — and the issues it settles. Nothing in the loop names the owner: the name `owner` is his, and a
 // --by that reads as it is it (rulingAuthor). The owner's words reach the record from --quote alone: the ruling's text and
-// every other flag are refused when they hold the marker in any spelling, and the row each settled issue gets names who ruled.
+// every other flag are refused when they hold the marker in a spelling the check reads, and the row each settled issue gets names who ruled.
 export function cmdDecide(root, slug, ruling, flags = {}) {
   need(slug && ruling, `decide requires <slug> "<text>"`, () => [...(slug ? [] : [{ arg: 0, value: '<slug>' }]), ...(ruling ? [] : [{ arg: 1, value: '<text>' }])]);
   const by = flags.by === undefined ? 'coordinator' : rulingAuthor(flags.by);
