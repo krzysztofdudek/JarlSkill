@@ -13,7 +13,7 @@ import { carriesCode, gateOf, readLoop, reviewerKind, unclearedText } from './lo
 import { SEVERITIES, loggedFinding, modelLines, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote } from './models.mjs';
 import { EVIDENCE_HOW, cmdNew, issuesFor, nextIssueNumber, nothingWritten, oneOrMany, proofSince, refiled } from './commands.mjs';
 import { REVIEW_MIN_WORDS, needSaid, raisedText, retractedBy, struck } from './evidence.mjs';
-import { linesText, ownerLineWait, unprovedLines } from './owner-lines.mjs';
+import { closeForm, linesText, ownerLineWait, unprovedLines } from './owner-lines.mjs';
 import { resetCaches } from './tips.mjs';
 
 // ---- commands: review ---------------------------------------------------------------------------------
@@ -157,7 +157,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
     const text = g ? unclearedText(written, now, g) : null;
     return text ? { text, cause: g.uncleared.cause } : null;
   };
-  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), ...(batch ? { batch } : {}), severities, ...(filed.length ? { filed: filed.map((f) => f.id) } : {}), acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n], loop && verdict === 'approve' ? ownerLineWait(root, loop, issue) : null, modelOf(issue), unclearedOf(issue)) } : {}), ...noteOf(issue, n) })));
+  return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), ...(batch ? { batch } : {}), severities, ...(filed.length ? { filed: filed.map((f) => f.id) } : {}), acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n], loop && verdict === 'approve' ? ownerLineWait(root, loop, issue) : null, modelOf(issue), unclearedOf(issue), closeForm(loop ? loop.profile : loadProfile(root), issue.id, loop ? unprovedLines(loop, issue) || [] : [])) } : {}), ...noteOf(issue, n) })));
 }
 
 // The record format a bot's verdict needs, raised before the verdict is written. Where a composer keeps the loop's format,
@@ -175,7 +175,7 @@ function needBotFormat(root) {
 // every line is named, or the loop names none.
 function unprovedNote(loop, issue) {
   const left = unprovedLines(loop, issue) || [];
-  return left.length ? `${issue.id}: no Proof row names acceptance ${linesText(left)}, and done closes it only with a reason for those lines, given apart from the reason of the move: ${jarlLine('set', issue.id, 'done', '<why>', '--without-rows', '<why-no-row-names-the-lines>')}, or a row that names each, ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>')}` : null;
+  return left.length ? `${issue.id}: no Proof row names acceptance ${linesText(left)}, and done closes it only with a reason for those lines, given apart from the reason of the move: ${closeForm(loop.profile, issue.id, left)}, or a row that names each, ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>')}` : null;
 }
 
 // Whether the loop holds a batch id: it is in the format that holds one, or Jarl may raise it there.
@@ -231,13 +231,15 @@ function fileOutside(root, issues, by, o, flags, withModel, dry, number) {
 // form that carries the model, before any step that depends on done accepting it.
 // `uncleared` is why the approves the issue holds now do not clear it, other than the fresh-review rule: a bot the done
 // gate does not name, or the loop's own definition of an approved issue; an approve that clears it is then next.
-function nextAfterVerdict(issue, verdict, kind, wait = null, model = { rule: 'agent', refused: false }, uncleared = null) {
+// `close` is the close the done gate takes (closeForm): the profile's closing status, and --without-rows while acceptance
+// lines have no row naming them in a loop that names them.
+function nextAfterVerdict(issue, verdict, kind, wait = null, model = { rule: 'agent', refused: false }, uncleared, close) {
   if (verdict === 'changes') return `the jarl records the round — ${jarlLine('round', issue.id, '<text>')} — and a worker is raised again to fix it`;
   if (uncleared) return `${uncleared.text} — an approve that clears it is next — ${jarlLine('review', issue.id, '<verdict>', '--by', uncleared.cause === 'bot' ? '<a-fresh-reviewer>' : '<reviewer>', '<text>')}`;
   if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — ${model.rule === 'agent' ? jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>') : modelReviewForm(issue.id)} — then the merger lands it`;
   const after = carriesCode(issue)
-    ? `the merger merges the branch and records it with one call — ${jarlLine('merged', issue.id, '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>')} — then ${wait ? `${wait}, then ` : ''}${jarlLine('set', issue.id, 'done', '<why>')}, which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`
-    : `${wait ? `${wait}, then ` : ''}${jarlLine('set', issue.id, 'done', '<why>')} once the worker's Proof rows are recorded; a worker never sets done`;
+    ? `the merger merges the branch and records it with one call — ${jarlLine('merged', issue.id, '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>')} — then ${wait ? `${wait}, then ` : ''}${close}, which needs a Proof row from the worker (the merge check is the merger's and is no proof); a worker never sets done`
+    : `${wait ? `${wait}, then ` : ''}${close} once the worker's Proof rows are recorded; a worker never sets done`;
   if (model.refused) return `done refuses this approve for its model (done-gate "reviewer": "${model.rule}"), so an approve that names a model the rule accepts is next — ${modelReviewForm(issue.id)} — then ${after}`;
   return after;
 }

@@ -357,3 +357,63 @@ test('the number of an acceptance line has a placeholder of its own, apart from 
   assert.match(jarl(root, 'brief', '1'), /--line "<line-number>"/);
   assert.match(refuses(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass', '--line', '<line-number>'), /placeholder/, 'pasted unfilled, it writes nothing');
 });
+
+// A loop whose closing status, accepted, also needs a reason: a plain profile of its own, or a composer's at record format 3.
+function acceptingLoop(extra = {}) {
+  const file = join(mkdtempSync(join(tmpdir(), 'jarl-lines-accepting-')), 'accepting.json');
+  writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'accepting', statuses: { open: ['dispatchable'], 'in-progress': ['holds-claim'], accepted: ['settles-dependents', 'terminal', 'closes-record', 'needs-reason'], dropped: ['settles-dependents', 'terminal', 'needs-reason'] }, initial: 'open', ...extra }));
+  const root = makeLoop({ prefix: 'jarl-lines-accepting-', via: 'cli', initFlags: ['--profile', file] });
+  jarl(root, 'new', 'export', '--tier', 'light', ...LINES.flatMap((l) => ['--acceptance', l]));
+  jarl(root, 'new', 'import', '--tier', 'light', '--acceptance', LINES[0]);
+  jarl(root, 'new', 'report', '--tier', 'light', ...LINES.flatMap((l) => ['--acceptance', l]));
+  return root;
+}
+
+test('where the closing status needs a reason too, a close past unnamed lines keeps the move\'s reason and then the reason for the lines, a close with every line named keeps the move\'s alone, and the forms name that status', () => {
+  for (const [name, extra] of [['a profile of its own', {}], ['a composer\'s profile at record format 3', { 'external-scheduler': 'the composer tick', format: 3 }]]) {
+    const root = acceptingLoop(extra);
+    for (const id of ['1', '2', '3']) jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 1', '--line', '1');
+    approve(root, '1'); approve(root, '2');
+    jarl(root, 'set', '1', 'accepted', 'the demo was approved', '--without-rows', "lines 2 and 3 are the csv suite's");
+    assert.match(evidenceOf(root, '1'), /^Accepted: the demo was approved\n\nAccepted without a row naming acceptance line 2, 3: lines 2 and 3 are the csv suite's$/m, `${name}: both reasons, the move's first`);
+    jarl(root, 'set', '2', 'accepted', 'the import was approved');
+    assert.match(evidenceOf(root, '2'), /^Accepted: the import was approved$/m, name);
+    assert.doesNotMatch(evidenceOf(root, '2'), /without a row/, name);
+    const said = run(root, ['review', '3', 'approve', '--by', 'rev1', 'read the diff, nothing found']);
+    assert.match(said.stderr, /given apart from the reason of the move: jarl\.mjs set 0*3 accepted "<why>" --without-rows "<why-no-row-names-the-lines>",/, `${name}: the note names the closing status`);
+    assert.match(said.stdout, /next: jarl\.mjs set 0*3 accepted "<why>" --without-rows "<why-no-row-names-the-lines>" once/, `${name}: so does the next step`);
+    assert.match(refuses(root, 'set', '3', 'accepted', 'the demo was approved'), /or close it without one and give the reason apart: jarl\.mjs set 0*3 accepted "<why>" --without-rows "<why-no-row-names-the-lines>"\n/, name);
+  }
+});
+
+test('after an approve the next step is the close done takes: with --without-rows while lines have no row, plain once every line has one', () => {
+  const root = formatOne();
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 3', '--line', '1');
+  assert.match(jarl(root, 'review', '1', 'approve', '--by', 'rev1', 'read the diff, nothing found'), /next: jarl\.mjs set 001 done "<why>" --without-rows "<why-no-row-names-the-lines>" once the worker's Proof rows are recorded/);
+  jarl(root, 'evidence', '1', '--ran', 'npm run all', '--saw', 'pass 9', '--line', '2,3');
+  assert.match(jarl(root, 'review', '1', 'approve', '--by', 'rev2', 'read the diff again, nothing found'), /next: jarl\.mjs set 001 done "<why>" once the worker's Proof rows are recorded/);
+});
+
+test('--without-rows is refused with a form where set writes no move, and the refusal of a reason for no line says what proves the lines, the owner\'s tick included', () => {
+  const root = formatOne();
+  jarl(root, 'field', '1', 'Acceptance', `${LINES[0]}\n[owner] the chart reads well · material: the chart in the report · check: the axis labels are readable`);
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 3', '--line', '1');
+  approve(root, '1');
+  const before = [log(root), readFileSync(file(root, '1'), 'utf8')];
+  assert.equal(refuses(root, 'set', '1', 'open', '--header', '--without-rows', 'covered'), '--header rewrites the header from the log and takes no reason, lease flag, --handover, --without-rows or base\njarl.mjs set "<ids>" "<status>" --without-rows "<why-no-row-names-the-lines>"\n', 'as for every other flag, the form is the move without --header');
+  jarl(root, 'tick', '1', '2', '--by', 'owner');
+  assert.equal(refuses(root, 'set', '1', 'done', 'merged', '--without-rows', 'covered'), 'every acceptance line of 001 is named by a counted row or proved by the owner\'s tick, so no line is left for a reason: leave --without-rows out\njarl.mjs set "<ids>" "<status>" "<why>"\n');
+  assert.deepEqual([log(root), readFileSync(file(root, '1'), 'utf8')].map((t) => t.replace(/\n.* tick · line 2 .*/, '')), before.map((t) => t.replace(/\n.* tick · line 2 .*/, '')), 'nothing but the tick was written');
+});
+
+test('in a loop that names lines, done asks a parent for its row since its last sub-issue closed with the form that names the lines', () => {
+  const root = formatOne(2);
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 3', '--line', '1,2,3');
+  jarl(root, 'split', '1', '--line', '1=1', '--line', '2=1', '--line', '3=2');
+  jarl(root, 'evidence', '2', '--ran', 'npm test', '--saw', 'pass 4', '--line', '1,2,3,4');
+  approve(root, '2'); jarl(root, 'set', '2', 'done', 'merged');
+  approve(root, '1');
+  const said = refuses(root, 'set', '1', 'done', 'merged');
+  assert.match(said, /^001 has no --ran\/--saw evidence row recorded since its last sub-issue, 002, closed .*: jarl\.mjs evidence 001 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>"\n/);
+  assert.match(said, /\njarl\.mjs evidence "<id>" --ran "<command>" --saw "<what-it-printed>" --line "<line-number>"\n$/);
+});

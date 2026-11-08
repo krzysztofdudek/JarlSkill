@@ -73,6 +73,9 @@ export function unprovedLines(loop, issue, g = gateOf(loop, issue.id)) {
 }
 // The numbers of lines, as the views print them: "line 2, 3".
 export const linesText = (lines) => `line ${lines.map((l) => l.n).join(', ')}`;
+// The close the done gate takes of an issue: the status that closes it (the call's, else the profile's first that closes
+// the record), the move's reason, and, where acceptance lines `left` have no row naming them, the reason for those apart.
+export const closeForm = (profile, id, left = [], status = profile.with('closes-record')[0] ?? hole('<status>')) => jarlLine('set', id, status, '<why>', ...(left.length ? ['--without-rows', '<why-no-row-names-the-lines>'] : []));
 // A closed issue's acceptance lines no counted row names now, read against its last close, as { excused, lost }: excused,
 // the lines no row it counted named, which the close gave its reason for (done asks it); lost, the lines a row it counted
 // named, which none names now (that row was retracted after the close). Null where the rule did not hold at the close: in

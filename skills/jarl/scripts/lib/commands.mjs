@@ -21,7 +21,7 @@ import { modelLines, modelRefusalOf, modelReviewForm, modelValue, modelOfferAtLe
 import { slotRefusal } from './attachments.mjs';
 import { NOTE_LIMIT, addedContentNotes, addedNoteText } from './rounds.mjs';
 import { resetCaches } from './tips.mjs';
-import { linesText, needOwnerLines, ownerLineRefusal, ownerLineRewrite, unprovedLines } from './owner-lines.mjs';
+import { closeForm, linesText, needOwnerLines, ownerLineRefusal, ownerLineRewrite, ownerLines, unprovedLines } from './owner-lines.mjs';
 
 // ---- commands ----------------------------------------------------------------------------------
 
@@ -789,9 +789,10 @@ function oneOrMany(rawIds, results) { return isBulk(rawIds) ? results : results[
 // value only its maker knows a placeholder (the command run, the verdict and the reviewer, the sha, the file and the slot);
 // an owner line is his to tick, so its step is the question put to him, never his tick; a retraction the log cannot
 // place is shown by verify, before the form of the move.
-function doneReady(cause, issue) {
+// `lines`: the loop names the acceptance lines a row proves, and the issue has some, so the row asked for names them.
+function doneReady(cause, issue, lines = false) {
   if (issue.byHeader || cause === 'unattributed') return refiled();
-  if (cause === 'evidence') return ['jarl.mjs', 'evidence', hole('<id>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')];
+  if (cause === 'evidence') return ['jarl.mjs', 'evidence', hole('<id>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), ...(lines ? ['--line', hole('<line-number>')] : [])];
   if (cause === 'approve') return ['jarl.mjs', 'review', hole('<ids>'), hole('<verdict>'), hole('<what-was-read-and-found>'), '--by', hole('<a-fresh-reviewer>')];
   if (cause === 'clears') return ['jarl.mjs', 'review', hole('<ids>'), hole('<verdict>'), hole('<what-was-read-and-found>'), '--by', hole('<reviewer>')];
   if (cause === 'model') return ['jarl.mjs', 'review', hole('<ids>'), hole('<verdict>'), hole('<what-was-read-and-found>'), '--by', hole('<a-fresh-reviewer>'), '--model', hole('<model-id>')];
@@ -1148,11 +1149,13 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   if (profile.is(status, 'closes-record')) {
     for (const issue of issues) { const refusal = unattributedRefusal(issue, `moved → ${status}`); need(!refusal, nothing ? nothingWritten(refusal) : refusal, () => (doneReady('unattributed', issue))); }
     const loop = readLoop(jarlDir(root));
-    for (const issue of issues) { const gate = doneGateIn(root, loop, issue, flags.base, withoutRows); need(!gate, nothing ? nothingWritten(gate?.text) : gate?.text, () => (doneReady(gate.cause, issue))); }
-    // A reason for lines no row names is written where the close leaves such lines: a call that leaves none gives it for nothing.
+    for (const issue of issues) { const gate = doneGateIn(root, loop, issue, flags.base, withoutRows, status); need(!gate, nothing ? nothingWritten(gate?.text) : gate?.text, () => (doneReady(gate.cause, issue, namesLines(loop, issue)))); }
+    // A reason for lines no row names is written where the close leaves such lines: a call that leaves none gives it for
+    // nothing. Past the gate, a line only the owner ticks is ticked, and proved by his tick.
     if (withoutRows !== undefined) {
       need(loop.linesFrom !== null, 'this loop names no acceptance line by a row (evidence --line), so a close asks no reason for one: leave --without-rows out', () => ({ drop: '--without-rows' }));
-      need(issues.some((issue) => unprovedLines(loop, issue).length), `every acceptance line of ${issues.map((i) => i.id).join(', ')} is named by a counted row, so no line is left for a reason: leave --without-rows out${nothing}`, () => ({ drop: '--without-rows' }));
+      const ticked = issues.some((issue) => ownerLines(issue).length) ? ' or proved by the owner\'s tick' : '';
+      need(issues.some((issue) => unprovedLines(loop, issue).length), `every acceptance line of ${issues.map((i) => i.id).join(', ')} is named by a counted row${ticked}, so no line is left for a reason: leave --without-rows out${nothing}`, () => ({ drop: '--without-rows' }));
     }
   }
   // One lease for the whole call: every issue in a package gets the same Branch, Worker and Since. A lease records no
@@ -1179,18 +1182,16 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
       text = removeFields(text, LEASE_FIELDS);
     }
     // What was already written under Evidence stays: a drop or a deferral is one more line in the history,
-    // not a reset of it.
-    if (profile.is(status, 'needs-reason')) {
-      const written = (issue.sections.evidence || '').trim();
-      const line = `${reasonWord(status)}: ${noteText(why, written)}`;
-      text = setSection(text, 'Evidence', placeEvidence(written, 'note', line, '\n\n'));
-    }
-    // A close past acceptance lines no row names, in a loop that names them, keeps the reason it gave for them (--without-rows,
-    // which the gate asked for) beside them in the notes.
-    const left = unproved.get(issue.id);
-    if (left && left.length) {
-      const written = (issue.sections.evidence || '').trim();
-      text = setSection(text, 'Evidence', placeEvidence(written, 'note', `${reasonWord(status)} without a row naming acceptance ${linesText(left)}: ${noteText(withoutRows, written)}`, '\n\n'));
+    // not a reset of it. A close past acceptance lines no row names, in a loop that names them, keeps the reason it gave
+    // for them (--without-rows, which the gate asked for) beside them, after the move's own reason where the status needs
+    // one: each note is placed on the section as the note before it left it, and the section is written once.
+    const notes = [
+      ...(profile.is(status, 'needs-reason') ? [[`${reasonWord(status)}: `, why]] : []),
+      ...(unproved.get(issue.id)?.length ? [[`${reasonWord(status)} without a row naming acceptance ${linesText(unproved.get(issue.id))}: `, withoutRows]] : []),
+    ];
+    if (notes.length) {
+      const evidence = notes.reduce((written, [head, said]) => placeEvidence(written, 'note', `${head}${noteText(said, written)}`, '\n\n'), (issue.sections.evidence || '').trim());
+      text = setSection(text, 'Evidence', evidence);
     }
     return text;
   } }));
@@ -1379,7 +1380,7 @@ function leaseValueProblem(flag, raw) {
 function rewriteHeader(root, rawIds, status, why, flags) {
   need(status !== undefined, 'set <ids> <status-in-the-log> --header: name the status the log holds for the issue (status shows it); --header rewrites the header from the log and moves nothing', () => ({ arg: 1, value: '<status-in-the-log>' }));
   need(loadProfile(root).statuses.includes(status), `${status} is not a status this loop's profile lists (${loadProfile(root).statuses.join(', ')})`, () => ({ arg: 1, value: '<status-in-the-log>' }));
-  need(why === undefined && flags.base === undefined && !leaseFlagsGiven(flags).length && flags.handover === undefined, '--header rewrites the header from the log and takes no reason, lease flag, --handover or base', () => ({ rename: '--header', to: '<no-flag-here>' }));
+  need(why === undefined && flags.base === undefined && !leaseFlagsGiven(flags).length && flags.handover === undefined && flags['without-rows'] === undefined, '--header rewrites the header from the log and takes no reason, lease flag, --handover, --without-rows or base', () => ({ rename: '--header', to: '<no-flag-here>' }));
   const issues = issuesFor(root, rawIds);
   for (const issue of issues) {
     need(!issue.byHeader, `${issue.id} is read from its header: the log files ${issue.id} ${issue.byHeader?.filings} times and cannot say which file its lines were written for, so no header is written from it`, refiled);
@@ -1633,11 +1634,12 @@ function doneRefusalIn(root, loop, issue, base) { return doneGateIn(root, loop, 
 // lines) decides the step a refusal of the move ends with. `base`: the branch or ref the merge landed in, when the caller
 // names one. `withoutRows`: the reason a close gives for the acceptance lines a loop that names them leaves without a row
 // (see unprovedLines), given apart from the move's own reason, which is never one; the gate asks for it after every other
-// condition holds.
-function doneGateIn(root, loop, issue, base, withoutRows) {
+// condition holds. `status`: the closing status the call moves into, which the close it names takes.
+function doneGateIn(root, loop, issue, base, withoutRows, status) {
   const { profile } = loop;
   const g = gateOf(loop, issue.id);
-  const how = EVIDENCE_HOW(issue.id);
+  // In a loop that names lines, the row asked for names the lines it proves.
+  const how = namesLines(loop, issue) ? jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>') : EVIDENCE_HOW(issue.id);
   // A merge that records its check does not stand in for the worker's row: said to whoever is refused, the merger included.
   const mergeLine = lastMerge(loop.eventsById.get(issue.id) || []);
   const gap = mergeLine && mergeLine.check ? ` — the merge records a check (${mergeLine.check}), but that check is the merger's and does not stand in for the worker's row: the row is the worker's proof of the work, so the worker records what the work's own check ran and printed, and nobody types the merge check into Proof in its place` : '';
@@ -1654,7 +1656,7 @@ function doneGateIn(root, loop, issue, base, withoutRows) {
   if (slots) return { cause: 'slots', text: slots };
   if (profile.doneGate['requires-merged']) { const m = mergeRefusal(root, issue, base, g); if (m) return { cause: 'merge', text: m }; }
   const owner = () => { const text = ownerLineRefusal(root, loop, issue); return text ? { cause: ownerLineRewrite(root, loop, issue) ? 'owner-rewrite' : 'owner', text } : null; };
-  const lines = () => { const left = fieldText(withoutRows ?? '') ? [] : unprovedLines(loop, issue, g) || []; return left.length ? { cause: 'lines', text: unprovedRefusal(issue, left) } : null; };
+  const lines = () => { const left = fieldText(withoutRows ?? '') ? [] : unprovedLines(loop, issue, g) || []; return left.length ? { cause: 'lines', text: unprovedRefusal(profile, issue, left, status) } : null; };
   if (profile.doneGate.approve === 'none') return lines() || owner();
   const code = carriesCode(issue);
   if (g.selfApproved) return { cause: 'approve', text: `${issue.id}'s live approve is by a worker of this issue or its branch — a self-approve does not count as review: ${jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>')}${code ? '' : ' (or jarl, on an issue that carries no code)'}` };
@@ -1686,10 +1688,13 @@ function doneGateIn(root, loop, issue, base, withoutRows) {
   return lines() || owner();
 }
 // The refusal of an issue whose acceptance lines `left` no row names, in a loop that names them: each line, then the row
-// that names one and the close that gives the reason it goes without, apart from the move's own.
-function unprovedRefusal(issue, left) {
-  return `${issue.id} has acceptance lines no Proof row names: ${left.map((l) => `line ${l.n} "${l.text}"`).join('; ')} — this loop names the line a row proves, and a row with no --line names none; the reason a move gives is the move's, and no reason for these lines: record a row that names each, ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>')}, or close it without one and give the reason apart: ${jarlLine('set', issue.id, 'done', '<why>', '--without-rows', '<why-no-row-names-the-lines>')}`;
+// that names one and the close that gives the reason it goes without, apart from the move's own, into `status` (else the
+// profile's closing status).
+function unprovedRefusal(profile, issue, left, status) {
+  return `${issue.id} has acceptance lines no Proof row names: ${left.map((l) => `line ${l.n} "${l.text}"`).join('; ')} — this loop names the line a row proves, and a row with no --line names none; the reason a move gives is the move's, and no reason for these lines: record a row that names each, ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>')}, or close it without one and give the reason apart: ${closeForm(profile, issue.id, left, status)}`;
 }
+// Whether the loop names the acceptance lines a row proves and the issue has lines to name.
+const namesLines = (loop, issue) => loop.linesFrom !== null && acceptanceLineCount(issue) > 0;
 // Why an issue worked in place may not close yet, or null. Each file it declares is placed in its repository as fileAt
 // places it (the loop's own, or the one its Repo names for that path). The issue closes when every such repository is a
 // git repository here, none of its declared files has a change its checkout has not committed (staged, unstaged or
