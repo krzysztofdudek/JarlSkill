@@ -407,7 +407,8 @@ commands:
                                                  --by, which every ruling takes, records who ruled (jarl for a choice
                                                  made under a mandate; a name that reads as owner is owner); --by owner needs --quote, his own words, kept as
                                                  the ruling's last line, and no other text of the record may hold
-                                                 "The owner's words:" in any spelling; --under names the ruling in force a ruling
+                                                 "The owner's words:" in the spellings Jarl reads (case, accents, look-alike
+                                                 letters, hidden characters, other quotation marks, HTML and Markdown marks); --under names the ruling in force a ruling
                                                  by the jarl or a coordinator rests on, kept as the text's last paragraph
                                                  "Made under: <slug>", shown with the ruling by decisions and with a rule by the views; --supersedes marks
                                                  the ruling it replaces "Superseded by" in place; --settles writes the ruling,

@@ -19,7 +19,8 @@ import { appliesToLine, loopRules, parseScope, parseUntil, underText, withUnder 
 // ---- questions to the owner and the handoff -------------------------------------------------
 
 export function loadAsks(root, skipped) { return asksAt(jarlDir(root), skipped); }
-// Who answers an escalation when the answer names nobody: the jarl, who holds it.
+// Who answers an escalation when the answer names nobody: the jarl, who holds it. Only the library takes such a call; the
+// command line refuses an answer without --by.
 const JARL = 'jarl';
 
 export function cmdAsk(root, question, flags) {
@@ -194,7 +195,8 @@ export function cmdAnswer(root, rawId, answer, flags = {}) {
   const text = answer === undefined ? null : noSeparators(oneBreak(answer));
   const checked = answerChecks(root, ask, text, chosen);
   const shown = chosen !== null ? chosen : text;
-  // An escalation is the jarl's to answer: an answer that names nobody is the jarl's there, and the owner's elsewhere.
+  // An escalation is the jarl's to answer: an answer that names nobody, which only the library takes (the command line
+  // refuses it), is the jarl's there, and the owner's elsewhere.
   // A proposed rule is accepted by the one it was proposed to: the jarl, or the owner, whose rule no one else accepts.
   need(!(ask.kind === 'rule' && ask.to === OWNER) || by === null || by === OWNER, `a-${id} proposes a rule to the owner: it is his to accept or reject, and only his answer is recorded --by owner`, () => ({ flag: '--by', value: '<the-owner-himself>' }));
   const author = by || (ask.kind === 'escalation' || (ask.kind === 'rule' && ask.to !== OWNER) ? JARL : OWNER);
@@ -322,7 +324,7 @@ function scopeOf(root, flags) {
 // `Made under: <slug>`), the earlier ruling it replaces — marked **Superseded by:** in place, so a reader of the decisions, and decisions --live,
 // see it is not in force — and the issues it settles. Nothing in the loop names the owner: the name `owner` is his, and a
 // --by that reads as it is it (rulingAuthor). The owner's words reach the record from --quote alone: the ruling's text and
-// every other flag are refused when they hold the marker in any spelling, and the row each settled issue gets names who ruled.
+// every other flag are refused when they hold the marker in a spelling the check reads, and the row each settled issue gets names who ruled.
 export function cmdDecide(root, slug, ruling, flags = {}) {
   need(slug && ruling, `decide requires <slug> "<text>"`, () => [...(slug ? [] : [{ arg: 0, value: '<slug>' }]), ...(ruling ? [] : [{ arg: 1, value: '<text>' }])]);
   const by = flags.by === undefined ? 'coordinator' : rulingAuthor(flags.by);
