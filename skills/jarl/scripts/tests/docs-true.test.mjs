@@ -96,6 +96,20 @@ test('the help text writes every flag of a command in that command\'s synopsis, 
   }
 });
 
+test('the brief help and the commands reference say the same of a finding whose entry the issue file no longer holds', () => {
+  const help = mcp.usageBlocks(USAGE).brief.description;
+  const md = skillText('references/commands.md');
+  const row = md.split('\n').find((l) => l.startsWith('| `brief <id>'));
+  assert.ok(row, 'the reference has the brief row');
+  for (const [name, text] of [['help', help], ['reference', row]]) {
+    assert.match(text, /log's line holds/, `${name} says the finding shows as the log's line holds it`);
+    assert.match(text, /first line and a count of the lines left out/, `${name} says what is shown of a text of several lines`);
+  }
+  assert.match(help, /a finding whose entry the issue file no longer holds/, 'the help names the finding whose file entry is gone');
+  assert.match(row, /where the issue's Reviews section holds that verdict's entry, else as the log's line holds them/, 'the reference names the same case');
+  assert.doesNotMatch(help, /every part whole\./, 'the help does not claim every part is whole without the exception');
+});
+
 test('ask takes --kind as an option that defaults to stuck, as the reference writes it', () => {
   const { dir } = gitRepo({ prefix: 'jarl-docs-ask-' });
   jarl(dir, 'init', 'g');

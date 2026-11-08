@@ -170,9 +170,11 @@ commands:
                                                  the reviews that sent it back, the proof rows, the role's reference and
                                                  the commands that record the result; with --slice, for that slice's
                                                  coordinator: its issues in play, its rules, its reference and its
-                                                 commands; every part whole. A merger's brief is one for the whole loop
-                                                 (references/merger.md), and a worker after a takeover is given the
-                                                 rules of the takeover too
+                                                 commands; every part whole, except a finding whose entry the issue
+                                                 file no longer holds: it shows as the log's line holds it, its first
+                                                 line and a count of the lines left out. A merger's brief is one for
+                                                 the whole loop (references/merger.md), and a worker after a takeover
+                                                 is given the rules of the takeover too
   set <ids> <status> "<text>" [--branch <worker-branch>] [--worker <name>] [--model <model-id>] [--worktree <path>] [--handover] [--header] [--by who]
                                                  (<ids> <status-in-the-log> --header rewrites the header fields the log
                                                  renders from the log, writes no log line and is never a move)
