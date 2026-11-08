@@ -11,11 +11,11 @@ import { ASKS_FILE, DECISIONS_FILE, GOAL_FILE, LOG_FILE, goalLineOf, goalLines, 
 import { loopEvents } from './log.mjs';
 import { issueKeyOf, parentCycle, parseIssue, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { REPOS_DECLARED_IN, declaredNames, issueRepos, repoIdentity, repoValueKind, reposNamed, worktreesOf } from './repositories.mjs';
-import { headerReadNotes, readLoop, recordDisagreements, unorderedNamings, unorderedText } from './loop.mjs';
+import { IN_PLACE_TAG, headerReadNotes, readLoop, recordDisagreements, unorderedNamings, unorderedText } from './loop.mjs';
 import { attachmentFindings } from './attachments.mjs';
 import { modelLines, unknownModels } from './models.mjs';
 import { hasLiveLoop } from './commands.mjs';
-import { issuesNaming, loadAsks } from './questions.mjs';
+import { issuesNaming, loadAsks, unsettledRulings, unsettledText } from './questions.mjs';
 
 // ---- verify: the record read strictly, with nothing written ----------------------------------------------------
 //
@@ -23,7 +23,8 @@ import { issuesNaming, loadAsks } from './questions.mjs';
 // loadDecisions, and validateProfile, which lists every problem it finds) and reports what each one did not place. It
 // adds no grammar of its own: a line is placed by the reader that owns it, and what verify adds is what the readers do
 // not see — a retraction that points at nothing, the record format a line needs, the header that disagrees with the log,
-// the repositories the issues name, the worktrees the leases hold and the open issues that cite a superseded ruling. It
+// the repositories the issues name, the worktrees the leases hold, the open issues that cite a superseded ruling and, as
+// notes, the rulings in force whose settled issues are not closed. It
 // takes no lock and no network and writes nothing; its exit status is the caller's (2 when it found something).
 
 // The checks in the order they print, with the part of the loop each one reads.
@@ -133,6 +134,10 @@ export function cmdVerify(root) {
   if (profile.format < FORMAT_LINES.parent.format) {
     for (const i of loop.issues) if (i.id !== null && i.parent !== null) add('format', `issue ${i.id}`, `its header names a parent (${shownText(i.parent)}), which is written in record format ${FORMAT_LINES.parent.format}, and this loop is not in it`);
   }
+  // The tag in-place marks an issue worked in place from format 3 on; below it the tag is a tag like any other: said.
+  if (profile.format < FORMAT_LINES['in-place'].format) {
+    for (const i of loop.issues) if (i.id !== null && i.tags.includes(IN_PLACE_TAG)) notes.push({ where: `issue ${i.id}`, what: `its tag ${IN_PLACE_TAG} marks it as worked in place only in record format ${FORMAT_LINES['in-place'].format}, and this loop is in format ${profile.format}, so its done gate is the one of any issue with no branch` });
+  }
   // A question of a format the loop is not in: an escalation is held by format 3.
   if (profile.format < FORMAT_LINES.escalation.format) {
     for (const a of loadAsks(root)) if (a.kind === 'escalation') add('format', `${ASKS_FILE} a-${a.id}`, `an escalation is written in record format ${FORMAT_LINES.escalation.format}, and this loop is not in it`);
@@ -164,6 +169,8 @@ export function cmdVerify(root) {
   for (const [slug, by] of supersededBy) {
     for (const i of issuesNaming(root, slug)) add('superseded', `issue ${i.id}`, `cites the ruling ${slug} in What, Why or Acceptance, and ${by} supersedes it`);
   }
+  // A ruling in force whose settled issues are not all closed is work not yet carried out: said, never a finding.
+  for (const u of unsettledRulings(loop)) notes.push({ where: `ruling ${u.slug}`, what: `${unsettledText(u)}, which ${u.issues.length === 1 ? 'is' : 'are'} neither done nor dropped` });
   for (const f of attachmentFindings(root, loop)) add('attachments', `issue ${f.id}`, f.what);
   // The format of the loop, and the lines of a higher format that are off where a composer keeps it.
   const format = formatState(profile);

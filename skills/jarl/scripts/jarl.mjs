@@ -22,7 +22,7 @@ import {
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
   renderProfile, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, workerEvidence, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
-  needLoop, cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, cmdRetractTick, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES, cmdRenumber, cmdSplit,
+  cmdExtend, needLoop, cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, cmdRetractTick, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES, cmdRenumber, cmdSplit,
   needKnownModels, cmdUse, renderUse, discoverLoop,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
@@ -45,8 +45,11 @@ commands:
   new "<title>" [--kind k] [--prio 1|2|3] [--tier light|standard|strong] [--tags a,b] [--files p,q] [--repo <name-or-path>] [--found-by who]
       [--where "<text>"] [--what "<text>"] [--why "<text>"] [--acceptance "<line>"]... [--changelog "<changelog-entry>"]...
       [--source <report-dir#finding-id>,...] [--after <ids>] [--template <name>] [--field "<name=value>"]... [--section "<name=value>"]...
-      [--person "<name>" --check-when "<date-or-event>"] [--by who]
-                                                 file an issue under the next free number; without --tier it records
+      [--person "<name>" --check-when "<date-or-event>"] [--range <name>] [--by who]
+                                                 file an issue under the next free number outside every range the goal
+                                                 declares, or with --range under the next free number of that range
+                                                 (a Range line of the goal; its first use raises the record format to 3);
+                                                 without --tier it records
                                                  standard and says so on stderr, with what each tier is for (light: a check
                                                  or test decides; strong: unknown cause, design, record format, security);
                                                  --repo names the repository
@@ -420,7 +423,10 @@ commands:
                                                  for every slice), "Takeover (<kind>): <rounds>" or a bare "Takeover: <rounds>",
                                                  "Liveness: <minutes>" (a lease or a proof with no commit, row or log line
                                                  for longer is idle, on its coordinator's list; default 30, and
-                                                 --stale-hours overrides it for one call); the rest of goal.md stays as written
+                                                 --stale-hours overrides it for one call), "Range (<name>): <from-to>" (the
+                                                 numbers new --range <name> files under: no two ranges share a number, and a
+                                                 range keeps the numbers it holds and takes in none filed outside it); the
+                                                 rest of goal.md stays as written
   status [--stale-hours n] [--group repo|tag|kind|prio|<name>] [--tag <tag>] [--as <who>] [--slice <coordinator>]
                                                  --tag computes every part of status over the issues carrying that tag only;
                                                  --slice the same over one coordinator's slice (the issues tagged
@@ -483,6 +489,13 @@ commands:
                                                  no usage or budget from the host; next, the takeover and the notes of the
                                                  fresh-review rule keep under it, and profile refuses a model no Model
                                                  line of the goal places
+  extend section "<name>" | extend field "<name>" [--values "<items>"] [--default "<value>"] [--required] [--by who]
+                                                 add one section or one field to the profile of a live loop (a loop
+                                                 with none gets one, with the built-in statuses), checked as profile
+                                                 <profile.json> checks a file, with a log line; the issues already filed
+                                                 are not rewritten and carry the part once field writes it, a new issue
+                                                 is filed with it (a field's default when none is given); refused in a
+                                                 loop a composer runs
   use [<path>]                                   read-only: with no path, the loops under this checkout, found by a walk
                                                  at most 4 levels down that enters no hidden directory, no node_modules
                                                  or vendor, and no other checkout (a worktree, a submodule); with a path
@@ -643,7 +656,7 @@ export const COMMAND_FLAGS = {
   new: {
     kind: 'value', prio: 'value', tier: 'value', tags: 'many', files: 'many', repo: 'many', 'found-by': 'value',
     where: 'value', what: 'value', why: 'value', acceptance: 'many', source: 'many', after: 'many', changelog: 'many', template: 'value',
-    field: 'many', section: 'many', person: 'value', 'check-when': 'value', by: 'value',
+    field: 'many', section: 'many', person: 'value', 'check-when': 'value', range: 'value', by: 'value',
   },
   import: {
     source: 'value', kind: 'value', prio: 'value', tier: 'value', tags: 'many', repo: 'many', 'found-by': 'value',
@@ -668,7 +681,7 @@ export const COMMAND_FLAGS = {
   goal: { set: 'value', by: 'value' },
   status: { 'stale-hours': 'value', group: 'value', tag: 'value', as: 'value', slice: 'value' }, archive: { by: 'value' }, report: { found: 'bool', metrics: 'bool' }, mode: { by: 'value' },
   changelog: { repo: 'value' },
-  close: { force: 'bool', batch: 'bool', by: 'value' }, profile: {}, verify: {}, use: {},
+  close: { force: 'bool', batch: 'bool', by: 'value' }, profile: {}, extend: { values: 'value', default: 'value', required: 'bool', by: 'value' }, verify: {}, use: {},
 };
 
 // The commands the command line runs and the tool list leaves out: no tool, and no block in the usage text.
@@ -811,6 +824,7 @@ const ARG_HOLES = {
   'retract entry': '<review-n-or-note-n>', 'retract text': '<why>', 'field name': '<part>', 'base name': '<name>', 'base branch': '<branch>',
   'set status': '<status>', 'set text': '<why>', 'review verdict': '<verdict>', 'review text': '<what-was-read-and-found>', 'round text': '<what-failed>',
   'tick line': '<line>', 'answer id': '<question>', 'decide slug': '<slug>', 'decide text': '<a-ruling>', 'archive slug': '<slug>', 'mode mode': '<mode>',
+  'extend part': '<section-or-field>', 'extend name': '<name>',
   text: '<text>',
 };
 const FLAG_HOLES = {
@@ -823,7 +837,7 @@ const FLAG_HOLES = {
   group: '<group>', with: '<loop-root>', base: '<base-branch>', 'stale-hours': '<hours>', sha: '<sha>', ci: '<ci-state>', red: '<another-issue>',
   target: '<what-would-get-weaker>', issue: '<id>', option: '<option>', 'ask option': '<label:effect>', 'applies-to': '<selectors>', until: '<date-or-id>', to: '<jarl-or-owner>', log: '<count>',
   ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', 'waives-review': '<ids>', quote: '<his-own-words>', under: '<a-ruling-in-force>', supersedes: '<a-ruling-in-force>',
-  rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>', line: '<line=id>', 'evidence line': '<line>', outside: '<finding-outside-the-issue>', parent: '<id>',
+  rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>', line: '<line=id>', 'evidence line': '<line>', outside: '<finding-outside-the-issue>', parent: '<id>', range: '<name>', values: '<items>', default: '<value>',
 };
 const PART_HOLES = {
   title: '<title>', priority: '<prio>', tier: '<tier>', kind: '<kind>', tags: '<tag>', files: '<paths>', repo: '<name-or-path>', after: '<ids-it-waits-on>', parent: '<id>',
@@ -1061,7 +1075,7 @@ export const COMMAND_ARGS = {
   next: [], review: ['ids', 'verdict', 'text'], round: ['id', 'text'], tick: ['id', 'line'], models: [], scope: ['id?'], branches: [],
   ask: ['text'], answer: ['id', 'text?'], resume: [], handoff: ['action?'], log: ['text'],
   decide: ['slug', 'text'], decisions: [], goal: [], status: [], archive: ['slug'], report: [],
-  changelog: ['ids'], mode: ['mode'], close: [], profile: ['file?'], verify: [], use: ['path?'],
+  changelog: ['ids'], mode: ['mode'], close: [], profile: ['file?'], extend: ['part', 'name'], verify: [], use: ['path?'],
 };
 // One sentence per command: what it does, the MCP tool's whole description after "WRITES the loop." or "Read-only.".
 // The rest of what a command takes and does is its block of USAGE, which the jarl_help tool and --help print.
@@ -1111,6 +1125,7 @@ export const COMMAND_SUMMARY = {
   changelog: 'Print the issues\' changelog entries grouped by section, ready to paste under [Unreleased].',
   mode: 'Switch a committed loop to the permanent mode.',
   profile: 'The loop\'s profile (statuses, fields, sections), or a profile file checked against the schema.',
+  extend: 'Add one section or one field to the profile of a live loop, checked as a profile file is, with a log line.',
   verify: 'Check the record strictly, without a lock: the lines each reader does not place, the headers that disagree with the log, the repositories, leases and superseded rulings the issues name; exit 2 on a finding.',
   close: 'Close the loop, filing the ratification batch first; it refuses while issues are open or in progress, or deferred where it removes the loop, unless force is set.',
   use: 'List the loops under this checkout, or name the loop the calls that follow reach: a tool session keeps it until use names another, and the command line prints the JARL_ROOT setting to export.',
@@ -1290,7 +1305,7 @@ export function replacedMessage(cmd, args = [], root = null) {
 const ARITY = Object.fromEntries(Object.entries(COMMAND_ARGS).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
 
 // The commands that write: each runs under .jarl/.lock (see withLock).
-export const MUTATING = new Set(['init', 'new', 'renumber', 'import', 'set', 'field', 'split', 'base', 'merged', 'evidence', 'retract', 'review', 'round', 'tick', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close']);
+export const MUTATING = new Set(['init', 'new', 'renumber', 'import', 'set', 'field', 'split', 'base', 'merged', 'evidence', 'retract', 'review', 'round', 'tick', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close', 'extend']);
 // Whether a printed command (jarl.mjs, then its words) writes: a command of the set above, but goal, which writes only
 // with --set and else reads the goal.
 export const writes = (words) => MUTATING.has(words[1]) && !(words[1] === 'goal' && !words.some((w) => w === '--set' || String(w).startsWith('--set=')));
@@ -1555,6 +1570,7 @@ function dispatchCall(root, commandName, rest, flags) {
       case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · not tied to a feature branch; close keeps the directory'; break;
       // The profile check: a model the profile names is one a Model line of the loop's goal places.
       case 'profile': out = cmdProfile(root, rest[0]); needKnownModels(root, rest[0] === undefined ? R.loadProfile(root) : readProfileFile(rest[0], { argument: true }).profile, rest[0] ?? 'the profile'); text = renderProfile(out); break;
+      case 'extend': out = cmdExtend(root, rest[0], rest[1], flags); text = `profile extended: ${out.part} ${out.name}${out.spec ? ` (${[out.spec.enum && `one of ${out.spec.enum.join(', ')}`, out.spec.default && `default ${out.spec.default}`, out.spec.required && 'required'].filter(Boolean).join(', ') || 'a free one-line value'})` : ''}`; warn = [`note: the issues already filed carry the ${out.part} once field writes it: ${jarlLine('field', '<ids>', out.name, out.part === 'section' ? '<text>' : '<value>')}`]; break;
       case 'verify': out = cmdVerify(root); text = renderVerify(out); break;
       // The root of use is the checkout its path is read from: the call's --root, else the checkout of the working directory.
       case 'use': out = cmdUse(root, rest[0]); text = renderUse(out); break;
@@ -1576,7 +1592,7 @@ function dispatchCall(root, commandName, rest, flags) {
 // place after the stamp, under record format 3. The commands whose --by is part of what they record (the author of a
 // description change, the reviewer, who answered, ruled or retracted) keep it there: set naming a field and evidence
 // taking a row back are those too.
-export const WRITER_COMMANDS = Object.freeze(['init', 'new', 'renumber', 'import', 'evidence', 'set', 'merged', 'round', 'ask', 'log', 'goal', 'base', 'archive', 'mode', 'close']);
+export const WRITER_COMMANDS = Object.freeze(['init', 'new', 'renumber', 'import', 'evidence', 'set', 'merged', 'round', 'ask', 'log', 'goal', 'base', 'archive', 'mode', 'close', 'extend']);
 function writerOf(root, cmd, rest, flags) {
   if (!WRITER_COMMANDS.includes(cmd) || flags.by === undefined) return null;
   if (cmd === 'set' && setRouteOf(root, rest[1]) === 'field') return null;

@@ -4,7 +4,7 @@
 import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need } from './base.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
-import { carriesCode, coordinatorOf, holderKey, inFlightMark, leaseConflictOf, readLoop, sameHolder, sameSlice, sentBack, sliceOf, statusWith } from './loop.mjs';
+import { carriesCode, coordinatorOf, holderKey, inFlightMark, leaseConflictOf, readLoop, sameHolder, sameSlice, sentBack, sliceOf, statusWith, worksInPlace } from './loop.mjs';
 import { gatedMark, modelReviewForm } from './models.mjs';
 import { issueRepos, repoLabel } from './repositories.mjs';
 import { reasonWord, waitingOn } from './commands.mjs';
@@ -61,7 +61,7 @@ function issueRows(ctx) {
   // Open and offered by next: ready to start. A parent offered there is in play below, for its check.
   for (const r of ctx.next.filter((x) => x.ready && !x.subs)) {
     out.push({ what: 'ready', id: r.id, title: r.title, priority: r.priority, holder: holderOfId(r.id),
-      says: 'ready to start, raise a worker', command: jarlLine('set', r.id, leaseStatus, '--branch', '<branch>', '--worker', '<name>', '--model', '<model-id>') });
+      says: 'ready to start, raise a worker', command: jarlLine('set', r.id, leaseStatus, ...(worksInPlace(profile, loop.byId.get(r.id)) ? [] : ['--branch', '<branch>']), '--worker', '<name>', '--model', '<model-id>') });
   }
   const evidence = (id) => jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>');
   const verdict = (id) => jarlLine('review', id, '<verdict>', '--by', '<reviewer>', '<text>');
@@ -140,7 +140,7 @@ function issueRows(ctx) {
       continue;
     }
     if (unticked) continue;
-    out.push({ ...onJarl, what: 'close', says: mark === 'merged' ? 'merged; close it' : 'approved; close it', command: jarlLine('set', i.id, closeStatus, '<text>') });
+    out.push({ ...onJarl, what: 'close', says: mark === 'merged' ? 'merged; close it' : worksInPlace(profile, i) ? 'approved and worked in place; commit its files, record the commit as a row, then close it' : 'approved; close it', command: jarlLine('set', i.id, closeStatus, '<text>') });
   }
   // One line per holder for the proofs of code with no verdict: each coordinator raises its own slice's reviewer.
   const byHolder = new Map();

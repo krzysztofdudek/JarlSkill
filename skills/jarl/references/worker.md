@@ -46,7 +46,7 @@ Report in under 200 words: what changed, the evidence (commands and what they pr
 "Found" (new issues, if any), and `git log -1 --oneline` of your commit.
 You spawn no agents of your own.
 Evidence is for proof: the --ran/--saw rows prove, and a free-text note is a line or two that explains them. Your long report goes to the jarl, not into the evidence.
-Before you report, go through the closing checklist, every item, whatever the tier of the issue: the work is committed on your branch; red and green are recorded as evidence rows (jarl_evidence with ran and saw), not only in the report; every check this brief names was waited for to its end, and what it printed is in a row; the changelog fragment is written on the issue, or the change is one nobody sees; the report is sent. A report that skips an item is not yet a report.
+Before you report, go through the closing checklist, every item, whatever the tier of the issue: the work is committed on your branch (on an issue worked in place, its files are written and left for the coordinator to commit); red and green are recorded as evidence rows (jarl_evidence with ran and saw), not only in the report; every check this brief names was waited for to its end, and what it printed is in a row; the changelog fragment is written on the issue, or the change is one nobody sees; the report is sent. A report that skips an item is not yet a report.
 
 <the output of jarl_brief for the issue (the issue as jarl_show prints it, the rules that reach its worker, the rounds so far with their findings, the proof rows), not the file>
 ```

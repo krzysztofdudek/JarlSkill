@@ -11,6 +11,7 @@ Read it when you open or resume a loop as the jarl, when you hand a slice of it 
 - [Filing an issue](#filing-an-issue): the body in the call that files, issues that wait
 - [From research to issues](#from-research-to-issues): `import` and `sources`
 - [Templates](#templates): issues filed again and again in one shape, a release checklist
+- [Worked in place](#worked-in-place): an issue that writes its files where they are checked out, and who commits them
 - [What goes to the owner](#what-goes-to-the-owner): asking well, decisions made under a mandate
 - [An owner who is rarely there](#an-owner-who-is-rarely-there): provisional decisions and questions that hold one issue
 - [Rulings about an area](#rulings-about-an-area): rulings that reach every file of one type of code
@@ -149,6 +150,10 @@ jarl_new { title: "Release X · C: tags and CI", template: "release-phase", afte
 ```
 
 Each acceptance line is one step, and `set done` notes a phase closed with fewer `--ran`/`--saw` rows than steps. Nothing here tags, releases or refuses anything; see [What Jarl will not grow](composers.md#what-jarl-will-not-grow).
+
+## Worked in place
+
+An issue that writes its declared files and nothing else, such as one document of a research loop, may be worked in place instead of on a branch: tag it `in-place` (`new --tags in-place --files <paths>`, or `field <id> Tags in-place --add`). Its worker writes those files where they are checked out, in the checkout of their repository (the loop's own, or the one the issue's Repo names for that file, as [Code in another repository](repositories.md#code-in-another-repository) places a path), and commits nothing; the lease takes no `--branch` and no `--worktree`, and is refused while the issue declares no files, which keep two such issues off one file as for any lease. The merger's steps do not apply: there is no branch to review against a base, nothing to merge and no `merged` to record. Once the approve stands, the files are committed by the one committer of the main checkout, the merger where one runs (a commit of their own between two merges) and the coordinator otherwise; the commit is recorded as a row (`evidence <id> --ran "<command>" --saw "<sha> …"`), then the coordinator sets the issue done; `done` refuses while a declared file holds a change its checkout has not committed, and until a row of its proof recorded after its start names a commit, made after that start, on the branch checked out, that changes one of its files in its repository. Review is as for any issue with no branch. An issue that carries code (a Branch or a Merged field) is never tagged `in-place`, and the tag is a line of record format 3: its first write raises the loop, and a loop a composer keeps refuses it.
 
 ## What goes to the owner
 

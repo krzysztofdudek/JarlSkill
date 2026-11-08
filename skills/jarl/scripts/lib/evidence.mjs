@@ -12,9 +12,9 @@ import { PARENT_FIELD, SLOT_NAME_RE, clearsOf, clearsWords, formatState, loadPro
 import { appendLog, appendLogLines, firstLine, goalLines, readGoal } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById, rowLinesText } from './log.mjs';
-import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
+import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteLogText, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLinesOf, whereLines, whereOf } from './repositories.mjs';
-import { approveKind, carriesCode, sentBack, unmergedCode, unmergedText, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf, waiverVoid } from './loop.mjs';
+import { approveKind, carriesCode, sentBack, unmergedCode, unmergedText, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf, waiverVoid, worksInPlace } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText, closedNoCheck } from './metrics.mjs';
 import { awaitsMerge, builds, gatedMark, modelMarks } from './models.mjs';
 import { ago, leaseLiveness, leaseState, livenessOf, thresholdText } from './rounds.mjs';
@@ -55,7 +55,7 @@ export function cmdEvidence(root, rawIds, text, flags) {
   }
   // Each row line is followed by the tip of the issue's branch, so the gate knows which code the row was made on.
   const tips = rows ? tipLinesOf(root, issues) : () => [];
-  appendLogLines(root, issues.flatMap((issue) => (rows ? rows.flatMap((r) => [`${issue.id} evidence row${mark} · ${firstLine(r.ran, "the issue's Evidence section")}`, ...tips(issue)]) : [`${issue.id} evidence · ${firstLine(text, "the issue's Evidence section")}`])));
+  appendLogLines(root, issues.flatMap((issue) => (rows ? rows.flatMap((r) => [`${issue.id} evidence row${mark} · ${firstLine(r.ran, "the issue's Evidence section")}`, ...tips(issue)]) : [noteLogText(issue.id, text)])));
   return oneOrMany(rawIds, issues.map((issue) => (rows ? { id: issue.id, rows, ...(proved.length ? { lines: proved } : {}) } : { id: issue.id })));
 }
 
@@ -565,7 +565,8 @@ export const IN_FLIGHT_MARKS = {
 const APPROVED_NO_CODE = 'approved, and it carries no code, so no merge waits — next set it done';
 // An issue a round sent back whose worker has recorded no row since is the worker's again, not waiting for a reviewer.
 const SENT_BACK = 'sent back by a round, no new proof yet — it is back with the worker, who records new rows';
-const inFlightStep = (loop, mark, issue) => (mark === 'approved' && !carriesCode(issue) ? APPROVED_NO_CODE : sentBack(loop, issue, mark) ? SENT_BACK : IN_FLIGHT_MARKS[mark]);
+const APPROVED_IN_PLACE = 'approved and worked in place, so no merge waits — next its files are committed, a row names the commit, and it is set done';
+const inFlightStep = (loop, mark, issue) => (mark === 'approved' && worksInPlace(loop.profile, issue) ? APPROVED_IN_PLACE : mark === 'approved' && !carriesCode(issue) ? APPROVED_NO_CODE : sentBack(loop, issue, mark) ? SENT_BACK : IN_FLIGHT_MARKS[mark]);
 // The rows for the in-flight `issues` of a loop (its own issues, or the ones a view is scoped to). Where the mark ends in
 // setting the issue done and an acceptance line only the owner ticks is not ticked, next says that tick comes first. An
 // approve the done gate refuses for its model is named with what is missing, in the gate's words.
