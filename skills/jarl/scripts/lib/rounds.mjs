@@ -276,9 +276,9 @@ export function cmdCheck(root, rawId, flags) {
   // A change proves itself with a test and announces itself in the changelog, so neither is ever
   // "outside" the issue: the scope check is about source, not about the two files every issue touches.
   const alwaysInScope = (f) => isTestFile(f) || /(^|\/)CHANGELOG\.md$/i.test(f);
-  // A declared file may be repo-relative (the common case) or relative to some subdirectory the
-  // issue itself is scoped to (e.g. a plugin's own skill body); a diff path matches either way —
-  // as a root-relative prefix, or as a path suffix ending at a "/" boundary.
+  // A declared file is read from the top of the repository, the base the in-place gate reads too. Scope only bounds the
+  // diff, so it is lenient on top of that: a file declared relative to a subdirectory (a plugin's own skill body) also
+  // matches a diff path that ends in it at a "/" boundary; the gate compares the path whole.
   const pathMatches = (f, d) => {
     const dd = d.replace(/\/+$/, '');
     return f === dd || f.startsWith(`${dd}/`) || f.endsWith(`/${dd}`);

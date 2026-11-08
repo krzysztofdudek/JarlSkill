@@ -1709,8 +1709,8 @@ function unprovedRefusal(profile, issue, left, status) {
 // Whether the loop names the acceptance lines a row proves and the issue has lines to name.
 const namesLines = (loop, issue) => loop.linesFrom !== null && acceptanceLineCount(issue) > 0;
 // Why an issue worked in place may not close yet, as { cause, text }, or null. Each file it declares is placed in its
-// repository as fileAt places it (the loop's own, or the one its Repo names for that path) and compared, whole, with the
-// paths git names from the top of that repository (see repositoryPaths). The issue closes when every such repository is a
+// repository as fileAt places it (the loop's own, or the one its Repo names for that path), read from the top of that repository and compared, whole, with the
+// paths git names there (see repositoryPaths). The issue closes when every such repository is a
 // git repository here, none of its declared files has a change its checkout has not committed (staged, unstaged or
 // untracked), and a row of its proof inside the gate's window names a commit that a repository holds on the branch it
 // has checked out, that changes a declared file of that repository, and that was committed at or after the minute of the
@@ -1750,12 +1750,13 @@ function inPlaceRefusal(root, loop, issue, g) {
   if (shas.some((sha) => [...byTop].some(([top, paths]) => committed(top, paths, sha)))) return null;
   return { cause: 'commit', text: `${issue.id} is worked in place, and no row of its proof${g.tracked ? ` since ${sinceText(g.anchor)}` : ''} names a commit made after it, on the branch checked out, that changes ${issue.files.join(', ')} — ${inPlaceStep(issue)}` };
 }
-// A declared file as the paths git names it by in its repository, whose top is `top`: the path read from the place the
-// issue declares it in (the loop's root, or the checkout its Repo names), relative to the top. A symbolic link on the way
-// is followed, so the file an edit through it changes is checked, and the link's own path with it. { paths } or, for a
-// path that leaves the repository as written or once a link is followed, { outside } with why.
+// A declared file as the paths git names it by in its repository, whose top is `top`: the path read from the top of the
+// repository (the one its Repo names, or the loop's own), the one base scope reads too, so a loop kept in a subdirectory
+// declares its files as they are written from the top. A symbolic link on the way is followed, so the file an edit through
+// it changes is checked, and the link's own path with it. { paths } or, for a path that leaves the repository as written
+// or once a link is followed, { outside } with why.
 function repositoryPaths(top, at) {
-  const written = resolve(canonical(at.repo), at.path);
+  const written = resolve(top, at.path);
   const inside = (p) => { const r = relative(top, p); return r === '..' || r.startsWith(`..${sep}`) || isAbsolute(r) ? null : portablePath(r); };
   const own = inside(written);
   if (own === null) return { outside: 'lies outside its repository, so no commit of that repository changes it' };

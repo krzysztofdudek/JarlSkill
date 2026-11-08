@@ -114,48 +114,57 @@ test('a file the issue places in another repository is checked there: its change
   assert.equal(r.status, 0, r.stderr);
 });
 
-// A loop that sits in a subdirectory of its repository, as a loop of plans beside other work does: a declared path is
-// read from the loop's root, and git names it from the top of the repository.
-function subdirectoryLoop() {
+// A loop that sits in a subdirectory of its repository, as a release loop of a repository of plans does: a declared path
+// is read from the top of the repository, as scope reads it, and a file with the same tail elsewhere (under the loop's own
+// folder, or in another directory) is not the issue's.
+function subdirectoryLoop(file = 'method/environment.md') {
   const { dir, g } = gitRepo({ prefix: 'jarl-in-place-sub-', branch: 'main' });
-  const root = join(dir, 'loop');
-  mkdirSync(join(root, 'docs'), { recursive: true });
-  mkdirSync(join(dir, 'docs'));
-  mkdirSync(join(dir, 'other', 'docs'), { recursive: true });
-  jarl(root, 'init', 'write the guides');
-  jarl(root, 'new', 'write the guide', '--tags', 'in-place', '--files', 'docs/a.md', '--acceptance', 'it reads well');
+  const root = join(dir, 'releases', '9.9.9');
+  for (const d of [join(root, 'method'), join(dir, 'method'), join(dir, 'other', 'method')]) mkdirSync(d, { recursive: true });
+  writeFileSync(join(dir, 'method', 'environment.md'), '# Environment\n');
+  g('add', '-A'); g('commit', '-qm', 'the method');
+  jarl(root, 'init', 'write the method');
+  jarl(root, 'new', 'rewrite the environment', '--tags', 'in-place', '--files', file, '--acceptance', 'it reads well');
   jarl(root, 'set', '1', 'in-progress', '--worker', 'w1', '--by', 'jarl');
   return { top: dir, root, g };
 }
 const shortHead = (g) => g('rev-parse', '--short', 'HEAD').trim();
+const decoys = (top, root, text) => { for (const d of [root, join(top, 'other')]) writeFileSync(join(d, 'method', 'environment.md'), text); };
 
-test('in a loop in a subdirectory of its repository, a commit of a file with the same tail elsewhere in the repository closes nothing', () => {
+test('in a loop in a subdirectory of its repository, a declared path is read from the top of the repository: the commit of that file closes the issue, and a commit of a file with the same tail elsewhere closes nothing', () => {
   const { top, root, g } = subdirectoryLoop();
-  writeFileSync(join(top, 'other', 'docs', 'a.md'), 'another file\n');
-  writeFileSync(join(top, 'docs', 'a.md'), 'a file at the top\n');
+  decoys(top, root, 'another file\n');
   g('add', '-A'); g('commit', '-qm', 'files of the same name elsewhere');
   jarl(root, 'evidence', '1', '--ran', 'git commit', '--saw', `${shortHead(g)} files of the same name`, '--by', 'w1');
   jarl(root, 'review', '1', 'approve', '--by', 'rev-1', FINDINGS);
-  assert.match(refuses(root, 'set', '1', 'done', 'written', '--by', 'jarl'), /^1 is worked in place, and no row of its proof since it was moved → in-progress names a commit made after it, on the branch checked out, that changes docs\/a\.md/);
-  writeFileSync(join(root, 'docs', 'a.md'), '# Guide\n');
-  g('add', '-A'); g('commit', '-qm', 'the guide');
-  jarl(root, 'evidence', '1', '--ran', 'git commit', '--saw', `${shortHead(g)} the guide`, '--by', 'jarl');
+  assert.match(refuses(root, 'set', '1', 'done', 'written', '--by', 'jarl'), /^1 is worked in place, and no row of its proof since it was moved → in-progress names a commit made after it, on the branch checked out, that changes method\/environment\.md/);
+  writeFileSync(join(top, 'method', 'environment.md'), '# Environment, rewritten\n');
+  g('add', '-A'); g('commit', '-qm', 'the environment');
+  jarl(root, 'evidence', '1', '--ran', 'git commit method/environment.md', '--saw', `${shortHead(g)} the environment`, '--by', 'jarl');
   const r = run(root, ['set', '1', 'done', 'written and committed', '--by', 'jarl']);
   assert.equal(r.status, 0, r.stderr);
 });
 
-test('in a loop in a subdirectory of its repository, an uncommitted file with the same tail elsewhere holds nothing back, and its own file does, named from the top', () => {
+test('in a loop in a subdirectory of its repository, an uncommitted edit of the declared file at the top holds the issue back, and an uncommitted file with the same tail elsewhere does not', () => {
   const { top, root, g } = subdirectoryLoop();
-  writeFileSync(join(root, 'docs', 'a.md'), '# Guide\n');
-  jarl(root, 'evidence', '1', '--ran', 'proofread docs/a.md', '--saw', 'reads well', '--by', 'w1');
+  writeFileSync(join(top, 'method', 'environment.md'), '# Environment, rewritten\n');
+  jarl(root, 'evidence', '1', '--ran', 'proofread method/environment.md', '--saw', 'reads well', '--by', 'w1');
   jarl(root, 'review', '1', 'approve', '--by', 'rev-1', FINDINGS);
-  assert.match(refuses(root, 'set', '1', 'done', 'written', '--by', 'jarl'), /^1 is worked in place, and its checkout holds changes not committed to loop\/docs\/a\.md — /);
-  g('add', join('loop', 'docs', 'a.md')); g('commit', '-qm', 'the guide');
-  jarl(root, 'evidence', '1', '--ran', 'git commit', '--saw', `${shortHead(g)} the guide`, '--by', 'jarl');
-  writeFileSync(join(top, 'other', 'docs', 'a.md'), 'another file, not committed\n');
-  writeFileSync(join(top, 'docs', 'a.md'), 'a file at the top, not committed\n');
+  assert.match(refuses(root, 'set', '1', 'done', 'written', '--by', 'jarl'), /^1 is worked in place, and its checkout holds changes not committed to method\/environment\.md — /);
+  g('add', join('method', 'environment.md')); g('commit', '-qm', 'the environment');
+  jarl(root, 'evidence', '1', '--ran', 'git commit method/environment.md', '--saw', `${shortHead(g)} the environment`, '--by', 'jarl');
+  decoys(top, root, 'another file, not committed\n');
   const r = run(root, ['set', '1', 'done', 'written and committed', '--by', 'jarl']);
   assert.equal(r.status, 0, r.stderr);
+});
+
+test('a declared path that climbs out of its repository with .. is refused with the form of Files', () => {
+  const { root } = subdirectoryLoop('../outside.md');
+  jarl(root, 'evidence', '1', '--ran', 'proofread', '--saw', 'reads well', '--by', 'w1');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev-1', FINDINGS);
+  const said = refuses(root, 'set', '1', 'done', 'written', '--by', 'jarl');
+  assert.match(said, /^1 is worked in place, and \.\.\/outside\.md lies outside its repository, so no commit of that repository changes it — an issue worked in place declares the files it writes inside their repository/);
+  assert.equal(lastLine(said), 'jarl.mjs field "<ids>" Files "<paths>"');
 });
 
 test('a declared path with letters beyond ASCII closes on the commit that changes it, which git names unquoted', () => {
