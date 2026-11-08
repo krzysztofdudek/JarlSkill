@@ -224,8 +224,9 @@ function bigLoop(count) {
 // What resume costs on a large loop is judged against measurements of the same run, never against a fixed number of
 // seconds or the speed of a machine's git: the git processes it starts are counted (the same on a quiet machine and a
 // busy one, and the count is the whole of its git cost), and its time is set against its own time on a loop a quarter
-// the size and against status on the same large loop (load slows all of them). A git process per issue, or a pass over
-// every issue for each issue, fails; a busy machine does not.
+// the size and against a calibration of bare git starts and a plain read of the loop's files, which runs none of Jarl's
+// code (load slows all of them). A git process per issue, a pass over every issue for each issue, or a slowdown of code
+// that other commands share too, fails; a busy machine does not.
 test('resume stays fast on a loop of hundreds of issues naming another repository and a long log', async () => {
   const { dispatch } = await import(new URL('../jarl.mjs', import.meta.url).href);
   const large = bigLoop(425);
