@@ -114,7 +114,7 @@ export const PLACEHOLDERS = Object.freeze([
   '<verdict>', '<ci-state>', '<ask-kind>', '<jarl-or-owner>', '<option>', '<label:effect>', '<another-label:effect>', '<mode>', '<group>',
   '<name>', '<names>', '<name-or-path>', '<coordinator>', '<slice:coordinator>', '<no-second-slice-tag>', '<tag>', '<a-tag-an-issue-carries>', '<key>',
   '<a-number-two-files-carry>', '<sha>', '<command>', '<what-it-printed>', '<what-was-wrong>', '<what-was-read-and-found>',
-  '<findings-with-a-severity>', '<finding-outside-the-issue>', '<what-failed>', '<what-the-branch-does>', '<what-is-red>', '<what-would-get-weaker>', '<why>',
+  '<findings-with-a-severity>', '<finding-outside-the-issue>', '<what-failed>', '<what-the-branch-does>', '<what-is-red>', '<what-would-get-weaker>', '<why>', '<why-no-row-names-the-lines>',
   '<why-the-worker-changed>', '<question-for-the-owner>', '<yes-or-reject-first>', '<branch>', '<worker-branch>', '<base-branch>',
   '<the-new-worker>', '<the-worktree-of-the-lease>', '<model-id>', '<path>', '<paths>', '<path-under-the-loop-root>', '<slot>',
   '<findings.json>', '<profile.json>', '<report-dir>', '<report-dir#finding-id>', '<finding-ids>', '<template>', '<the-main-checkout>',

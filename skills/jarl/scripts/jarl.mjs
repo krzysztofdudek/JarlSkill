@@ -179,7 +179,7 @@ commands:
                                                  count of the lines left out. A merger's brief is one for
                                                  the whole loop (references/merger.md), and a worker after a takeover
                                                  is given the rules of the takeover too
-  set <ids> <status> "<text>" [--branch <worker-branch>] [--worker <name>] [--model <model-id>] [--worktree <path>] [--handover] [--header] [--by who]
+  set <ids> <status> "<text>" [--branch <worker-branch>] [--worker <name>] [--model <model-id>] [--worktree <path>] [--handover] [--header] [--without-rows "<why-no-row-names-the-lines>"] [--by who]
                                                  (<ids> <status-in-the-log> --header rewrites the header fields the log
                                                  renders from the log, writes no log line and is never a move)
                                                  change status; writes the log line in the same move; in-progress
@@ -207,7 +207,8 @@ commands:
                                                  recorded (merged), and the owner's tick of every acceptance line only he
                                                  ticks (see tick); in a loop whose rows name acceptance lines (evidence
                                                  --line), done lists the lines no counted row names and closes the issue
-                                                 only with "<text>", the reason, written under Evidence beside them
+                                                 only with --without-rows, the reason no row names them, written under
+                                                 Evidence beside them: "<text>" is the move's reason, never theirs
   merged <ids> --sha <sha> [--ran "<command>" --saw "<what-it-printed>" | --red <id>] [--ci pending|green|red|none] [--repo <name-or-path>] [--keep] [--by who] | <ids> --ci <ci-state>
                                                  the merge as fields: Merged (sha, and where with --repo) and CI
                                                  (only when given; pending: a pushed commit whose CI will report;
@@ -630,7 +631,7 @@ export const COMMAND_FLAGS = {
   evidence: { ran: 'many', saw: 'many', line: 'many', file: 'value', slot: 'value', by: 'value' },
   retract: { by: 'value' }, field: { add: 'bool', remove: 'bool', clear: 'bool', by: 'value' }, split: { line: 'many', by: 'value' }, base: { by: 'value' },
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
-  show: { full: 'bool' }, brief: { role: 'value', slice: 'value' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', by: 'value' },
+  show: { full: 'bool' }, brief: { role: 'value', slice: 'value' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', 'without-rows': 'value', by: 'value' },
   next: { limit: 'value', all: 'bool', as: 'value', slice: 'value' },
   review: { by: 'value', model: 'value', relayed: 'bool', bot: 'bool', outside: 'many', field: 'many' }, round: { findings: 'value', by: 'value' }, tick: { by: 'value' },
   models: { group: 'value', with: 'many', archives: 'bool' },
@@ -801,6 +802,7 @@ const FLAG_HOLES = {
   target: '<what-would-get-weaker>', issue: '<id>', option: '<option>', 'ask option': '<label:effect>', 'applies-to': '<selectors>', until: '<date-or-id>', to: '<jarl-or-owner>', log: '<count>',
   ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', 'waives-review': '<ids>', quote: '<his-own-words>', under: '<a-ruling-in-force>', supersedes: '<a-ruling-in-force>',
   rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>', line: '<line=id>', 'evidence line': '<line>', outside: '<finding-outside-the-issue>', parent: '<id>',
+  'without-rows': '<why-no-row-names-the-lines>',
 };
 const PART_HOLES = {
   title: '<title>', priority: '<prio>', tier: '<tier>', kind: '<kind>', tags: '<tag>', files: '<paths>', repo: '<name-or-path>', after: '<ids-it-waits-on>', parent: '<id>',

@@ -73,6 +73,19 @@ export function unprovedLines(loop, issue, g = gateOf(loop, issue.id)) {
 }
 // The numbers of lines, as the views print them: "line 2, 3".
 export const linesText = (lines) => `line ${lines.map((l) => l.n).join(', ')}`;
+// A closed issue's acceptance lines no counted row names now, read against its last close, as { excused, lost }: excused,
+// the lines no row it counted named, which the close gave its reason for (done asks it); lost, the lines a row it counted
+// named, which none names now (that row was retracted after the close). Null where the rule did not hold at the close: in
+// a loop that has never named a line, and for an issue closed ahead of the loop's first row that names one.
+export function closedLines(loop, issue, g = gateOf(loop, issue.id)) {
+  if (loop.linesFrom === null) return null;
+  const close = (loop.eventsById.get(issue.id) || []).filter((e) => e.type === 'move' && loop.profile.is(e.to, 'closes-record')).pop();
+  if (!close || close.n < loop.linesFrom) return null;
+  const counted = g.rowLog.filter((r) => r.inWindow && r.n < close.n && !(r.retracted && r.retractedAt < close.n));
+  const named = new Set(counted.flatMap((r) => r.lines || []));
+  const now = unprovedLines(loop, issue, g);
+  return { excused: now.filter((l) => !named.has(l.n)), lost: now.filter((l) => named.has(l.n)) };
+}
 
 // A material written as a path (not a link, and with a directory in it or a file extension at its end) is looked for on
 // the disk; one named otherwise (a link, an artifact named in words) cannot be, and is there once the work is proven.

@@ -21,7 +21,7 @@ import { ago, leaseLiveness, leaseState, livenessOf, thresholdText } from './rou
 import { attachmentLines, inspectAttachment, requiredSlots, slotProblems } from './attachments.mjs';
 import { ARCHIVE_KEEPS, PERMANENT_MARKER, issuesFor, needLifecycle, needLiveLoop, oneOrMany, rowsOf, waitingOn, waitsOf } from './commands.mjs';
 import { handoffAge, loadAsks, promotionBatch, ratificationBatch } from './questions.mjs';
-import { ownerLineNotes, ownerLineWait } from './owner-lines.mjs';
+import { closedLines, linesText, ownerLineNotes, ownerLineWait } from './owner-lines.mjs';
 
 // ---- commands: evidence ------------------------------------------------------------------------------
 
@@ -734,6 +734,10 @@ export function closedGateFlags(loop) {
       if (merges.some((m) => m.n > doneAt)) flag('a merge was recorded after it went done', reopen);
       const unmerged = unmergedCode(issue, g);
       if (unmerged) flag(unmerged.why === 'none' ? 'a code issue done with no merge recorded' : `a code issue done, and ${unmergedText(unmerged)}`, reopen);
+      // The line rule, in a loop that names lines and for an issue closed under it: a line a row named at the close and
+      // none names now. A line the close gave its reason for stays given.
+      const lost = closedLines(loop, issue, g)?.lost ?? [];
+      if (lost.length) flag(`no counted row names acceptance ${linesText(lost)} now, and the close counted one and gave no reason for it`, jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line>'));
     }
     // Reopening resets the row and the approve, so when it is one of several repairs it comes first: the others would be wasted.
     if (repairs.length > 1 && repairs.includes(reopen)) repairs.splice(0, repairs.length, `${reopen} (it resets the row and the approve, so do it first)`, ...repairs.filter((r) => r !== reopen));

@@ -139,7 +139,9 @@ export function newIssue(root, title, opts = {}) { return write(root, () => L.cm
 // the command line passes 'cli' too. setField takes the same opts.caller. The profile's done-gate decides what a move
 // into closes-record asks for (requires-merged: a recorded merge the base holds; approve: 'none': no approve). The base
 // is the branch checked out in the merge's repository, or opts.base (a branch or ref, library callers only) when the
-// composer landed the merge into a branch that is not checked out there.
+// composer landed the merge into a branch that is not checked out there. In a loop whose rows name acceptance lines,
+// a close that leaves lines no counted row names takes the reason for them as opts['without-rows'], written under Evidence
+// beside them; `why` is the move's reason and never stands for it.
 export function setStatus(root, ids, status, why, opts = {}) {
   return write(root, () => L.cmdSetStatus(root, ids, status, why, opts));
 }

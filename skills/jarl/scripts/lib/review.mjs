@@ -171,10 +171,11 @@ function needBotFormat(root) {
 }
 
 // What an approve says of the acceptance lines no row names, in a loop that names them: done refuses the close without a
-// reason, so the note names the lines and the close that gives one. Null where every line is named, or the loop names none.
+// reason for them, given apart from the move's own, so the note names the lines and the close that gives one. Null where
+// every line is named, or the loop names none.
 function unprovedNote(loop, issue) {
   const left = unprovedLines(loop, issue) || [];
-  return left.length ? `${issue.id}: no Proof row names acceptance ${linesText(left)}, and done closes it only with a reason given: ${jarlLine('set', issue.id, 'done', '<why>')}, or a row that names each, ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line>')}` : null;
+  return left.length ? `${issue.id}: no Proof row names acceptance ${linesText(left)}, and done closes it only with a reason for those lines, given apart from the reason of the move: ${jarlLine('set', issue.id, 'done', '<why>', '--without-rows', '<why-no-row-names-the-lines>')}, or a row that names each, ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line>')}` : null;
 }
 
 // Whether the loop holds a batch id: it is in the format that holds one, or Jarl may raise it there.
