@@ -105,6 +105,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Taking back a review, a test result or a note in a loop that an older Jarl wrote no longer undoes the update of that task's repository field. Before, that one task kept the old form while every other task was updated.
 - Moving a task to another status with your name given, in a loop an older Jarl wrote, no longer undoes the update of that task's repository field. Before, the moved task kept the old form.
 - A finished task whose branch was deleted after its merge stays finished when a branch with the same name is made again later. Before, the task could show as missing its test result and its review.
+- A decision can no longer be recorded as resting on a rule that has ended, and the list of rulings in force shown when it is refused leaves ended rules out. Before, such a decision was taken and then shown as resting on a ruling not in force.
 
 ## [6.2.0] - 2026-10-19
 

@@ -342,8 +342,10 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   need(flags.under === undefined || !byOwner, '--under names the ruling a ruling by the jarl or a coordinator rests on; a ruling by the owner rests on his own words', () => ({ rename: '--under', to: '<no-flag-here>' }));
   const under = flags.under !== undefined ? fieldText(flags.under) : null;
   if (under !== null) {
-    // A ruling a later one supersedes, the one this call supersedes, and an area ruling the owner rejected hold nothing up.
-    const inForce = loadDecisions(root).filter((d) => !d.supersededBy && !d.rejected && d.slug !== flags.supersedes).map((d) => d.slug);
+    // A ruling a later one supersedes, the one this call supersedes, an area ruling the owner rejected and a rule that has
+    // ended (its date passed, or its issue closed) hold nothing up.
+    const ended = new Set(loopRules(readLoop(jarlDir(root)), today()).filter((r) => r.ended).map((r) => r.slug));
+    const inForce = loadDecisions(root).filter((d) => !d.supersededBy && !d.rejected && !ended.has(d.slug) && d.slug !== flags.supersedes).map((d) => d.slug);
     need(inForce.includes(under), `--under ${under ? `"${under}"` : 'needs a slug'} is not a ruling in force of this loop; the rulings in force: ${inForce.length ? inForce.join(', ') : '(none)'}`, () => ({ flag: '--under', value: hole('<a-ruling-in-force>') }));
   }
   const settles = flags.settles !== undefined ? issuesFor(root, flags.settles) : [];
