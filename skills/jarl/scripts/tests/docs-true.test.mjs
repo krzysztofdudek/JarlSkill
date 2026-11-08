@@ -96,7 +96,7 @@ test('the help text writes every flag of a command in that command\'s synopsis, 
   }
 });
 
-test('the brief help and the commands reference say the same of a finding whose entry the issue file no longer holds', () => {
+test('the brief help and the commands reference say the same of a finding the issue file has no entry for', () => {
   const help = mcp.usageBlocks(USAGE).brief.description;
   const md = skillText('references/commands.md');
   const row = md.split('\n').find((l) => l.startsWith('| `brief <id>'));
