@@ -98,7 +98,7 @@ once, `find ~ /workspaces -path '*skills/jarl/scripts/jarl.mjs' 2>/dev/null | he
 absolute path it gives for the rest of the session, and hand that same path to every role you raise.
 If there is no copy at all, say so and stop: the loop's state moves only through the tool.
 
-**Which loop a call reaches.** A tool call: its `root` field; without it the server's `JARL_ROOT`; without that, discovery. A command line: `--root`; without it, discovery. Discovery finds the loop at the root of the checkout the call starts in (from a worktree that holds none, the root of its main checkout) and never looks in a subdirectory: a loop kept in one is reached only through `root`, `--root` or `JARL_ROOT`.
+**Which loop a call reaches.** A tool call: its `root` field; without it the loop its session chose with `use <path>`; then the server's `JARL_ROOT`; without that, discovery. A command line: `--root`; without it `JARL_ROOT`, which `use <path>` prints for each shell; without that, discovery. Discovery finds the loop at the root of the checkout the call starts in (from a worktree that holds none, the root of its main checkout) and never looks in a subdirectory: a loop kept in one is reached only through `root`, `--root`, `JARL_ROOT` or `use`. `use` alone lists the loops under the checkout; where its root holds none and loops are below, a call that names none is refused with that list.
 
 The grammar of the command line (the flags, `--json`, `--help` and `--root`) is in [references/commands.md](references/commands.md#the-command-line).
 

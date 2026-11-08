@@ -13,6 +13,7 @@ import { issueKeyOf, parentCycle, parseIssue, sharedNumberText, sharedNumbers } 
 import { REPOS_DECLARED_IN, declaredNames, issueRepos, repoIdentity, repoValueKind, reposNamed, worktreesOf } from './repositories.mjs';
 import { IN_PLACE_TAG, headerReadNotes, readLoop, recordDisagreements, unorderedNamings, unorderedText } from './loop.mjs';
 import { attachmentFindings } from './attachments.mjs';
+import { modelLines, unknownModels } from './models.mjs';
 import { hasLiveLoop } from './commands.mjs';
 import { issuesNaming, loadAsks, unsettledRulings, unsettledText } from './questions.mjs';
 
@@ -57,6 +58,8 @@ export function cmdVerify(root) {
     for (const reason of profileProblems(e.message)) add('profile', 'profile.json', reason);
     return verifyResult(found, notes, 'the profile does not parse, and the other readers go through it');
   }
+  // The models the profile names are the ones the goal's Model lines place, as profile checks them.
+  for (const reason of unknownModels(profile, modelLines(root))) add('profile', 'profile.json', reason);
   const logSkips = [];
   const events = loopEvents(dir, profile, logSkips);
   for (const s of logSkips) add('log', `${LOG_FILE} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`, s.n);

@@ -43,7 +43,7 @@ test('parity: the tool set is the one this release documents — adding or remov
   assert.deepEqual(TOOLS.map((t) => t.name).sort(), [
     'answer', 'archive', 'ask', 'base', 'branches', 'brief', 'changelog', 'close', 'decide', 'decisions',
     'evidence', 'extend', 'field', 'goal', 'help', 'import', 'init', 'list', 'log', 'merged', 'mode', 'models', 'new', 'next',
-    'profile', 'renumber', 'report', 'resume', 'retract', 'review', 'round', 'scope', 'set', 'show', 'sources', 'split', 'status', 'tick', 'verify',
+    'profile', 'renumber', 'report', 'resume', 'retract', 'review', 'round', 'scope', 'set', 'show', 'sources', 'split', 'status', 'tick', 'use', 'verify',
   ].map(mcp.toolName));
 });
 
@@ -129,7 +129,9 @@ for (const [label, value] of [['a bare relative path', 'some/loop'], ['./ itself
 // ---- the server over stdio, as a host starts it ----
 
 function startServer(env = {}, cwd = undefined) {
-  const child = spawn(process.execPath, [SERVER], { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, ...env }, cwd });
+  // The server is started with no JARL_ROOT but the one a test passes: an exported one would send its calls elsewhere.
+  const { JARL_ROOT: _exported, ...inherited } = process.env;
+  const child = spawn(process.execPath, [SERVER], { stdio: ['pipe', 'pipe', 'pipe'], env: { ...inherited, ...env }, cwd });
   let buf = '';
   const waiting = new Map();
   child.stdout.setEncoding('utf8');

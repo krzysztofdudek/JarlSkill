@@ -25,7 +25,7 @@ export const MODEL_MIN_N = 5;
 // or a batch mark. A finding that opens with the lead-in before such a word gets one more, so the reader takes off exactly
 // one (findingOfLog) and gives back the text as it was written.
 const LEAD_IN = 'findings: ';
-const NEEDS_LEAD_IN = /^(?:findings: )*(?:model |relayed(?: ·|$)|batch )/i;
+const NEEDS_LEAD_IN = /^(?:findings: )*(?:model |relayed(?: ·|$)|batch |artifact [^·\n]*? · )/i;
 const loggedFinding = (line) => (NEEDS_LEAD_IN.test(line) ? `${LEAD_IN}${line}` : line);
 const findingOfLog = (line) => (line.startsWith(LEAD_IN) && NEEDS_LEAD_IN.test(line.slice(LEAD_IN.length)) ? line.slice(LEAD_IN.length) : line);
 
@@ -69,6 +69,85 @@ function modelLinesIn(lines, profile) {
     defaultOf: (tier) => (byTier[tier] || [])[0] || null,
     placedTier: (model) => (rank(model) >= 0 ? profile.tiers[rank(model)] : null),
   };
+}
+
+// ---- the models a profile allows -------------------------------------------------------------------------------------
+//
+// A profile's "models" key names the strongest model the loop may use (the ceiling, read by its tier on the goal's Model
+// lines: every model of a stronger tier is above it) and the models it may not use (barred; an id without @<effort> bars
+// every effort of it). It is the owner's lever for cost: Jarl reads no usage or budget from the host. Jarl never refuses
+// or reroutes a lease or a verdict by it; the advice keeps under it: the model next shows for a tier, the takeover's tier
+// up, and the words of the fresh-review rule where the reviewer it needs is beyond what the profile allows. A ceiling no
+// Model line places has no rank, and holds nothing until a line places it; the profile check refuses it.
+function limitsOf(profile, lines) {
+  const m = profile.models;
+  if (!m) return null;
+  const ceilingRank = m.ceiling === null ? -1 : lines.rank(m.ceiling);
+  const barredAs = (model) => m.barred.find((b) => modelKey(b) === modelKey(model) || (!b.includes('@') && baseModelId(modelKey(b)) === baseModelId(modelKey(model))));
+  const why = (model) => {
+    const b = barredAs(model);
+    if (b) return `barred by the profile${modelKey(b) === modelKey(model) ? '' : ` (${b})`}`;
+    return ceilingRank >= 0 && lines.rank(model) > ceilingRank ? `above the profile's ceiling (${m.ceiling})` : null;
+  };
+  // Every placed model, and those it allows, the strongest tier first, each tier in the order of its lines.
+  const placed = [];
+  for (let k = lines.tiers.length - 1; k >= 0; k -= 1) for (const model of lines.byTier[lines.tiers[k]] || []) if (!placed.some((p) => modelKey(p.model) === modelKey(model))) placed.push({ model, rank: k });
+  const pool = placed.filter((p) => !why(p.model));
+  const words = [ceilingRank >= 0 && `ceiling ${m.ceiling}`, m.barred.length && `barred ${m.barred.join(', ')}`].filter(Boolean).join(', ');
+  return { ...m, ceilingRank, why, placed, pool, words };
+}
+// Whether the profile is what keeps the reviewer the fresh-review rule needs for these workers out of reach: null when a
+// model it allows meets the rule, when no placed model would meet it either (the loop's lines are the limit then, and the
+// views say what they say without the key), or when the profile names no models; else the pair that would make the
+// review possible: the strongest model the profile allows as the reviewer, and as the worker the nearest allowed model
+// the rule lets that reviewer review (under "model-rank" another model of the reviewer's tier, else the reviewer's own;
+// otherwise the strongest allowed model other than the reviewer, of its tier or below). The rule is the loop's: "other-model" asks for a model no worker was leased on, "model-rank"
+// for one ranked at least as the worker's, and as advice ("agent") both.
+function reviewBeyond(limits, lines, workers, rule = 'agent') {
+  if (!limits || !lines.declared || !workers.length) return null;
+  const top = Math.max(...workers.map(lines.rank));
+  const same = (model) => workers.some((w) => modelKey(w) === modelKey(model));
+  const meets = (p) => (rule === 'model-rank' || !same(p.model)) && (rule === 'other-model' || p.rank >= top);
+  if (limits.pool.some(meets) || !limits.placed.some(meets)) return null;
+  const reviewer = limits.pool[0] || null;
+  const other = (p) => modelKey(p.model) !== modelKey(reviewer.model);
+  const worker = !reviewer ? null : rule === 'model-rank' ? limits.pool.find((p) => p.rank === reviewer.rank && other(p)) || reviewer
+    : limits.pool.find((p) => other(p) && (rule === 'other-model' || p.rank <= reviewer.rank)) || null;
+  return { workers, words: limits.words, reviewer: reviewer ? reviewer.model : null, worker: worker ? worker.model : null };
+}
+function beyondText(b) {
+  const head = `the reviewer the fresh-review rule needs for a worker on ${b.workers.join(', ')} is beyond what the profile allows (${b.words})`;
+  if (b.worker) return `${head}: a worker on ${b.worker} lets ${b.reviewer} review it`;
+  return `${head}, and no lighter worker makes the review possible: the profile allows ${b.reviewer ? `only ${b.reviewer}` : 'no model the goal places'}, and its models are the owner's to change`;
+}
+// What a lease or a verdict on a model the profile does not allow is told: advice, never a refusal; null when it allows it.
+function limitNote(root, model) {
+  if (model === undefined) return null;
+  const limits = limitsOf(loadProfile(root), modelLines(root));
+  const why = limits && limits.why(model);
+  return why ? `${model} is ${why} — the record keeps the model as given and Jarl refuses nothing for it; the profile's models are the owner's lever for cost` : null;
+}
+// The tier of the profile's ceiling among the profile's tiers, for the takeover's tier up: { at, ceiling }, or null where
+// the profile names no ceiling or no Model line places it.
+function ceilingTier(root) {
+  const limits = limitsOf(loadProfile(root), modelLines(root));
+  return limits && limits.ceilingRank >= 0 ? { at: limits.ceilingRank, ceiling: limits.ceiling } : null;
+}
+// The models a profile names that no Model line of the goal places, as one problem each: Jarl knows a loop's models from
+// those lines alone, so such a name cannot be told from a misspelt one. A ceiling that is barred as well is one too.
+function unknownModels(profile, lines) {
+  const m = profile.models;
+  if (!m) return [];
+  const named = [...(m.ceiling === null ? [] : [m.ceiling]), ...m.barred];
+  const out = named.filter((model) => lines.rank(model) < 0).map((model) => `"models" names ${model}, which no Model line of the goal places`);
+  const limits = limitsOf(profile, lines);
+  if (m.ceiling !== null && limits.why(m.ceiling)) out.push(`"models": the ceiling ${m.ceiling} is barred as well`);
+  return out;
+}
+// The profile check refuses a profile whose models are unknown to the loop at `root`: its goal's Model lines name them.
+function needKnownModels(root, profile, where = 'the profile') {
+  const problems = unknownModels(profile, modelLines(root));
+  need(!problems.length, `${where} names models the loop does not know:\n- ${problems.join('\n- ')}\n— a loop knows its models from the Model lines of its goal: place each one on its tier's line, or take it out of the profile`, () => ['jarl.mjs', 'goal', '--set', hole('<machine-line>')]);
 }
 
 // The offer of the Model lines is the answer of a lease, once. A lease that records a model (an agent raised) in a loop
@@ -149,8 +228,10 @@ function reviewModelNotes(loop, issue, verdict, model, lines, events, rule = 'ag
   const what = gap.same ? `an approve by the same model as the worker's (${model})` : `${model} ranks below the worker's model (${gap.below})${gap.unplaced ? ' — it is on no model line, and an unplaced model ranks below every placed one' : ''}`;
   // The tag alone lets nothing through: the issue needs a proof row that names the comparison as well.
   const tagNote = gap.tagWithoutComparison ? ` (the tag ${IDENTICAL_OUTPUT_TAG} lets a light review clear only with a proof row that names the comparison of the output before and after, and ${issue.id} holds none since its last round or reopen)` : '';
-  if (gap.gate) return [`${issue.id}: ${what} — a gate in this loop: done refuses this approve, because ${RULE_WORDS[rule]}; an approve that meets it clears the issue${tagNote}`];
-  return [`${issue.id}: ${what} — advice, not a gate: done accepts this approve, because ${RULE_WORDS[rule]}; ${gap.same ? 'a reviewer of another model shares fewer of the worker\'s blind spots' : 'a reviewer of at least the worker\'s rank is the stronger check'}, until \`models\` says otherwise${tagNote}`];
+  const beyond = reviewBeyond(limitsOf(loop.profile, lines), lines, [...new Set(leaseModels(events))], gap.gate ? rule : 'agent');
+  const limitTail = beyond ? `; ${beyondText(beyond)}` : '';
+  if (gap.gate) return [`${issue.id}: ${what} — a gate in this loop: done refuses this approve, because ${RULE_WORDS[rule]}; an approve that meets it clears the issue${tagNote}${limitTail}`];
+  return [`${issue.id}: ${what} — advice, not a gate: done accepts this approve, because ${RULE_WORDS[rule]}; ${gap.same ? 'a reviewer of another model shares fewer of the worker\'s blind spots' : 'a reviewer of at least the worker\'s rank is the stronger check'}, until \`models\` says otherwise${tagNote}${limitTail}`];
 }
 
 // Why done refuses an issue's live approve under the loop's reviewer rule, or null: an approve that names no model, or a
@@ -165,8 +246,10 @@ function modelGateRefusal(loop, issue, live, lines, events, rule) {
   if (!leaseModels(events).length) return null;
   const gap = modelGap(loop, issue, live.model, lines, events, rule);
   if (!gap || !gap.gate) return null;
-  return gap.same ? `${issue.id}'s live approve is by ${by} on ${live.model}, the model of its worker — this loop's ${RULE_WORDS[rule].replace(/^the /, '')}`
-    : `${issue.id}'s live approve is by ${by} on ${live.model}, which ranks below the worker's model (${gap.below}) — this loop's ${RULE_WORDS[rule].replace(/^the /, '')}`;
+  const beyond = reviewBeyond(limitsOf(loop.profile, lines), lines, [...new Set(leaseModels(events))], rule);
+  const tail = beyond ? `; ${beyondText(beyond)}` : '';
+  return gap.same ? `${issue.id}'s live approve is by ${by} on ${live.model}, the model of its worker — this loop's ${RULE_WORDS[rule].replace(/^the /, '')}${tail}`
+    : `${issue.id}'s live approve is by ${by} on ${live.model}, which ranks below the worker's model (${gap.below}) — this loop's ${RULE_WORDS[rule].replace(/^the /, '')}${tail}`;
 }
 
 // The one reading of whether the done gate refuses an issue's live approve for its model, for a loop already read: the
@@ -463,10 +546,24 @@ export function renderModels(m) {
 
 // What next and resume show per ready issue: the default model of the issue's tier, read from the goal's Model lines
 // alone. The models table is never built for it; `models` is the view that builds it. Nothing in a loop without model lines.
+// Where the profile names the models the loop may use, the model shown is the tier's default when the profile allows it,
+// else the strongest model it allows at that tier or below (with the default it stands in for, and why); and where the
+// reviewer the fresh-review rule needs for a worker on it is beyond what the profile allows, the lighter worker that makes
+// the review possible.
 export function modelMarks(root, rows) {
   const lines = modelLines(root);
   if (!lines.declared || !rows.length) return new Map();
-  return new Map(rows.map((r) => [r.id, { default: lines.defaultOf(r.tier) }]));
+  const profile = loadProfile(root);
+  const limits = limitsOf(profile, lines);
+  const mark = (tier) => {
+    const first = lines.defaultOf(tier);
+    if (!limits || first === null) return { default: first };
+    const at = lines.tiers.indexOf(tier);
+    const model = limits.why(first) ? (limits.pool.find((p) => p.rank <= at) || { model: null }).model : first;
+    const beyond = model === null ? null : reviewBeyond(limits, lines, [model], reviewerRule(profile));
+    return { default: model, ...(model === first ? {} : { over: first, why: limits.why(first) }), ...(beyond ? { review: beyondText(beyond) } : {}) };
+  };
+  return new Map(rows.map((r) => [r.id, mark(r.tier)]));
 }
 
 const SEVERITIES = ['Critical', 'Important', 'Minor'];
@@ -489,4 +586,4 @@ const SEVERITIES = ['Critical', 'Important', 'Minor'];
 const builds = { modelsTable: 0, nextRows: 0 };
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { SEVERITIES, awaitsMerge, builds, findingOfLog, gatedMark, loggedFinding, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote };
+export { SEVERITIES, awaitsMerge, builds, ceilingTier, findingOfLog, gatedMark, limitNote, loggedFinding, modelRefusalOf, modelReviewForm, modelValue, needKnownModels, reviewModelNotes, spellingNote, unknownModels };

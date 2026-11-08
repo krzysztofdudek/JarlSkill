@@ -163,6 +163,7 @@ Format 3 holds everything format 2 holds, and the lines of the table below, whic
 | the acceptance lines an evidence row proves | the row in the issue's Proof and its log line, after the row's mark | reads no row there, so done refuses an issue for want of the proof it holds |
 | a number from a range the goal declares | the name and the header of an issue file, and the Range line of the goal | files its next issue above the numbers of the range, so the series the loop keeps apart are mixed |
 | the mark of an issue worked in place | the tag in-place among the issue's Tags | lets done pass with no commit of its files named |
+| the artifact a verdict judged | the verdict line and the Reviews entry of the issue, after the reviewer's marks | reads the artifact as the first words of the findings, so no verdict is counted as naming one |
 
 A Range line in the goal raises nothing by itself: until the first number of a range is filed, a reader of formats 1 and 2 reads the line as goal text and numbers as it always has, so where a range starts right above the highest number filed, the next issue that reader files takes a number of the range.
 
