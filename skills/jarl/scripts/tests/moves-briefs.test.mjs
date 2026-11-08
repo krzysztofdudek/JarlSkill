@@ -149,6 +149,16 @@ test('the merger\'s brief prints the whole procedure: the three cases of a red c
   assert.match(jarl(root, 'brief', '--role', 'merger', '--slice', 'odin'), /Your target: jarl\/slice-odin/);
 });
 
+test('a slice\'s merger is told when its integration branch does not exist yet, and that the work is the feature branch\'s merger\'s until then', () => {
+  const { dir, g } = gitRepo({ prefix: 'jarl-brief-merger-slice-', branch: 'feature' });
+  jarl(dir, 'init', 'goal');
+  jarl(dir, 'goal', '--set', 'Coordinators: odin');
+  jarl(dir, 'goal', '--set', 'Merger (odin): mimir');
+  assert.match(jarl(dir, 'brief', '--role', 'merger', '--slice', 'odin'), /^note: jarl\/slice-odin does not exist yet: until it is cut, the slice's approved work is the feature branch's merger's/m);
+  g('branch', 'jarl/slice-odin');
+  assert.doesNotMatch(jarl(dir, 'brief', '--role', 'merger', '--slice', 'odin'), /does not exist yet/);
+});
+
 test('depth is computed from the lines as the table says, the deeper of as at the lease and as now, for every row of it', () => {
   const root = loop();
   const depth = (ids) => json(root, 'brief', ids, '--role', 'reviewer').depth;
@@ -213,7 +223,7 @@ test('next --as --json gives each raise-move its role, default model, branch and
 
 // A brief's own text, as the caps count it: without each issue's own block and without the sections of its record (rounds,
 // findings, proof rows), which grow with the issue and not with the role.
-const RECORD_SECTIONS = ['Proof to re-run', 'Rounds so far', 'Findings of the reviews'];
+const RECORD_SECTIONS = ['Proof to re-run', 'Rounds so far', 'Findings of the reviews', 'What the worker assumed'];
 function ownWords(root, args) {
   const o = json(root, 'brief', ...args);
   let text = jarl(root, 'brief', ...args);
