@@ -89,7 +89,7 @@ test('the rank note is silenced only for a change that carries the tag and a pro
   assert.doesNotMatch(untagged, /the tag identical-output/);
   const bare = lightApprove(root, '3').stderr;
   assert.doesNotMatch(bare, /a light review may clear it/);
-  assert.match(bare, /3: m-light ranks below the worker's model \(m-strong\) — advice, not a gate: .* \(the tag identical-output lets a light review clear only with a proof row that names the comparison of the output before and after, and 3 holds none\)/);
+  assert.match(bare, /3: m-light ranks below the worker's model \(m-strong\) — advice, not a gate: .* \(the tag identical-output lets a light review clear only with a proof row that names the comparison of the output before and after, and 3 holds none since its last round or reopen\)/);
 });
 
 test('under "model-rank" done refuses a light approve of a tagged change with no row naming the comparison, and accepts it with one', () => {
@@ -100,6 +100,24 @@ test('under "model-rank" done refuses a light approve of a tagged change with no
   assert.match(refuses(root, 'set', '3', 'done', 'x', '--by', 'jarl'), /^3's live approve is by rev-3 on m-light, which ranks below the worker's model \(m-strong\)/);
   jarl(root, 'evidence', '3', '--ran', 'diff before.txt after.txt', '--saw', 'no difference');
   assert.match(jarl(root, 'set', '3', 'done', 'the comparison is on record now', '--by', 'jarl'), /3 → done/);
+});
+
+test('a comparison row recorded before the last round or reopen of a tagged change lets no light review clear it; one recorded after does', () => {
+  const root = taggedLoop('model-rank');
+  // A round sends the work back: the comparison recorded before it compared code other than the change as it stands.
+  jarl(root, 'round', '1', 'the split dropped a case', '--by', 'jarl');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 5, fail 0');
+  lightApprove(root, '1');
+  assert.match(refuses(root, 'set', '1', 'done', 'x', '--by', 'jarl'), /^1's live approve is by rev-1 on m-light, which ranks below the worker's model \(m-strong\)/);
+  assert.match(lightApprove(root, '1').stderr, /\(the tag identical-output lets a light review clear only with a proof row that names the comparison of the output before and after, and 1 holds none since its last round or reopen\)/);
+  jarl(root, 'evidence', '1', '--ran', 'node render.mjs > after.txt && cmp before.txt after.txt', '--saw', 'cmp printed nothing, exit 0');
+  assert.match(jarl(root, 'set', '1', 'done', 'the comparison covers the change', '--by', 'jarl'), /1 → done/);
+  // A reopen and a new start: the comparison of the first lease is not the proof of the second.
+  jarl(root, 'set', '1', 'open', 'the output differs after all', '--by', 'jarl');
+  jarl(root, 'set', '1', 'in-progress', 'again', '--worker', 'w9', '--model', 'm-strong', '--by', 'jarl');
+  jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 5, fail 0');
+  lightApprove(root, '1');
+  assert.match(refuses(root, 'set', '1', 'done', 'x', '--by', 'jarl'), /^1's live approve is by rev-1 on m-light, which ranks below the worker's model \(m-strong\)/);
 });
 
 test('models counts a light approve of a tagged change that holds its comparison as the review the rule asks for, and one of a tag with no comparison as clearing on a lower rank', () => {

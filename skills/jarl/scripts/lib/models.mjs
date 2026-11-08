@@ -3,14 +3,14 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve, dirname, basename } from 'node:path';
 import { IDENTICAL_OUTPUT_TAG, echoWord, fieldText, hole, jarlLine, meantToAlterNothing, namesComparison, need } from './base.mjs';
-import { evidenceRows } from './issues.mjs';
+import { alignRows, evidenceRows, evidenceTable } from './issues.mjs';
 import { canonical, jarlDir } from './where.mjs';
 import { cmpId } from './ids.mjs';
 import { loadProfile, reviewerRule } from './profile.mjs';
 import { GOAL_FILE, LOG_FILE, appendLog, goalLines, logPath, readGoal } from './journal.mjs';
 import { readText } from './files.mjs';
 import { repoLabel, reposNamed } from './repositories.mjs';
-import { gateOf, readLoop } from './loop.mjs';
+import { carriesCode, gateOf, inFlightMark, readLoop } from './loop.mjs';
 import { filedAndClosed, followUpsOf, share } from './metrics.mjs';
 
 // ---- the model of every worker and reviewer ------------------------------------------------------------------------
@@ -112,32 +112,43 @@ const RULE_WORDS = {
   'model-rank': 'the profile asks for a reviewer of a model ranked at least as the worker\'s (done-gate "reviewer": "model-rank")',
 };
 // A change meant to alter nothing whose comparison is on record: the tag and a proof row that names the comparison. The
-// tag is set by anyone, so alone it lets nothing through; with the row, a light review may clear the change.
-const lightMayClear = (issue) => meantToAlterNothing(issue) && evidenceRows(issue).some(namesComparison);
-function modelGap(issue, model, lines, events, rule) {
+// tag is set by anyone, so alone it lets nothing through; with the row, a light review may clear the change. The row is
+// one the done gate counts (recorded since the last start or reopen, not retracted) and recorded after the last round: a
+// comparison of the code before a round or a reopen is not the comparison of the change as it stands. An issue the log
+// does not hold reads the rows of its file.
+function lightMayClear(loop, issue) {
+  if (!meantToAlterNothing(issue)) return false;
+  const g = gateOf(loop, issue.id);
+  if (!g.tracked) return evidenceRows(issue).some(namesComparison);
+  const lastRound = (loop.eventsById.get(issue.id) || []).reduce((n, e) => (e.type === 'round' ? Math.max(n, e.n) : n), -1);
+  const rows = evidenceTable(issue.sections.evidence).rows;
+  const logged = alignRows(issue.id, rows, g.rowLog);
+  return rows.some((r, k) => logged[k] && logged[k].inWindow && !logged[k].retracted && logged[k].n > lastRound && !r.retracted && r.saw !== '' && namesComparison(r));
+}
+function modelGap(loop, issue, model, lines, events, rule) {
   const leased = [...new Set(leaseModels(events))];
   if (!leased.length || model == null) return null;
   if (leased.some((w) => modelKey(w) === modelKey(model))) return { same: true, gap: `the same model as the worker's (${model})`, gate: rule === 'other-model' };
   const top = Math.max(...leased.map(lines.rank));
   if (top < 0 || lines.rank(model) >= top) return null;
   // A change meant to alter nothing keeps its fresh review, and a light one may give it.
-  if (lightMayClear(issue)) return { light: true, gate: false };
+  if (lightMayClear(loop, issue)) return { light: true, gate: false };
   return { below: leased.find((w) => lines.rank(w) === top), gap: `${model} ranks below the worker's model`, unplaced: lines.rank(model) < 0, gate: rule === 'model-rank', tagWithoutComparison: meantToAlterNothing(issue) };
 }
 
 // The notes a verdict gets on the command line, where the loop declares model lines or its profile makes the model a
 // gate: never a refusal. Each says whether done accepts the approve and why, as advice or as a gate, never both.
-function reviewModelNotes(issue, verdict, model, lines, events, rule = 'agent') {
+function reviewModelNotes(loop, issue, verdict, model, lines, events, rule = 'agent') {
   if (model === undefined) return [`${issue.id}: no --model on this verdict — ${rule === 'agent' ? 'the loop declares its models; record the model this reviewer was raised on' : `${RULE_WORDS[rule]}, so done refuses an approve that names no model`}`];
   if (verdict !== 'approve') return [];
   // A gate that has no worker's model to compare with cannot hold, and the note says so rather than staying silent.
   if (rule !== 'agent' && !leaseModels(events).length) return [`${issue.id}: the lease of ${issue.id} records no model, so this loop's reviewer rule (done-gate "reviewer": "${rule}") has no worker's model to compare ${model} with — done accepts this approve; the rule holds where the lease names the worker's model`];
-  const gap = modelGap(issue, model, lines, events, rule);
+  const gap = modelGap(loop, issue, model, lines, events, rule);
   if (!gap) return [];
   if (gap.light) return [`${issue.id}: a change meant to alter nothing (tag ${IDENTICAL_OUTPUT_TAG}): a light review may clear it, one that checks the comparison of the output before and after covers everything the change touched`];
   const what = gap.same ? `an approve by the same model as the worker's (${model})` : `${model} ranks below the worker's model (${gap.below})${gap.unplaced ? ' — it is on no model line, and an unplaced model ranks below every placed one' : ''}`;
   // The tag alone lets nothing through: the issue needs a proof row that names the comparison as well.
-  const tagNote = gap.tagWithoutComparison ? ` (the tag ${IDENTICAL_OUTPUT_TAG} lets a light review clear only with a proof row that names the comparison of the output before and after, and ${issue.id} holds none)` : '';
+  const tagNote = gap.tagWithoutComparison ? ` (the tag ${IDENTICAL_OUTPUT_TAG} lets a light review clear only with a proof row that names the comparison of the output before and after, and ${issue.id} holds none since its last round or reopen)` : '';
   if (gap.gate) return [`${issue.id}: ${what} — a gate in this loop: done refuses this approve, because ${RULE_WORDS[rule]}; an approve that meets it clears the issue${tagNote}`];
   return [`${issue.id}: ${what} — advice, not a gate: done accepts this approve, because ${RULE_WORDS[rule]}; ${gap.same ? 'a reviewer of another model shares fewer of the worker\'s blind spots' : 'a reviewer of at least the worker\'s rank is the stronger check'}, until \`models\` says otherwise${tagNote}`];
 }
@@ -146,13 +157,13 @@ function reviewModelNotes(issue, verdict, model, lines, events, rule = 'agent') 
 // model the rule refuses. Under "agent" the model never refuses. An approve that names no model is refused whether or not
 // the lease names one: the gate cannot tell what model gave it, and an approve it cannot place does not clear the issue.
 // One that names a model on an issue whose lease names none passes, as its note said: there is nothing to compare it with.
-function modelGateRefusal(issue, live, lines, events, rule) {
+function modelGateRefusal(loop, issue, live, lines, events, rule) {
   // A bot's approve is not an agent's: the rule judges no model of it.
   if (rule === 'agent' || !live || live.kind === 'waived' || live.kind === 'bot') return null;
   const by = live.by || 'a reviewer not recorded';
   if (!live.model) return `${issue.id}'s live approve by ${by} names no model — ${RULE_WORDS[rule]}, so done refuses an approve that names no model`;
   if (!leaseModels(events).length) return null;
-  const gap = modelGap(issue, live.model, lines, events, rule);
+  const gap = modelGap(loop, issue, live.model, lines, events, rule);
   if (!gap || !gap.gate) return null;
   return gap.same ? `${issue.id}'s live approve is by ${by} on ${live.model}, the model of its worker — this loop's ${RULE_WORDS[rule].replace(/^the /, '')}`
     : `${issue.id}'s live approve is by ${by} on ${live.model}, which ranks below the worker's model (${gap.below}) — this loop's ${RULE_WORDS[rule].replace(/^the /, '')}`;
@@ -165,8 +176,23 @@ function modelGateRefusal(issue, live, lines, events, rule) {
 function modelRefusalOf(root, loop, issue, { gate = null, lines = null } = {}) {
   const rule = reviewerRule(loop.profile);
   if (rule === 'agent') return null;
-  return modelGateRefusal(issue, (gate ?? gateOf(loop, issue.id)).live, lines ?? modelLines(root), loop.eventsById.get(issue.id) || [], rule);
+  return modelGateRefusal(loop, issue, (gate ?? gateOf(loop, issue.id)).live, lines ?? modelLines(root), loop.eventsById.get(issue.id) || [], rule);
 }
+// The in-flight mark of an issue as the done gate reads it, for every view that names its step: the record's own mark
+// (inFlightMark), except that an approve the gate refuses for its model clears nothing, so an issue that would read
+// approved or merged reads approved-model-refused, with the gate's words of what is missing (modelRefusalOf), as the
+// merge queue says. { mark, missing? }; `lines` are the goal's model lines, read from the loop when not given.
+const CLEARED_MARKS = new Set(['approved', 'merged', 'merged-ci']);
+function gatedMark(loop, issue, lines = null) {
+  const mark = inFlightMark(loop, issue);
+  if (!CLEARED_MARKS.has(mark) || reviewerRule(loop.profile) === 'agent') return { mark };
+  const missing = modelRefusalOf(loop.root, loop, issue, { lines: lines ?? modelLinesIn(loop.goalLines, loop.profile) });
+  return missing ? { mark: 'approved-model-refused', missing } : { mark };
+}
+// Whether an issue carries code, holds an approve the done gate accepts and is not merged yet: the merger's to land, so its
+// lease is not idle for that wait. An approve the gate refuses for its model waits for a reviewer, not for the merger, and
+// an approved issue with no code has no merge to wait for: its lease is idle past the threshold as any other is.
+const awaitsMerge = (loop, issue) => carriesCode(issue) && gatedMark(loop, issue).mark === 'approved';
 // The form of the review that carries the model: what a refusal for the model ends with, and what the step after a
 // verdict names when the gate will refuse that verdict's approve.
 const modelReviewForm = (id) => jarlLine('review', id, '<verdict>', '--by', '<a-fresh-reviewer>', '--model', '<model-id>', '<text>');
@@ -259,7 +285,7 @@ function modelFacts(loop, label, lines) {
     const top = Math.max(-1, ...[...workers].map(lines.rank));
     // A light approve of a change meant to alter nothing, with its comparison on record, is the review the rule asks for: it
     // is not counted as clearing on a lower-ranked model. The worker's own model still is.
-    const light = lightMayClear(issue);
+    const light = lightMayClear(loop, issue);
     const ownOrLower = (m) => m != null && workers.size > 0 && (workers.has(modelKey(m)) || (!light && top >= 0 && lines.rank(m) < top));
     const seq = ev.filter((e) => e.type === 'verdict' && e.by || e.type === 'round' || e.type === 'move');
     let lastDone = -1;
@@ -463,4 +489,4 @@ const SEVERITIES = ['Critical', 'Important', 'Minor'];
 const builds = { modelsTable: 0, nextRows: 0 };
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { SEVERITIES, builds, findingOfLog, loggedFinding, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote };
+export { SEVERITIES, awaitsMerge, builds, findingOfLog, gatedMark, loggedFinding, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote };

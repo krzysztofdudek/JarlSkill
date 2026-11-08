@@ -56,13 +56,25 @@ test('on a loop that stays at its record format, a finding that would take a num
   const file = findingsFile([good(2), good(3)]);
   const said = refusedImport(hub, file);
   assert.match(said, /^finding "finding-3" cannot be filed: issue number 1000 needs record format 2, and this loop stays at format 1: its profile names an external scheduler \(the composer tick\)/);
-  assert.match(said, /nothing was written\n/);
-  assert.match(said, /\njarl\.mjs import "<findings\.json>" --dry-run\n$/);
-  assert.equal(refusedImport(hub, file, '--dry-run'), said, 'the dry run refuses what the import would');
+  assert.match(said, /nothing was written; the findings that take a number below it can be filed with --only\n/);
+  assert.match(said, /\njarl\.mjs import "<findings\.json>" --source "?[^ \n]+"? --only "<finding-ids>"\n$/);
+  const dry = refusedImport(hub, file, '--dry-run');
+  assert.equal(dry.split('\n')[0], said.split('\n')[0], 'the dry run refuses what the import would');
+  assert.match(dry, /\njarl\.mjs import "<findings\.json>" --source "?[^ \n]+"? --dry-run --only "<finding-ids>"\n$/);
   assert.deepEqual(json(hub, 'list', '--all').map((r) => r.id), ['001', '998']);
   // The one finding that fits is filed as 999.
   const out = JSON.parse(imports(hub, file, '--only', 'finding-2', '--json'));
   assert.deepEqual(out.filed.map((f) => f.id), ['999']);
+});
+
+test('on a loop that stays at its record format and holds no number for the first finding, the refusal ends with the profile view and the call\'s own form', () => {
+  const hub = composed();
+  writeFileSync(join(hub, '.jarl', 'issues', '999-old-999.md'), renderIssue({ id: '999', title: 'old 999', kind: 'bug', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
+  const said = refusedImport(hub, findingsFile([good(2)]), '--dry-run');
+  assert.match(said, /^finding "finding-2" cannot be filed: issue number 1000 needs record format 2, .* until its profile says "format": 2 — nothing was written\n/);
+  const [view, form] = said.trim().split('\n').slice(-2);
+  assert.equal(view, 'jarl.mjs profile');
+  assert.match(form, /^jarl\.mjs import "<findings\.json>" --source "?[^ ]+"? --dry-run$/);
 });
 
 test('an adoption of an issue whose number two files carry is refused by the dry run as by the import, with nothing written', () => {

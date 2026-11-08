@@ -4,7 +4,10 @@
 import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need } from './base.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
-import { carriesCode, coordinatorOf, inFlightMark, leaseConflictOf, readLoop, sameHolder, sameSlice, sentBack, sliceOf, statusWith } from './loop.mjs';
+import { leaseOfMove } from './log.mjs';
+import { carriesCode, coordinatorOf, holderKey, inFlightMark, leaseConflictOf, readLoop, sameHolder, sameSlice, sentBack, sliceOf, statusWith } from './loop.mjs';
+import { gatedMark, modelReviewForm } from './models.mjs';
+import { issueRepos, repoLabel } from './repositories.mjs';
 import { reasonWord, waitingOn } from './commands.mjs';
 import { nextRows, schedulerNote } from './evidence.mjs';
 import { ownerLineStates } from './owner-lines.mjs';
@@ -63,9 +66,10 @@ function issueRows(ctx) {
   }
   const evidence = (id) => jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>');
   const verdict = (id) => jarlLine('review', id, '<verdict>', '--by', '<reviewer>', '<text>');
+  const unclearedBy = new Map();
   // A wait has rows of its own (keptRows); a promise in a lease is worked as any issue, and its maker holds each line.
   for (const i of loop.issues.filter((x) => inPlayForRows(profile, x) && profile.keptKind(x.kind) !== WAIT_KIND && !waitingOn(x, loop.byId, profile).length)) {
-    const mark = inFlightMark(loop, i);
+    const { mark, missing } = gatedMark(loop, i);
     const worker = fieldText(i.fields.worker) || null;
     const backAfterRound = sentBack(loop, i, mark);
     if (checking(profile, i) && (mark === 'no-rows' || backAfterRound)) {
@@ -112,12 +116,16 @@ function issueRows(ctx) {
       out.push({ ...base, what: 'review', ...(lv.idle ? { idle: { ageMs: lv.ageMs, minutes: lv.minutes } } : {}), says: `${checking(profile, i) ? 'checked against the whole' : 'proof recorded'}, no verdict${lv.idle ? ` for ${idleFor(lv)}` : ''}; raise a reviewer`, command: verdict(i.id) });
       continue;
     }
-    if (mark === 'approved-not-fresh') {
-      out.push({ ...base, what: 'review', says: 'approved by a coordinator only, and it carries code; raise a fresh reviewer', command: verdict(i.id) });
+    // Approves that do not clear: listed together per holder below, in the units of a shared review.
+    if (mark === 'approved-not-fresh' || mark === 'approved-not-cleared') {
+      const key = `${mark}\n${holderKey(holder)}`;
+      if (!unclearedBy.has(key)) unclearedBy.set(key, { mark, holder, issues: [] });
+      unclearedBy.get(key).issues.push(i);
       continue;
     }
-    if (mark === 'approved-not-cleared') {
-      out.push({ ...base, what: 'review', says: 'approved, and no approve it holds clears it under the loop\'s done gate; raise a reviewer whose approve does', command: verdict(i.id) });
+    // The reading the merge queue and done take: an approve the reviewer rule refuses for its model is not merged or closed on.
+    if (mark === 'approved-model-refused') {
+      out.push({ ...base, what: 'review', says: `approved, and done refuses the approve for its model — ${missing}; raise a reviewer whose approve the rule accepts`, command: modelReviewForm(i.id) });
       continue;
     }
     if (mark === 'changes-requested') {
@@ -141,8 +149,23 @@ function issueRows(ctx) {
     const h = sliceHolder(loop, i);
     byHolder.set(h, [...(byHolder.get(h) || []), i]);
   }
-  for (const [holder, todo] of byHolder) out.push(...reviewRow(todo, holder, verdict, ctx.liveness));
+  for (const [holder, todo] of byHolder) out.push(...reviewRow(ctx.root, todo, holder, verdict, ctx.liveness));
+  for (const { mark, holder, issues } of unclearedBy.values()) out.push(unclearedRow(ctx.root, issues, holder, mark, verdict));
   return out;
+}
+// The issues of one holder whose approves stand and do not clear them, one kind of cause at a time: one issue keeps its
+// line, several are one line cut into the units one reviewer may take, as the proofs with no verdict are.
+const UNCLEARED_SAYS = {
+  'approved-not-fresh': ['approved by a coordinator only, and it carries code; raise a fresh reviewer', 'approved by a coordinator only, and they carry code; raise one fresh reviewer per unit'],
+  'approved-not-cleared': ['approved, and no approve it holds clears it under the loop\'s done gate; raise a reviewer whose approve does', 'approved, and no approve they hold clears them under the loop\'s done gate; raise one reviewer whose approve does per unit'],
+};
+function unclearedRow(root, issues, holder, mark, verdict) {
+  const [one, many] = UNCLEARED_SAYS[mark];
+  const worker = fieldText(issues[0].fields.worker) || null;
+  if (issues.length === 1) return { id: issues[0].id, title: issues[0].title, priority: issues[0].priority, holder, ...(worker ? { doer: worker } : {}), what: 'review', says: one, command: verdict(issues[0].id) };
+  const units = reviewUnits(root, issues);
+  return { what: 'review', id: issues[0].id, ids: issues.map((i) => i.id), units, title: '', priority: issues.map((i) => i.priority).filter((p) => p !== undefined).sort()[0], holder,
+    says: `${many}: ${units.map(unitText).join(' · ')}`, command: verdict('<ids>') };
 }
 // How long an idle lease or proof has had no sign of work, with the threshold it is past.
 const idleFor = (lv) => `${ago(lv.ageMs)} (threshold ${thresholdText(lv.minutes)})`;
@@ -182,35 +205,42 @@ const joinIds = (issues) => issues.map((i) => i.id).join(', ');
 // The most issues one shared review covers: Jarl's own rule for the coordinator (jarl:coordinator-shared-review).
 export const SHARED_REVIEW_MAX = 4;
 // The units one fresh reviewer may take, out of the proofs that wait for a verdict, under that rule: a shared review only
-// over issues that are one contract or one screen, at most four. The record's mark of one contract is one branch: the issues
-// leased on it as one package, which one diff holds. A branch of more than four is cut into units as even as they come;
-// every other issue is a unit of its own. Each is { ids }, and a grouped one adds what it shares: { shares: 'branch', on }.
-function reviewUnits(todo) {
+// over issues that are one contract or one screen, at most four. The record's mark of one contract is one branch of one
+// repository: the issues leased on it as one package, which one diff holds; a branch of the same name in another
+// repository is another diff. A branch of more than four is cut into units as even as they come; every other issue is a
+// unit of its own. Each is { ids }, and a grouped one adds what it shares: { shares: 'branch', on }, and { in }, the names
+// of its repositories, where another unit's branch has the same name.
+function reviewUnits(root, todo) {
   const byBranch = new Map();
   for (const i of todo) {
     const b = fieldText(i.fields.branch);
-    const key = b ? b : `\n${i.id}`;
-    byBranch.set(key, [...(byBranch.get(key) || []), i]);
+    const repos = b ? issueRepos(root, i) : [];
+    const key = b ? `${repos.join('\n')}\n\n${b}` : `\n${i.id}`;
+    if (!byBranch.has(key)) byBranch.set(key, { branch: b, repos, issues: [] });
+    byBranch.get(key).issues.push(i);
   }
+  const named = new Map();
+  for (const g of byBranch.values()) if (g.branch && g.issues.length > 1) named.set(g.branch, (named.get(g.branch) || 0) + 1);
   const units = [];
-  for (const [key, issues] of byBranch) {
+  for (const { branch, repos, issues } of byBranch.values()) {
     if (issues.length === 1) { units.push({ ids: [issues[0].id] }); continue; }
+    const where = named.get(branch) > 1 ? { in: repos.map((r) => repoLabel(r)).join(', ') } : {};
     const parts = Math.ceil(issues.length / SHARED_REVIEW_MAX);
     for (let p = 0, at = 0; p < parts; p += 1) {
       const size = Math.ceil((issues.length - at) / (parts - p));
-      units.push({ ids: issues.slice(at, at + size).map((i) => i.id), shares: 'branch', on: key });
+      units.push({ ids: issues.slice(at, at + size).map((i) => i.id), shares: 'branch', on: branch, ...where });
       at += size;
     }
   }
   return units.sort((a, b) => cmpId(a.ids[0], b.ids[0]));
 }
-const unitText = (u) => (u.shares ? `${u.ids.join(', ')} (one ${u.shares}, ${u.on})` : u.ids[0]);
+const unitText = (u) => (u.shares ? `${u.ids.join(', ')} (one ${u.shares}, ${u.on}${u.in ? ` in ${u.in}` : ''})` : u.ids[0]);
 // A proof that waits past the threshold for its verdict says how long: the one issue's age, or each idle issue's.
-function reviewRow(todo, holder, verdict, liveness) {
+function reviewRow(root, todo, holder, verdict, liveness) {
   if (!todo.length) return [];
   const ids = joinIds(todo);
   const only = todo.length === 1 ? todo[0] : null;
-  const units = reviewUnits(todo);
+  const units = reviewUnits(root, todo);
   const worker = only ? fieldText(only.fields.worker) : '';
   const priority = todo.map((i) => i.priority).filter((p) => p !== undefined).sort()[0];
   const idle = todo.map((i) => liveness(i)).filter((lv) => lv.idle);
@@ -236,7 +266,7 @@ function keptRows(ctx) {
   const kept = loop.issues.filter((i) => profile.active(i.status) && !waitingOn(i, loop.byId, profile).length
     && (profile.keptKind(i.kind) === WAIT_KIND || (profile.keptKind(i.kind) === PROMISE_KIND && !profile.is(i.status, 'holds-claim'))));
   for (const i of kept) {
-    const mark = inFlightMark(loop, i);
+    const { mark } = gatedMark(loop, i);
     const base = { id: i.id, title: i.title, priority: i.priority, kind: i.kind };
     const promise = i.kind === PROMISE_KIND;
     const holder = promise ? makerOf(i) : mark === 'no-rows' ? personOf(i) || JARL_HOLDER : JARL_HOLDER;
@@ -248,7 +278,7 @@ function keptRows(ctx) {
       continue;
     }
     const done = promise ? 'kept' : 'it came';
-    if (mark === 'rows-no-verdict' || mark === 'approved-not-fresh' || mark === 'approved-not-cleared') out.push({ ...base, what: 'review', holder, says: `${done}, proof recorded, no verdict; review it`, command: verdict(i.id) });
+    if (mark === 'rows-no-verdict' || mark === 'approved-not-fresh' || mark === 'approved-not-cleared' || mark === 'approved-model-refused') out.push({ ...base, what: 'review', holder, says: `${done}, proof recorded, no verdict; review it`, command: verdict(i.id) });
     else if (mark === 'changes-requested') out.push({ ...base, what: 'changes', holder, says: `${done}, changes asked by its reviewer; answer them and ask for a new verdict`, command: verdict(i.id) });
     else out.push({ ...base, what: 'close', holder, says: `${done}, approved; close it`, command: jarlLine('set', i.id, closeStatus, '<text>') });
   }

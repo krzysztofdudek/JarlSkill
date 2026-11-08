@@ -4,9 +4,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import * as L from '../jarl-lib.mjs';
 import { BUILTIN_STATUSES } from '../jarl-lib.mjs';
 import { jarl } from './helpers.mjs';
-import { BAD, SOURCE, composed, findingsFile, good, imports, json, loop, refusedImport } from './import-kit.mjs';
+import { BAD, SOURCE, composed, findingsFile, good, imports, json, loop, refusedImport, snapshot } from './import-kit.mjs';
 
 test('--parent files every issue the import files under that parent, and moves nothing filed before', () => {
   const root = loop();
@@ -25,6 +26,14 @@ test('--parent files every issue the import files under that parent, and moves n
   const next = jarl(root, 'import', findingsFile([good(1), good(4)]), '--source', SOURCE, '--parent', '1');
   assert.match(next, /^ext\/2026-11-06-atomic: 2 finding\(s\) · filed 1 · already filed 1 · under 1$/m);
   assert.equal(json(root, 'show', '5').fields.parent, '1');
+});
+
+test('the library\'s import refuses an empty by with --parent before it files anything', () => {
+  const root = loop();
+  jarl(root, 'new', 'the parent', '--acceptance', 'all of them are fixed');
+  const before = snapshot(root);
+  assert.throws(() => L.cmdImport(root, findingsFile([good(1), good(2)]), { source: SOURCE, parent: '1', by: '' }), /--by needs a name/);
+  assert.deepEqual(snapshot(root), before, 'nothing was filed');
 });
 
 test('--parent shows in the text of the import and in a dry run, which writes nothing', () => {

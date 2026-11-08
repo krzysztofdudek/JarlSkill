@@ -760,11 +760,9 @@ export function sentBack(loop, issue, mark) {
   const rowsAfterRound = gateOf(loop, issue.id).rowLog.filter((r) => !r.retracted && r.inWindow && r.n > lastRound).length;
   return lastRound >= 0 && rowsAfterRound === 0 && mark === 'rows-no-verdict';
 }
-// Whether an issue holds a live approve and is not merged yet: the merger's to land, so its lease is not idle for that wait.
-export const awaitsMerge = (loop, issue) => inFlightMark(loop, issue) === 'approved';
 
 // One holder however its name is cased or spaced: Dana Smith and dana  smith are one person.
-const holderKey = (h) => String(h).toLowerCase().replace(/\s+/g, ' ');
+export const holderKey = (h) => String(h).toLowerCase().replace(/\s+/g, ' ');
 export const sameHolder = (a, b) => holderKey(a) === holderKey(b);
 
 // The status a move of each kind goes into, read from the profile's flags: the first status that holds the claim, and

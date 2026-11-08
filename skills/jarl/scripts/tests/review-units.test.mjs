@@ -5,9 +5,12 @@
 // of its slice alone.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { jarl, loop as makeLoop } from './helpers.mjs';
+import { SPAWN_TIMEOUT, jarl, loop as makeLoop } from './helpers.mjs';
+import { BUILTIN_STATUSES } from '../jarl-lib.mjs';
 
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
 const RULE = 'One shared review covers only issues that are one contract or one screen, at most four.';
@@ -60,6 +63,51 @@ test('a coordinator\'s list holds the units of its slice alone', () => {
   ]);
   assert.deepEqual(reviewRow(json(root, 'next', '--as', 'jarl', '--all')).units, [{ ids: ['7'] }, { ids: ['8'] }]);
   assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 7, 8: proof recorded, no verdict; raise one fresh reviewer per unit: 7 · 8;/m);
+});
+
+test('the code a coordinator alone approved, and the issues no approve clears under the loop\'s definition, are cut into the units of the proofs waiting for a verdict', () => {
+  const root = inReview();
+  jarl(root, 'review', '1-3', 'approve', '--by', 'jarl', 'read the diff of jarl/a, nothing found');
+  jarl(root, 'review', '7', 'approve', '--by', 'jarl', 'read the diff of jarl/b, nothing found');
+  const rows = json(root, 'next', '--as', 'jarl', '--all').rows.filter((r) => r.what === 'review');
+  const coordinatorOnly = rows.find((r) => r.ids && r.ids.includes('1'));
+  assert.deepEqual(coordinatorOnly.ids, ['1', '2', '3', '7']);
+  assert.deepEqual(coordinatorOnly.units, [{ ids: ['1', '2', '3'], shares: 'branch', on: 'jarl/a' }, { ids: ['7'] }]);
+  assert.equal(coordinatorOnly.says, 'approved by a coordinator only, and they carry code; raise one fresh reviewer per unit: 1, 2, 3 (one branch, jarl/a) · 7');
+  assert.equal(coordinatorOnly.command, 'jarl.mjs review "<ids>" "<verdict>" --by "<reviewer>" "<text>"');
+  assert.deepEqual(rows.find((r) => r.ids && r.ids.includes('4')).ids, ['4', '5', '6', '8'], 'the proofs with no verdict keep their own row');
+
+  const profile = join(mkdtempSync(join(tmpdir(), 'jarl-units-profile-')), 'profile.json');
+  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, statuses: BUILTIN_STATUSES, initial: 'open', 'done-gate': { clears: [['fresh', 'bot:coderabbit']] } }));
+  const defined = makeLoop({ prefix: 'jarl-units-clears-', via: 'cli', dotGit: false, initFlags: ['--profile', profile] });
+  for (let k = 1; k <= 3; k += 1) jarl(defined, 'new', `change ${k}`, '--files', `f${k}.mjs`, '--acceptance', 'it works');
+  jarl(defined, 'set', '1-2', 'in-progress', 'one package', '--worker', 'wa', '--branch', 'jarl/a');
+  jarl(defined, 'set', '3', 'in-progress', 'go', '--worker', 'wb', '--branch', 'jarl/b');
+  for (let k = 1; k <= 3; k += 1) jarl(defined, 'evidence', String(k), '--ran', 'npm test', '--saw', 'pass 3, fail 0');
+  jarl(defined, 'review', '1-3', 'approve', '--by', 'rev-a', 'read the diffs, nothing found');
+  const notCleared = json(defined, 'next', '--as', 'jarl', '--all').rows.find((r) => r.what === 'review' && r.ids);
+  assert.deepEqual(notCleared.units, [{ ids: ['1', '2'], shares: 'branch', on: 'jarl/a' }, { ids: ['3'] }]);
+  assert.equal(notCleared.says, 'approved, and no approve they hold clears them under the loop\'s done gate; raise one reviewer whose approve does per unit: 1, 2 (one branch, jarl/a) · 3');
+});
+
+test('one branch name in two repositories is two units, each naming its repository', () => {
+  const parent = mkdtempSync(join(tmpdir(), 'jarl-units-repos-'));
+  for (const name of ['hub', 'tool']) {
+    mkdirSync(join(parent, name));
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: join(parent, name), stdio: 'ignore', timeout: SPAWN_TIMEOUT });
+  }
+  const root = join(parent, 'hub');
+  jarl(root, 'init', 'goal');
+  for (let k = 1; k <= 4; k += 1) jarl(root, 'new', `change ${k}`, '--files', `f${k}.mjs`, '--acceptance', 'it works', ...(k > 2 ? ['--repo', '../tool'] : []));
+  jarl(root, 'set', '1-2', 'in-progress', 'one package', '--worker', 'wa', '--branch', 'jarl/x');
+  jarl(root, 'set', '3-4', 'in-progress', 'one package', '--worker', 'wb', '--branch', 'jarl/x');
+  for (let k = 1; k <= 4; k += 1) jarl(root, 'evidence', String(k), '--ran', 'npm test', '--saw', 'pass 3, fail 0');
+  const row = reviewRow(json(root, 'next', '--as', 'jarl', '--all'));
+  assert.deepEqual(row.units, [
+    { ids: ['1', '2'], shares: 'branch', on: 'jarl/x', in: 'hub' },
+    { ids: ['3', '4'], shares: 'branch', on: 'jarl/x', in: 'tool' },
+  ]);
+  assert.match(row.says, /raise one fresh reviewer per unit: 1, 2 \(one branch, jarl\/x in hub\) · 3, 4 \(one branch, jarl\/x in tool\);/);
 });
 
 test('one proof waiting alone keeps its line, with its own review command', () => {
