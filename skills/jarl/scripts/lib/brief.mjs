@@ -27,7 +27,7 @@ const REFERENCES = Object.freeze({
 });
 
 // A rule as a brief carries it: what ruleLines prints it from, and no more.
-const ruleOf = (r) => ({ slug: r.slug, scope: r.scope, until: r.until ?? null, by: r.by ?? null, under: r.under ?? null, builtin: r.builtin === true, source: r.source ?? null, text: r.text });
+const ruleOf = (r) => ({ slug: r.slug, scope: r.scope, until: r.until ?? null, by: r.by ?? null, under: r.under ?? null, ...(r.underNotInForce ? { underNotInForce: r.underNotInForce } : {}), builtin: r.builtin === true, source: r.source ?? null, text: r.text });
 const sorted = (set) => [...set].sort();
 
 // The text of a Reviews entry as its writer gave it: the escape of a heading or a marker line taken off; and a findings

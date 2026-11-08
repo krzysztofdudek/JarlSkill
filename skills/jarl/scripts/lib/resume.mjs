@@ -13,7 +13,7 @@ import { cmdTips, renderTips } from './tips.mjs';
 import { reasonWord, waitingOn, waitsOf } from './commands.mjs';
 import { handoffAge, handoffPath } from './questions.mjs';
 import { answeredLines } from './journal.mjs';
-import { loopRules, ruleLines, rulesFor } from './rules.mjs';
+import { loopRules, ruleLines, rulesFor, withUnder } from './rules.mjs';
 import { jarlDir, today } from './where.mjs';
 import { IN_FLIGHT_MARKS, closedGateFlags, leaseWriter, retractedNotesText, leasedByText, modelText, nextRows, resourceAgeText, schedulerNote, statusOf, subsText, uncommittedLoopFiles } from './evidence.mjs';
 import { cmdQueue, renderQueue } from './queue.mjs';
@@ -95,7 +95,8 @@ export function cmdResume(root, flags = {}) {
   const ended = new Set(loopRules(loop, today()).filter((r) => r.ended).map((r) => r.slug));
   const rulings = loop.decisions.filter((d) => !d.supersededBy && !ended.has(d.slug)).map((d) => {
     const answered = answeredLines(d);
-    return { date: d.date, slug: d.slug, by: d.by, under: d.under, line: (d.ruling.split('\n').find((l) => l.trim()) || '').trim(), ...(answered ? { answer: answered.answer } : {}) };
+    const lapse = withUnder(loop.decisions, d, ended).underNotInForce;
+    return { date: d.date, slug: d.slug, by: d.by, under: d.under, ...(lapse ? { underNotInForce: lapse } : {}), line: (d.ruling.split('\n').find((l) => l.trim()) || '').trim(), ...(answered ? { answer: answered.answer } : {}) };
   });
   // The rules every reader of the loop is given: those whose scope is the loop. The rest reach a reader through --as.
   const rules = rulesFor(root, loop, { roles: new Set(), slice: null, moments: new Set(), issues: [] }, today());

@@ -37,8 +37,10 @@ import { STAMP_SRC, appendLog, headerKey, logPath, oneLine } from './journal.mjs
 //   retract-note   a retracted evidence note: note, its number, and by
 //   retract-review a retracted approve: target, the approve it takes away, and by
 //   merged         a recorded merge: sha, repo, check, red, ci
-//   tip            the tip of the issue's branch when the line before it of the same issue (a row, a verdict, a merge) was
-//                  written: tip, the commit of the branch in each repository of the issue, in order, joined by commas
+//   tip            the tip of the issue's branch when the line before it of the same issue (a row, a verdict, a merge, a
+//                  move that closes the record) was written: tip, the commit of the branch in each repository of the
+//                  issue, in order, joined by commas; the gate takes it only as the next line of the log after that line,
+//                  under its stamp, where the write that made the line puts it
 //   ci             a CI state recorded alone: state
 //   body           a body change: part, the part changed; grew, the numbers of the lines a change of a leased issue's
 //                  acceptance grew it by (null for none); by, the author the line names (null for none)
@@ -196,8 +198,9 @@ function eventParser(profile) {
 }
 
 // The command that writes each kind of line that carries state: what the free log refuses to write in its place, as the
-// form below prints it; the tip of a branch is written by evidence, review and merged, each after its own line.
-const lineWriter = (type) => (type === 'tip' ? 'evidence, review or merged, which write the tip of the branch after their own line' : LINE_CALLS[type] ? jarlLine(...LINE_CALLS[type](type === 'move' ? hole('<ids>') : hole('<id>'))) : '');
+// form below prints it; the tip of a branch is written by evidence, review, merged and a set that closes an issue, each
+// after its own line.
+const lineWriter = (type) => (type === 'tip' ? 'evidence, review, merged or a set that closes the issue, which write the tip of the branch after their own line' : LINE_CALLS[type] ? jarlLine(...LINE_CALLS[type](type === 'move' ? hole('<ids>') : hole('<id>'))) : '');
 // The form of the command that writes each kind of line, the last line of a refusal of that line given to log.
 const LINE_CALLS = {
   filed: () => ['new', hole('<title>')], move: (ids) => ['set', ids, hole('<status>'), hole('<why>')], round: (id) => ['round', id, hole('<what-failed>')],
@@ -209,8 +212,8 @@ const LINE_CALLS = {
 };
 const MOVE_SHAPE = idRe('^{id} →');
 // A free line for the journal (the log command and record.appendLog): a note about the loop or an issue. A line that
-// reads as one of the kinds above (a filing, a move, a round, a verdict, a retraction, a row, a merge, a CI state, a body
-// change or a tick) is refused and names the command that writes it, so every line the views and the gate read as state was
+// reads as one of the kinds above (a filing, a move, a round, a verdict, a retraction, a row, a tip, a merge, a CI state, a
+// body change or a tick) is refused and names the command that writes it, so every line the views and the gate read as state was
 // written by the command that owns it, with that command's checks.
 export function appendNote(root, event) {
   needNoOwnersWords('the note', event);

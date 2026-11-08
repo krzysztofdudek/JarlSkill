@@ -50,6 +50,46 @@ test('--under names a ruling in force, and anything else is refused with the rul
   assert.match(jarl(root, 'decide', 'x-4', 'Text.', '--by', 'jarl', '--under', 'new-way'), /under new-way/);
 });
 
+// An area ruling by the jarl, put to the owner at close and rejected by him.
+function rejected(root, slug) {
+  jarl(root, 'decide', slug, 'A rule for the area.', '--by', 'jarl', '--area', 'svc', '--reach', '3');
+  const { ask } = JSON.parse(jarl(root, 'close', '--batch', '--json')).batch.items.find((i) => i.ruling === slug);
+  assert.match(jarl(root, 'answer', ask, 'reject', '--by', 'owner'), new RegExp(`${slug} rejected`));
+}
+
+test('--under refuses an area ruling the owner rejected, and leaves it out of the rulings it names', () => {
+  const root = loop({ via: 'cli' });
+  mandate(root);
+  rejected(root, 'area-rule');
+  const before = decisionsText(root);
+  assert.match(refuses(root, 'decide', 'x-1', 'Text.', '--by', 'jarl', '--under', 'area-rule'), /--under "area-rule" is not a ruling in force of this loop; the rulings in force: standing-mandate, ask-1\n/, 'the answer that rejected it is a ruling in force; the rejected one is not');
+  assert.equal(decisionsText(root), before, 'nothing was written');
+});
+
+test('a ruling shown as made under another is marked when the one it names is superseded, rejected, an ended rule or no ruling of the loop', () => {
+  const root = loop({ via: 'cli' });
+  mandate(root);
+  jarl(root, 'decide', 'pick-a', 'Take option a.', '--by', 'jarl', '--under', 'standing-mandate', '--applies-to', 'loop');
+  rejected(root, 'area-rule');
+  // Rulings written into the file outside decide: the marker is read whatever the slug names.
+  const byHand = (slug, under) => `\n## 2026-01-01 · ${slug}\nWritten by hand.\n\n${under ? `Made under: ${under}\n\n` : ''}**Applies to:** loop${under ? '' : ' · until 2026-01-02'}\n**By:** jarl\n`;
+  writeFileSync(join(root, '.jarl', 'decisions.md'), `${decisionsText(root)}${byHand('kept-rule', null)}${byHand('on-nothing', 'no-such-ruling')}${byHand('on-rejected', 'area-rule')}${byHand('on-ended', 'kept-rule')}`);
+  assert.match(jarl(root, 'decisions'), /pick-a · by jarl · under standing-mandate · applies to loop — /, 'a ruling in force is shown as it was');
+  jarl(root, 'decide', 'new-mandate', 'The jarl chooses only what is reversible.', '--by', 'owner', '--quote', 'Only what can be undone.', '--supersedes', 'standing-mandate');
+  const shown = jarl(root, 'decisions');
+  assert.match(shown, /pick-a · by jarl · under standing-mandate \(not in force: superseded by new-mandate\) · applies to loop/);
+  assert.match(shown, /on-nothing · by jarl · under no-such-ruling \(not in force: no ruling of this loop\)/);
+  assert.match(shown, /on-rejected · by jarl · under area-rule \(not in force: rejected by the owner\)/);
+  assert.match(shown, /on-ended · by jarl · under kept-rule \(not in force: a rule that has ended\)/);
+  assert.match(jarl(root, 'resume'), /\n- pick-a · loop · by jarl · under standing-mandate \(not in force: superseded by new-mandate\) — Take option a\./, 'resume marks it in the rule it prints');
+  const rows = JSON.parse(jarl(root, 'decisions', '--json'));
+  assert.equal(rows.find((d) => d.slug === 'pick-a').underNotInForce, 'superseded by new-mandate');
+  assert.equal(rows.find((d) => d.slug === 'on-nothing').underNotInForce, 'no ruling of this loop');
+  assert.equal(rows.find((d) => d.slug === 'kept-rule').underNotInForce, undefined, 'a ruling that names none carries no mark');
+  const live = JSON.parse(jarl(root, 'resume', '--json')).rulings;
+  assert.equal(live.find((d) => d.slug === 'pick-a').underNotInForce, 'superseded by new-mandate');
+});
+
 test('--under on a loop with no ruling in force is refused and says there is none', () => {
   const root = loop({ via: 'cli' });
   assert.match(refuses(root, 'decide', 'x-1', 'Text.', '--under', 'standing-mandate', '--by', 'coordinator'), /the rulings in force: \(none\)/);

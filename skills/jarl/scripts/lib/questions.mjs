@@ -14,7 +14,7 @@ import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, 
 import { needFormat, tipLines } from './repositories.mjs';
 import { readLoop, sliceNamed } from './loop.mjs';
 import { issuesFor } from './commands.mjs';
-import { appliesToLine, loopRules, parseScope, parseUntil } from './rules.mjs';
+import { appliesToLine, loopRules, parseScope, parseUntil, underText, withUnder } from './rules.mjs';
 
 // ---- questions to the owner and the handoff -------------------------------------------------
 
@@ -342,7 +342,8 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   need(flags.under === undefined || !byOwner, '--under names the ruling a ruling by the jarl or a coordinator rests on; a ruling by the owner rests on his own words', () => ({ rename: '--under', to: '<no-flag-here>' }));
   const under = flags.under !== undefined ? fieldText(flags.under) : null;
   if (under !== null) {
-    const inForce = loadDecisions(root).filter((d) => !d.supersededBy && d.slug !== flags.supersedes).map((d) => d.slug);
+    // A ruling a later one supersedes, the one this call supersedes, and an area ruling the owner rejected hold nothing up.
+    const inForce = loadDecisions(root).filter((d) => !d.supersededBy && !d.rejected && d.slug !== flags.supersedes).map((d) => d.slug);
     need(inForce.includes(under), `--under ${under ? `"${under}"` : 'needs a slug'} is not a ruling in force of this loop; the rulings in force: ${inForce.length ? inForce.join(', ') : '(none)'}`, () => ({ flag: '--under', value: hole('<a-ruling-in-force>') }));
   }
   const settles = flags.settles !== undefined ? issuesFor(root, flags.settles) : [];
@@ -486,9 +487,10 @@ export function promotionBatch(root) {
 export function cmdDecisions(root, flags = {}) {
   const loop = readLoop(jarlDir(root));
   const ends = new Map(loopRules(loop, today()).map((r) => [r.slug, r]));
+  const ended = new Set([...ends.values()].filter((r) => r.ended).map((r) => r.slug));
   const all = loop.decisions.map((d) => {
     const r = ends.get(d.slug);
-    return r && !d.supersededBy && (r.ended || r.unread) ? { ...d, ...(r.ended ? { ended: r.ended } : {}), ...(r.unread ? { unread: r.unread } : {}) } : d;
+    return withUnder(loop.decisions, r && !d.supersededBy && (r.ended || r.unread) ? { ...d, ...(r.ended ? { ended: r.ended } : {}), ...(r.unread ? { unread: r.unread } : {}) } : d, ended);
   });
   return flags.live ? all.filter((d) => !d.supersededBy && !d.ended) : all;
 }
@@ -507,7 +509,7 @@ export function renderDecisions(rows) {
     const answered = answeredLines(d);
     const shown = answered ? `${answered.answer.slice(0, 160)} · ${answered.question.slice(0, 160)}` : (d.ruling.split('\n').find((l) => l.trim()) || '').slice(0, 160);
     const scope = d.appliesTo ? ` · applies to ${d.appliesTo}${d.ended ? ` · ENDED: ${d.ended}` : ''}${d.unread ? ` · reaches no one: ${d.unread}` : ''}` : '';
-    return `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${d.under ? ` · under ${d.under}` : ''}${scope}${area}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${shown}${quoted}`;
+    return `${d.date} · ${d.slug}${d.by ? ` · by ${d.by}` : ''}${d.under ? ` · ${underText(d)}` : ''}${scope}${area}${d.supersededBy ? ` · SUPERSEDED by ${d.supersededBy}` : ''}${d.supersedes ? ` · supersedes ${d.supersedes}` : ''} — ${shown}${quoted}`;
   }).join('\n');
 }
 

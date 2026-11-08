@@ -2,7 +2,7 @@
 // reopen reset both; a red round resets the approve alone. A pause and a resume on an unchanged branch tip spend neither.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { jarl, loop as makeLoop, refuses, gitRepo } from './helpers.mjs';
 import { oldJarl, fileAsBefore } from './old-jarl.mjs';
@@ -197,6 +197,49 @@ test('the pinned frozen reader reads a loop with tip lines at format 1, and its 
   assert.match(r.error, /no --ran\/--saw evidence row recorded since it was moved → in-progress/);
   jarl(root, 'merged', '1', '--sha', g('rev-parse', 'jarl/1-x').trim(), '--ci', 'none', '--keep');
   assert.equal(jarl(root, 'set', '1', 'done'), '001 → done', 'this Jarl keeps the row and the approve of the unchanged tip');
+});
+
+// The log of a leased format-1 loop with its tip lines taken out: the row and the approve as a Jarl that writes no tip
+// line records them.
+const withoutTips = (root) => {
+  const log = join(root, '.jarl', 'log.md');
+  writeFileSync(log, readFileSync(log, 'utf8').split('\n').filter((l) => !/ · 001 tip /.test(l)).join('\n'));
+  return log;
+};
+// A stamp a minute after the newest line of the log, as a line written later carries it.
+const minuteAfterLast = (log) => {
+  const last = [...readFileSync(log, 'utf8').matchAll(/^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) /gm)].pop()[1];
+  return new Date(Date.parse(`${last.replace(' ', 'T')}:00Z`) + 60_000).toISOString().replace('T', ' ').slice(0, 16);
+};
+
+test('a tip line written by a log command after a verdict keeps nothing across a pause: only the line right after its own write, under its stamp, is a tip', () => {
+  for (const how of ['a later minute', 'a line between']) {
+    const { root, g, commit, fresh } = leased({ library: true });
+    const log = withoutTips(root);
+    commit('more');
+    const tip = g('rev-parse', 'jarl/1-x').trim();
+    if (how === 'a later minute') appendFileSync(log, `- ${minuteAfterLast(log)} · 001 tip ${tip}\n`);
+    else {
+      assert.equal(oldJarl(root, 'log', {}, ['a note about the loop']).ok, true);
+      assert.equal(oldJarl(root, 'log', {}, [`001 tip ${tip}`]).ok, true, 'the pinned frozen log writes a line of the tip shape');
+    }
+    jarl(root, 'set', '1', 'open', 'reordered'); resume(root);
+    assert.deepEqual(fresh(), [0, false], `${how}: the approve made before the new commit is spent`);
+  }
+});
+
+test('a done issue is judged against the tip recorded when it closed: a later commit on its branch, or the branch deleted with no tip on its merge, leaves its gate holding', () => {
+  for (const after of ['commit', 'delete']) {
+    const { root, g, commit } = leased({ library: true });
+    jarl(root, 'set', '1', 'open', 'reordered'); resume(root);
+    const merged = oldJarl(root, 'merged', {}, ['001', { sha: g('rev-parse', 'jarl/1-x').trim(), ci: 'none' }]);
+    assert.equal(merged.ok, true, 'the merge is recorded with no tip line');
+    assert.equal(jarl(root, 'set', '1', 'done'), '001 → done');
+    if (after === 'commit') commit('later'); else g('branch', '-q', '-D', 'jarl/1-x');
+    L.resetCaches();
+    assert.deepEqual(JSON.parse(jarl(root, 'status', '--json')).closedGate, [], `after a ${after}: the closed issue's gate holds`);
+    assert.doesNotMatch(jarl(root, 'status'), /001.*(no --ran|spent)/, `after a ${after}: status flags nothing`);
+  }
 });
 
 // A copy of a real loop (the directory that holds its .jarl), named by JARL_LIVE_LOOP: the gate is replayed over it, and

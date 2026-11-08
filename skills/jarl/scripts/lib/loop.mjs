@@ -88,7 +88,7 @@ export function recordDisagreements(loop) {
     // A number the log cannot attribute is read from its header, so the header is never compared with the log; it is
     // checked against itself, which still catches a hand edit that contradicts the file.
     if (issue.byHeader) {
-      for (const what of headerContradictions(profile, issue)) out.push({ id, field: 'header', onFile: issue.status, record: null, line: `record: ${id} is read from its header (issues/${basename(issue.file)}), and the header contradicts itself: ${what}` });
+      for (const what of headerContradictions(profile, issue, loop.events)) out.push({ id, field: 'header', onFile: issue.status, record: null, line: `record: ${id} is read from its header (issues/${basename(issue.file)}), and the header contradicts itself: ${what}` });
       continue;
     }
     if (issue.onFile === null) {
@@ -106,15 +106,17 @@ export function recordDisagreements(loop) {
   }
   // A shared number's files are checked against themselves too: each is read from its own header while they share it.
   for (const s of shared) for (const issue of s.issues) {
-    for (const what of headerContradictions(profile, issue)) out.push({ id: s.id, field: 'header', onFile: issue.status, record: null, line: `record: ${s.id} is read from its header (issues/${basename(issue.file)}), and the header contradicts itself: ${what}` });
+    for (const what of headerContradictions(profile, issue, loop.events)) out.push({ id: s.id, field: 'header', onFile: issue.status, record: null, line: `record: ${s.id} is read from its header (issues/${basename(issue.file)}), and the header contradicts itself: ${what}` });
   }
   out.push(...unreadableMoves(loop));
   return out;
 }
 // What a header read as the record says against itself: a status the profile does not list, a lease that its status
 // does not hold or a status that holds one with no lease, a CI with no merge, and a closing status with no proof row
-// in the file's Evidence.
-function headerContradictions(profile, issue) {
+// in the file's Evidence, or one the log never moved the number into: Jarl refuses a close of a number the log cannot
+// attribute, so a closing status that no closing move of the number stands behind was written by hand. A close the log
+// holds under the number may be another file's; that the record cannot tell.
+function headerContradictions(profile, issue, events) {
   const out = [];
   const has = (k) => Boolean(fieldText(issue.fields[k]));
   const st = issue.status;
@@ -126,6 +128,7 @@ function headerContradictions(profile, issue) {
   }
   if (has('ci') && !has('merged')) out.push('it carries CI and no Merged');
   if (profile.is(st, 'closes-record') && evidenceRows(issue).length === 0) out.push(`its Status ${st} closes it, and its Evidence holds no --ran/--saw row`);
+  if (profile.is(st, 'closes-record') && !events.some((e) => e.id === issue.id && e.type === 'move' && profile.is(e.to, 'closes-record'))) out.push(`its Status ${st} closes it, and the log holds no move of ${issue.id} into a status that closes it: a number the log cannot attribute is never closed through Jarl`);
   return out;
 }
 // The issues read from their headers because the log files their number more than once, while one file carries it: one
@@ -480,9 +483,13 @@ export function gateOf(loop, id) {
   const evidence = []; const allReviews = [];
   const trail = [];   // every review line in order (approve, changes, retract), for the issue view
   const retractedRows = [];
-  // A tip line belongs to the line of the same issue just before it: a row, a verdict or a merge.
+  // A tip line belongs to the line of the same issue just before it: a row, a verdict, a merge or a close. It is one only as
+  // part of the write that made that line, which puts it on the next line of the log under the same stamp: a line of the
+  // tip shape written by itself (a note a log command with no refusal of it took, a line added later) is the tip of nothing.
   let before = null;
   let mergeTip = null;   // the tip the newest merge was recorded on
+  let closeTip = null;   // the tip recorded with the newest move, when that move closed the record
+  const closedBy = (e) => e.type === 'move' && profile.is(e.to, 'closes-record');
   // The owner's waivers of this issue's review: the rulings waiverVoid finds nothing against. Each stands where decide
   // wrote it into the issue (its first note naming the ruling, and the tip after it), and counts as an approve counts: a
   // start, a reopen or a red round spends it, and so does a new commit.
@@ -490,12 +497,15 @@ export function gateOf(loop, id) {
   const waived = [];
   for (const e of events) {
     if (e.type === 'tip') {
-      if (before && before.type === 'merged') mergeTip = e.tip;
-      else if (before && before.tip === undefined) before.tip = e.tip;
+      const own = before && e.n === before.n + 1 && e.at === before.at;
+      if (own && before.type === 'merged') mergeTip = e.tip;
+      else if (own && closedBy(before)) closeTip = e.tip;
+      else if (own && before.tip === undefined) before.tip = e.tip;
       before = null;
       continue;
     }
     before = null;
+    if (e.type === 'move') { closeTip = null; if (closedBy(e)) before = e; continue; }
     if (e.type === 'merged') { before = e; mergeTip = null; continue; }
     if (e.type === 'verdict') {
       // The kind is the one recorded, or the one today's names give, whichever is stricter: a name the goal
@@ -527,10 +537,11 @@ export function gateOf(loop, id) {
   }
   // The branch's tip now, read once and only when a row or a verdict between the two windows carries a tip: the branch
   // in the issue's repositories, or, where it is gone (the cleanup after a merge deletes it), the tip the newest merge
-  // was recorded on.
+  // was recorded on. A closed issue is judged on the tip recorded when it closed, where the close recorded one: a commit
+  // on its branch or the branch's removal after the close changes nothing it was closed on.
   let tipHere;
   const now = () => {
-    if (tipHere === undefined) tipHere = (issue && loop.root && branchTip(loop.root, issue)) || mergeTip || null;
+    if (tipHere === undefined) tipHere = closeTip || (issue && loop.root && branchTip(loop.root, issue)) || mergeTip || null;
     return tipHere;
   };
   const kept = (e, after) => e.n > after || (e.tip !== undefined && now() !== null && e.tip === now());

@@ -244,6 +244,21 @@ test('a number read from its header is checked against itself, so a hand edit th
   assert.match(refuses(b.dir, 'set', '2', 'done', '--header'), /2 is read from its header/, 'no header is written from the log for it');
 });
 
+test('a Status set to done by hand on a number the log cannot attribute is named by verify, though its file holds a proof row', () => {
+  const handClosed = /2 is read from its header \(issues\/2-second-on-[ab]\.md\), and the header contradicts itself: its Status done closes it, and the log holds no move of 2 into a status that closes it/;
+  for (const shared of [false, true]) {
+    const b = droppedOnOneSide();
+    if (!shared) { renumber(b, '2-second-on-a.md', 3); jarl(b.dir, 'set', '3', 'dropped', 'not needed'); }
+    assert.equal(run(b.dir, ['verify']).status, shared ? 2 : 0);
+    const file = join(b.dir, '.jarl', 'issues', '2-second-on-b.md');
+    writeFileSync(file, readFileSync(file, 'utf8').replace('**Status:** open', '**Status:** done').replace(/## Evidence\n/, '## Evidence\n\n- **ran:** npm test · **saw:** all green\n'));
+    const r = run(b.dir, ['verify']);
+    assert.equal(r.status, 2, r.stdout);
+    assert.match(r.stdout, handClosed, shared ? 'while two files carry 2' : 'after the renumbering');
+    assert.doesNotMatch(r.stdout, /its Evidence holds no --ran\/--saw row/, 'the file holds its row');
+  }
+});
+
 test('a file copied by hand leaves one filing: the finding says so, claims nothing it cannot see, and gives no header advice', () => {
   const a = committedLoop();
   fileAndCommit(a, 'second');
