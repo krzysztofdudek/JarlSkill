@@ -7,7 +7,7 @@ import { issuesDir, jarlDir, stamp, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, KEY_RE, idKey, idRe, issueForms, writtenId } from './ids.mjs';
 import { FORMAT_LINES, loadProfile } from './profile.mjs';
-import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteLine, quoteOf, underLine, underOf } from './owner.mjs';
+import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteLine, quoteOf, rulingAuthor, underLine, underOf } from './owner.mjs';
 
 // ---- journal and decisions ----------------------------------------------------------------------
 
@@ -238,7 +238,9 @@ export function needNewRuling(root, slug, supersedes) {
 // The owner's words (quote, on a ruling by the owner only) are its last line, after a blank one, at the left edge: the one
 // line of a ruling no text given to decide can stand on (owner.mjs, quoteOf). The ruling it rests on (under, on a ruling
 // by anyone but the owner) is the paragraph before, in the same form and for the same reason (owner.mjs, underOf).
-export function appendDecision(root, slug, ruling, { by, quote, under, supersedes, area, reach, rule, settles, appliesTo, waives } = {}) {
+export function appendDecision(root, slug, ruling, { by: given, quote, under, supersedes, area, reach, rule, settles, appliesTo, waives } = {}) {
+  // The author is the one name the owner has when it reads as his, whoever calls: a name that holds his inside another is refused.
+  const by = given === undefined || given === null ? given : rulingAuthor(given);
   need(under === undefined || under === null || (typeof under === 'string' && SLUG_RE.test(under) && by !== OWNER), 'the ruling a ruling rests on is the slug of a ruling, and a ruling by the owner rests on his own words', () => ({ flag: '--under', value: '<a-ruling-in-force>' }));
   need(quote === undefined || quote === null || (typeof quote === 'string' && quote === fieldText(quote) && quote !== '' && by === OWNER), 'the owner\'s words are one line of text, kept with a ruling by the owner', () => ({ flag: '--quote', value: '<his-own-words>' }));
   if (quote) needNoOwnersWords('--quote', quote);

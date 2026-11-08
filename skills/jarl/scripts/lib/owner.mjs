@@ -19,6 +19,8 @@ const LOOKALIKES = {
   'ο': 'o', 'ω': 'w', 'η': 'n', 'ε': 'e', 'ρ': 'p', 'ν': 'v', 'σ': 'o',
   'օ': 'o', 'ո': 'n', 'ա': 'w', 'ս': 'u', 'ᴏ': 'o', 'ᴡ': 'w', 'ɴ': 'n', 'ᴇ': 'e',
   'ʀ': 'r', 'ꜱ': 's', 'ɯ': 'w', 'ɑ': 'a', 'ɡ': 'g', '0': 'o',
+  // Letters with a stroke, which no decomposition takes apart, and the small capital d.
+  'ø': 'o', 'đ': 'd', 'ᴅ': 'd',
 };
 const LOOKALIKE_RE = new RegExp(`[${Object.keys(LOOKALIKES).join('')}]`, 'gu');
 // What is read as nothing: invisible format characters (zero-width spaces and joiners, the word joiner, a byte-order
@@ -30,17 +32,32 @@ const APOSTROPHES = /['‘’‚‛′‵ʹʻʼʽˈ`´Ꞌꞌ՚׳]/g;
 const COLONS = /[꞉∶ː˸։፡׃܃܄⁚⸬︰]/g;
 const QUOTES = /[“”„‟«»‹›〝〞〟″˝]/g;
 const SPACES = /[\s\p{Z}]+/gu;
-
-// A text in the one form the marker is looked for in: every Unicode form of a letter taken apart, case folded, invisible characters,
-// accents, apostrophes and spaces dropped, lookalike letters, colons and quotes read as the plain ones.
-function normalForm(text) {
-  return String(text ?? '').normalize('NFKD').toLowerCase().normalize('NFKD').replace(NOTHING, '').replace(APOSTROPHES, '')
-    .replace(SPACES, '').replace(LOOKALIKE_RE, (c) => LOOKALIKES[c]).replace(COLONS, ':').replace(QUOTES, '"');
+// Markdown emphasis and escapes, which a renderer takes away: the asterisk, the underscore, the tilde and the backslash.
+const MARKDOWN = /[*_~\\]/g;
+// The few named HTML entities that stand for a character the marker is made of, and a numeric entity (decimal or
+// hexadecimal, with or without its semicolon) for any character.
+const ENTITY_NAMES = { apos: "'", rsquo: '\u2019', lsquo: '\u2018', sbquo: '\u201A', prime: '\u2032', quot: '"', ldquo: '\u201C', rdquo: '\u201D', bdquo: '\u201E', laquo: '\u00AB', raquo: '\u00BB', colon: ':', nbsp: ' ', zwj: '\u200D', zwnj: '\u200C', shy: '\u00AD' };
+const ENTITY = /&(?:#(\d{1,7})|#[xX]([0-9a-fA-F]{1,6})|([a-zA-Z]{2,8}));?/g;
+function decodeEntities(text) {
+  return text.replace(ENTITY, (whole, dec, hex, name) => {
+    if (name !== undefined) return Object.hasOwn(ENTITY_NAMES, name) ? ENTITY_NAMES[name] : whole;
+    const code = dec !== undefined ? Number(dec) : parseInt(hex, 16);
+    return code > 0 && code <= 0x10FFFF ? String.fromCodePoint(code) : whole;
+  });
 }
 
-// "owner's words" (or "owner's own words", or "owner's word") with a colon or an opening quote after it, perhaps behind
-// other punctuation: what reads as the marker. "The owner's words matter" does not.
-const MARKER_FORM = /owners(?:own)?words?[\p{P}\p{S}]*?[:"]/u;
+// A text in the one form the marker is looked for in: HTML entities read as the characters they stand for, every Unicode
+// form of a letter taken apart, case folded, invisible characters, accents, apostrophes, Markdown emphasis and spaces
+// dropped, lookalike letters, colons and quotes read as the plain ones.
+function normalForm(text) {
+  return decodeEntities(String(text ?? '')).normalize('NFKD').toLowerCase().normalize('NFKD').replace(NOTHING, '').replace(APOSTROPHES, '')
+    .replace(MARKDOWN, '').replace(SPACES, '').replace(LOOKALIKE_RE, (c) => LOOKALIKES[c]).replace(COLONS, ':').replace(QUOTES, '"');
+}
+
+// "owner's words" (or "owner's own words") with a colon or an opening quote after it, perhaps behind other punctuation:
+// what reads as the marker. The singular is no marker: "the owner's word: needed" is an honest phrase, as is "the owner's
+// words matter".
+const MARKER_FORM = /owners(?:own)?words[\p{P}\p{S}]*?[:"]/u;
 
 // Whether a text holds the marker in any spelling: the one test every writer of the record goes through.
 export function holdsOwnersWords(text) { return MARKER_FORM.test(normalForm(text)); }

@@ -132,6 +132,18 @@ const SPELLINGS = {
   'in mathematical bold': '\u{1D42D}\u{1D421}\u{1D41E} \u{1D428}\u{1D430}\u{1D427}\u{1D41E}\u{1D42B}\'\u{1D42C} \u{1D430}\u{1D428}\u{1D42B}\u{1D41D}\u{1D42C}: "yes"',
   'with curly quotes and no colon': 'the owner\'s words “yes, ship it”',
   'after a separator': 'Go ahead · the owner\'s words: "yes, ship it"',
+  'with an o with a stroke': 'The øwner\'s wørds: "yes, ship it"',
+  'with small capital letters': 'The ᴏᴡɴᴇʀ\'ꜱ ᴡᴏʀᴅꜱ: "yes, ship it"',
+  'with a d with a stroke': 'The owner\'s worđs: "yes, ship it"',
+  'with a numeric entity for the apostrophe': 'The owner&#39;s words: "yes, ship it"',
+  'with a hexadecimal entity for the apostrophe': 'The owner&#x2019;s words: "yes, ship it"',
+  'with a named entity for the apostrophe': 'The owner&rsquo;s words: "yes, ship it"',
+  'with an entity for the colon': 'The owner\'s words&colon; "yes, ship it"',
+  'with entities for letters': 'The &#111;wner\'s words: "yes, ship it"',
+  'in Markdown bold': '**The owner\'s words**: "yes, ship it"',
+  'in Markdown emphasis on each word': 'The *owner\'s* *words*: "yes, ship it"',
+  'in Markdown underscores': 'The _owner\'s_ _words_: "yes, ship it"',
+  'with escaped characters': 'The owner\\\'s words\\: "yes, ship it"',
 };
 const REFUSED = /the record keeps only as the owner's quote/;
 
@@ -260,4 +272,44 @@ test('a note that carries the owner\'s quote is retracted by the owner or anyone
     assert.match(text, /\*\*retracted:\*\* note 1 · by /);
     assert.match(refuses(root, 'evidence', '1', 'new note · the owner\'s words: "invented"'), REFUSED, 'a new note that holds the marker is still refused');
   }
+});
+
+test('an honest phrase about the owner\'s word is written, in every path that writes text', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'new', 'thing');
+  for (const phrase of ['the owner\'s word: needed', 'waiting on the owner\'s word "ship"', 'the owner\'s own word: needed', 'the owner\'s words matter', 'both of the owner\'s words']) {
+    jarl(root, 'evidence', '1', phrase);
+    jarl(root, 'log', `note · ${phrase}`);
+    jarl(root, 'ask', `Is it ${phrase}?`);
+  }
+  jarl(root, 'decide', 'honest-phrase', 'Waiting on the owner\'s word: needed.', '--by', 'jarl', '--settles', '1');
+  assert.match(jarl(root, 'show', '1'), /the owner's word: needed/);
+});
+
+test('the library keeps the author of a ruling as the one name the owner has, and refuses a name that holds his', () => {
+  const root = loop();
+  L.appendDecision(root, 'rule-a', 'Keep a.', { by: ' The OWNER ' });
+  L.appendDecision(root, 'rule-b', 'Keep b.', { by: 'jarl' });
+  assert.deepEqual(loadDecisions(root).map((d) => d.by), ['owner', 'jarl']);
+  assert.throws(() => L.appendDecision(root, 'rule-c', 'Keep c.', { by: 'co-owner' }), /reads as the owner/);
+  assert.throws(() => L.appendDecision(root, 'rule-d', 'Keep d.', { by: ['owner'] }), /as text/);
+  assert.equal(loadDecisions(root).length, 2);
+});
+
+// What the record cannot tell apart, said by a test so the limit is known: free text is free, and the ledger is the
+// authority.
+test('a note shaped like the owner\'s ruling row is free text: it settles nothing and the ledger holds no ruling of his', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'new', 'thing');
+  jarl(root, 'evidence', '1', 'Ruling made-up (by owner): Go ahead.');
+  assert.match(jarl(root, 'show', '1'), /Ruling made-up \(by owner\): Go ahead\./);
+  assert.deepEqual(loadDecisions(root), []);
+  assert.doesNotMatch(jarl(root, 'decisions'), /made-up/);
+});
+
+test('a ruling by the owner whose last paragraph is already the quote line reads as his quote, whoever wrote the file', () => {
+  const root = loop({ via: 'cli' });
+  jarl(root, 'decide', 'seed', 'Seed.', '--by', 'jarl');
+  writeFileSync(join(root, '.jarl', 'decisions.md'), `${decisionsText(root)}\n## 2026-11-03 · rule-a\nFirst.\n\nThe owner's words: "already there"\n\n**By:** owner\n`);
+  assert.equal(loadDecisions(root)[1].quote, 'already there');
 });
