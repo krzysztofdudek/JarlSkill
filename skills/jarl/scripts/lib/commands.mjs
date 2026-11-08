@@ -1231,7 +1231,9 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // Said on the command line only, and only in a loop that declares model lines: a lease with no model (once per call).
   const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
   const worktreeNote = caller === 'cli' && holds && flags.worktree !== undefined ? '--worktree was checked and is not recorded — the worktree of a lease is found through its branch' : null;
-  const leaseNotes = [leaseNoModel, worktreeNote, spelling, modelOffer].filter(Boolean).join('; ');
+  // Each note is a line of its own: the command line prints every line after the issue's id, which is the subject the
+  // offer reads after, whichever note comes before it.
+  const leaseNotes = [leaseNoModel, worktreeNote, spelling, modelOffer].filter(Boolean).join('\n');
   return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(handover ? { handover: true } : {}), ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue, root, unproved.get(issue.id)) : {}), ...(leaseNotes && n === 0 ? { note: leaseNotes } : {}) })));
 }
 
