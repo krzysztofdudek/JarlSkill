@@ -11,7 +11,7 @@ import { ASKS_FILE, DECISIONS_FILE, GOAL_FILE, LOG_FILE, goalLineOf, goalLines, 
 import { loopEvents } from './log.mjs';
 import { issueKeyOf, parentCycle, parseIssue, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { REPOS_DECLARED_IN, declaredNames, issueRepos, repoIdentity, repoValueKind, reposNamed, worktreesOf } from './repositories.mjs';
-import { headerReadNotes, readLoop, recordDisagreements, unorderedNamings, unorderedText } from './loop.mjs';
+import { IN_PLACE_TAG, headerReadNotes, readLoop, recordDisagreements, unorderedNamings, unorderedText } from './loop.mjs';
 import { attachmentFindings } from './attachments.mjs';
 import { hasLiveLoop } from './commands.mjs';
 import { issuesNaming, loadAsks, unsettledRulings, unsettledText } from './questions.mjs';
@@ -130,6 +130,10 @@ export function cmdVerify(root) {
   // A parent is held by format 3: a reader of a lower format reads the backlog as flat.
   if (profile.format < FORMAT_LINES.parent.format) {
     for (const i of loop.issues) if (i.id !== null && i.parent !== null) add('format', `issue ${i.id}`, `its header names a parent (${shownText(i.parent)}), which is written in record format ${FORMAT_LINES.parent.format}, and this loop is not in it`);
+  }
+  // The tag in-place marks an issue worked in place from format 3 on; below it the tag is a tag like any other: said.
+  if (profile.format < FORMAT_LINES['in-place'].format) {
+    for (const i of loop.issues) if (i.id !== null && i.tags.includes(IN_PLACE_TAG)) notes.push({ where: `issue ${i.id}`, what: `its tag ${IN_PLACE_TAG} marks it as worked in place only in record format ${FORMAT_LINES['in-place'].format}, and this loop is in format ${profile.format}, so its done gate is the one of any issue with no branch` });
   }
   // A question of a format the loop is not in: an escalation is held by format 3.
   if (profile.format < FORMAT_LINES.escalation.format) {

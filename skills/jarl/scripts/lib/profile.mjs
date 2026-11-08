@@ -94,6 +94,7 @@ export const FORMAT_LINES = Object.freeze(Object.fromEntries([
     'review-waiver': { what: "the owner's waiver of an issue's review", where: "the ruling's Waives review field and a note in each issue it names", misread: 'counts the closed issue as one with no approve recorded and says its gate does not hold' },
     'note-retraction': { what: 'the retraction of a note', where: "the log and the issue's notes, in the shape of a row's retraction", misread: 'counts the note as standing' },
     'range-number': { what: 'a number from a range the goal declares', where: 'the name and the header of an issue file, and the Range line of the goal', misread: 'files its next issue above the numbers of the range, so the series the loop keeps apart are mixed' },
+    'in-place': { what: 'the mark of an issue worked in place', where: "the tag in-place among the issue's Tags", misread: 'lets done pass with no commit of its files named' },
   }),
 ]));
 // The record format of a loop as the views say it: its format, the formats this Jarl reads, whether a write may raise it

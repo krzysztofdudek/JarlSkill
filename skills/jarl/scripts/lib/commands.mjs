@@ -13,9 +13,9 @@ import { BUILTIN_STATUSES, DEFAULT_PROFILE, FORMAT_LINES, LIFECYCLE_OPS, PARENT_
 import { appendLog, appendLogLines, decisionsPath, goalLines, goalPath, logPath, readGoal } from './journal.mjs';
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
-import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
-import { baseOf, branchTip, commitRepoNames, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needFormatHeld, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
-import { FIELD_NAMES, activeSlices, carriesCode, unmergedCode, unmergedText, gateOf, isSliceTag, leaseConflictOf, needOneSlice, readLoop, sinceText, sliceOf, unclearedText, unorderedNamings, unorderedText } from './loop.mjs';
+import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, alignRows, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
+import { baseOf, branchTip, commitRepoNames, fileAt, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needFormatHeld, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
+import { FIELD_NAMES, IN_PLACE_TAG, activeSlices, carriesCode, unmergedCode, unmergedText, gateOf, isSliceTag, leaseConflictOf, needOneSlice, readLoop, sinceText, sliceOf, unclearedText, unorderedNamings, unorderedText, worksInPlace } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelRefusalOf, modelReviewForm, modelValue, modelOfferAtLease, spellingNote } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
@@ -322,6 +322,7 @@ export function cmdNew(root, title, rawFlags, from = {}) {
   const ownerLined = needOwnerLines(acceptance);
   // A number from a range the goal declares, for a series of issues kept apart by number.
   const range = rawFlags.range !== undefined ? declaredRange(root, rawFlags.range) : null;
+  const inPlace = splitList(flags.tags).includes(IN_PLACE_TAG);
   const render = (id, key, repo) => renderIssue({
     id, title, status: profile.initial, key, kind, priority, tier, fields, sections, acceptanceHeading: profile.acceptance || 'Acceptance',
     tags: splitList(flags.tags), files: pathList(flags.files), repo, foundBy: flags['found-by'] || 'jarl', person, checkWhen,
@@ -339,6 +340,7 @@ export function cmdNew(root, title, rawFlags, from = {}) {
     const id = newNumber(number, numberWidth(profile, rawFlags.width));
     needNoNewOwnersWords('', render(id, null, picked.map((p) => p.value).join(', ')), `${id}-${slugify(title)}.md`);
     if (range) needFormatHeld(root, 'range-number');
+    if (inPlace) needFormatHeld(root, 'in-place');
     if (needsRaisedFormat(id)) needFormatHeld(root, 'plain-number', `issue number ${id}`);
     if (kept) needFormatHeld(root, 'promise-wait');
     if (picked.some((p) => p.name)) needFormatHeld(root, 'repo-name');
@@ -350,6 +352,8 @@ export function cmdNew(root, title, rawFlags, from = {}) {
   // knows no range would count past.
   if (range) needRoomIn(range, nextIssueNumber(root, range));
   if (range) needFormat(root, 'range-number');
+  // So is an issue worked in place, which a reader of formats 1 and 2 would close with no commit of its files named.
+  if (inPlace) needFormat(root, 'in-place');
   if (kept) needFormat(root, 'promise-wait');
   commitRepoNames(root, picked);
   if (ownerLined) needFormat(root, 'owner-line');
@@ -782,6 +786,7 @@ function doneReady(cause, issue) {
   if (cause === 'clears') return ['jarl.mjs', 'review', hole('<ids>'), hole('<verdict>'), hole('<what-was-read-and-found>'), '--by', hole('<reviewer>')];
   if (cause === 'model') return ['jarl.mjs', 'review', hole('<ids>'), hole('<verdict>'), hole('<what-was-read-and-found>'), '--by', hole('<a-fresh-reviewer>'), '--model', hole('<model-id>')];
   if (cause === 'merge') return ['jarl.mjs', 'merged', hole('<ids>'), '--sha', hole('<sha>')];
+  if (cause === 'commit') return ['jarl.mjs', 'evidence', hole('<id>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')];
   if (cause === 'slots') return ['jarl.mjs', 'evidence', hole('<id>'), '--file', hole('<path>'), '--slot', hole('<slot>')];
   if (cause === 'owner') return ['jarl.mjs', 'ask', hole('<question-for-the-owner>'), '--issue', hole('<id>')];
   if (cause === 'owner-rewrite') return ['jarl.mjs', 'field', hole('<ids>'), 'Acceptance', hole('<the-whole-section>')];
@@ -1106,6 +1111,12 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
   needTreeHolds(profile, issues, status, nothing);
   if (holds) needLeaseHolds(root, profile, issues, status, why, flags, handover, nothing);
+  // An issue worked in place is leased with no branch, on the files it declares, which keep two such issues apart.
+  for (const issue of holds ? issues.filter((i) => worksInPlace(profile, i)) : []) {
+    const given = ['branch', 'worktree'].filter((k) => flags[k] !== undefined);
+    need(!given.length, `${issue.id} is worked in place: its worker writes the files it declares in the loop's own checkout, with no branch and no worktree of its own${nothing}`, () => given.map((k) => ({ drop: `--${k}` })));
+    need(issue.files.length, `${issue.id} is worked in place and declares no files: it names the files it writes before it is leased, so that next keeps two issues off one file${nothing}`, () => ['jarl.mjs', 'field', issue.id, 'Files', hole('<paths>')]);
+  }
   // base: the branch the composer landed the merge into, for the done gate's requires-merged (else the branch checked
   // out). A library call only: the command line has no --base, and dispatch never passes one through.
   need(flags.base === undefined || caller === 'record', 'base is named by a library call through record.mjs only — the command line checks against the branch checked out', () => ({ rename: '--base', to: hole('<no-flag-here>') }));
@@ -1616,8 +1627,30 @@ function doneGateIn(root, loop, issue, base) {
   // issue by; a profile that requires a landed merge has checked more than this above.
   const unmerged = unmergedRefusal(issue, g);
   if (unmerged) return { cause: 'merge', text: unmerged };
+  // An issue worked in place has no merge: it closes on the commit of its files, which a row of its proof names.
+  const uncommitted = inPlaceRefusal(root, loop, issue, g);
+  if (uncommitted) return { cause: 'commit', text: uncommitted };
   // Last, an acceptance line only the owner ticks: his look comes on top of the proof and the review, never instead.
   return owner();
+}
+// Why an issue worked in place may not close yet, or null: no row of its proof inside the gate's window names a commit
+// that a repository of the issue holds on the branch it has checked out and that changes a file the issue declares. The
+// files are committed in the main checkout once the approve stands (by the merger where one runs, else the coordinator),
+// and that commit is recorded as a row; nothing is merged.
+function inPlaceRefusal(root, loop, issue, g) {
+  if (!worksInPlace(loop.profile, issue)) return null;
+  const rows = evidenceTable(issue.sections.evidence).rows;
+  const logged = alignRows(issue.id, rows, g.rowLog);
+  const counted = rows.filter((r, k) => !r.retracted && r.saw !== '' && (!g.tracked || (logged[k] && logged[k].inWindow && !logged[k].retracted)));
+  const shas = [...new Set(counted.flatMap((r) => `${r.ran} ${r.saw}`.match(/\b[0-9a-f]{7,40}\b/g) || []))];
+  const repos = issueRepoPaths(root, issue).filter(isGitRepo);
+  const declared = issue.files.map((f) => fileAt(root, issue, f).path.replace(/\/+$/, ''));
+  const touches = (f) => declared.some((d) => f === d || f.startsWith(`${d}/`) || f.endsWith(`/${d}`));
+  const committed = (repo, sha) => git(repo, ['merge-base', '--is-ancestor', sha, 'HEAD']) !== null
+    && (git(repo, ['diff-tree', '--root', '--no-commit-id', '--name-only', '-r', '--no-renames', sha]) || '').split('\n').some(touches);
+  if (shas.some((sha) => repos.some((repo) => committed(repo, sha)))) return null;
+  const why = repos.length ? `no row of its proof${g.tracked ? ` since ${sinceText(g.anchor)}` : ''} names a commit on the branch checked out that changes ${issue.files.join(', ')}` : 'no repository it names is a git repository here, so the commit of its files cannot be checked';
+  return `${issue.id} is worked in place, and ${why} — once the approve stands, its files are committed in the main checkout (by the merger where one runs, else the coordinator), and the commit is recorded as a row: ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>')}`;
 }
 // Why a code issue's code as it is now is not merged (see unmergedCode), as done says it, or null.
 function unmergedRefusal(issue, g) {
@@ -2081,6 +2114,10 @@ function cmdTagList(root, rawIds, value, by) {
 }
 function writeTags(root, rawIds, results, by, out) {
   for (const r of results) needOneSlice(r.tags, { id: r.issue.id, held: r.issue.tags });
+  // The mark of an issue worked in place goes on an issue with no branch and no merge: code is merged from its branch.
+  const marked = results.filter((r) => r.tags.includes(IN_PLACE_TAG) && !r.issue.tags.includes(IN_PLACE_TAG));
+  for (const r of marked) need(!carriesCode(r.issue), `${r.issue.id} carries code (${r.issue.fields.merged ? 'Merged' : 'Branch'} is recorded), which its merge lands: an issue worked in place has no branch and no merge, so it is not tagged ${IN_PLACE_TAG}`, () => ({ arg: 2, value: hole('<items>') }));
+  if (marked.length) needFormat(root, 'in-place');
   logChanges(root, results.map((r) => fieldLine(r.issue.id, 'Tags', r.tags.join(', '), heldField(r.issue, 'Tags'), by)));
   for (const r of results) writeAtomic(r.issue.file, setField(readText(r.issue.file), 'Tags', r.tags.join(', ')));
   return oneOrMany(rawIds, results.map(out));

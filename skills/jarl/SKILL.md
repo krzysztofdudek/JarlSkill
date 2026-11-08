@@ -132,7 +132,7 @@ One pair per check; repeat the pair for more, and `--ran` and `--saw` pair up by
 How rows, notes and the merge check sit in an issue, and when an issue may be set done, is in [references/profile.md](references/profile.md#proof-notes-and-the-merge-record).
 
 <!-- RUNES:worker-worktree:START -->
-**A worker works in its own worktree, on its own branch.** The main checkout belongs to the coordinator and to whoever merges for it; every worker gets a fresh worktree cut from the branch the work lands on, on a branch named for its issue (`<prefix>/NNN-slug`, NNN the first issue it carries), and never touches another worker's worktree or the main checkout's working tree.
+**A worker works in its own worktree, on its own branch.** The main checkout belongs to the coordinator and to whoever merges for it; every worker gets a fresh worktree cut from the branch the work lands on, on a branch named for its issue (`<prefix>/NNN-slug`, NNN the first issue it carries), and never touches another worker's worktree or the main checkout's working tree. The one exception is an issue tagged `in-place`, whose worker writes only the files it declares in the loop's checkout and commits nothing (see [Worked in place](references/jarl.md#worked-in-place)).
 
 - **One issue per commit.** Each commit carries one issue's change and names it in its message (`… (issue NNN)`). A package of small issues on one branch still commits them one by one, so a review, a revert or a bisect can take one issue at a time.
 - **State lives in the main checkout.** A worktree may not see the coordinator's state at all. Every call that reads or writes it passes the main checkout's absolute path explicitly (the `root` field, or its CLI flag), from wherever the worker stands.
