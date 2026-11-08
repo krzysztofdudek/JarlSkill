@@ -13,6 +13,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
+import { withoutComments } from './source-text.mjs';
 
 const SCRIPTS = new URL('../', import.meta.url);
 const read = (name) => readFileSync(new URL(name, SCRIPTS), 'utf8');
@@ -108,8 +109,10 @@ test('rule 4: a view never writes', () => {
 
 // What stands above the library, named from beside it (./) or from inside lib/ (../): the record, the command line,
 // the server and jarl-lib.mjs, the one surface over the modules.
-const UPWARD = /from\s*['"]\.\.?\/(record|jarl|jarl-mcp|jarl-lib)\.mjs['"]|import\(\s*['"]\.\.?\/(record|jarl|jarl-mcp|jarl-lib)\.mjs['"]\s*\)/;
-const importsUpward = (text, pattern = UPWARD) => text.split('\n').filter((l) => pattern.test(l));
+// An import or a re-export that names it after from, a side-effect import that names it alone, and a dynamic import.
+const UPWARD = /from\s*['"]\.\.?\/(record|jarl|jarl-mcp|jarl-lib)\.mjs['"]|\bimport\s*['"]\.\.?\/(record|jarl|jarl-mcp|jarl-lib)\.mjs['"]|import\(\s*['"]\.\.?\/(record|jarl|jarl-mcp|jarl-lib)\.mjs['"]\s*\)/;
+// The lines of the code, with its comments blanked, that match the pattern.
+const importsUpward = (text, pattern = UPWARD) => withoutComments(text).split('\n').filter((l) => pattern.test(l));
 
 test('rule 5: the library imports nothing above it, and the record imports not the command line', () => {
   assert.deepEqual(importsUpward(LIB), []);
@@ -117,6 +120,8 @@ test('rule 5: the library imports nothing above it, and the record imports not t
   assert.deepEqual(importsUpward(read('yg-edge.mjs'), UPWARD), []);
   assert.equal(importsUpward('import * as R from \'./record.mjs\';\nimport { x } from \'node:fs\';').length, 1);
   assert.equal(importsUpward('import { a } from \'../record.mjs\';\nexport * from \'../jarl-lib.mjs\';\nconst j = await import(\'../jarl.mjs\');\nimport { b } from \'./base.mjs\';').length, 3, 'from inside lib/');
+  assert.equal(importsUpward('import \'../jarl.mjs\';\nimport "./record.mjs"\nimport \'./base.mjs\';\nimport \'node:fs\';').length, 2, 'a side-effect import names no binding');
+  assert.equal(importsUpward('// import \'../jarl.mjs\';\n/*\nimport { a } from \'../record.mjs\';\nimport \'./jarl-lib.mjs\';\n*/\nimport { b } from \'./base.mjs\';').length, 0, 'an import in a comment is no import');
 });
 
 // ---- rule 6: ids --------------------------------------------------------------------------------------
