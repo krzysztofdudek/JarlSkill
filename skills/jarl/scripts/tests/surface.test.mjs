@@ -176,7 +176,7 @@ const FLAG_MEANINGS = {
   only: ['the findings to file', ['import']], parent: ['the issue every issue a command files is put under', ['import']], adopt: ['a Source written onto an issue that names the finding', ['import']], 'dry-run': ['what would be filed, nothing written', ['import']],
   ran: ['a command that ran', ['evidence', 'merged']], saw: ['what the command printed', ['evidence', 'merged']], file: ['the file of an attachment', ['evidence']], slot: ['the slot of an attachment', ['evidence']],
   add: ['add to a part of the description', ['field']], remove: ['take items off a part of the description', ['field']], clear: ['empty a part of the description', ['field']],
-  line: ['an acceptance line of a parent and the issue it goes to', ['split']],
+  line: ['an acceptance line, by its number: where split moves it, or what an evidence row proves', ['split', 'evidence']],
   status: ['the status the list keeps', ['list']], tag: ['the tag the view keeps', ['list', 'status']], grep: ['the text the list keeps', ['list']], match: ['a field value the list keeps', ['list']],
   all: ['every row, not only the first or the unfinished', ['list', 'next']], full: ['the whole issue file', ['show']],
   branch: ['a branch: the lease\'s, or the one measured', ['set', 'scope']], worker: ['the worker of a lease', ['set']], model: ['the model the agent was raised on', ['set', 'review']],

@@ -18,6 +18,7 @@ import { jarlDir, today } from './where.mjs';
 import { IN_FLIGHT_MARKS, closedGateFlags, leaseWriter, retractedNotesText, leasedByText, modelText, nextRows, resourceAgeText, schedulerNote, statusOf, subsText, uncommittedLoopFiles } from './evidence.mjs';
 import { cmdQueue, renderQueue } from './queue.mjs';
 import { countsLine } from './import.mjs';
+import { linesText, unprovedLines } from './owner-lines.mjs';
 
 // ---- resume: the state a session picks the loop up from, assembled live -------------------------------
 
@@ -249,7 +250,13 @@ export function cmdReport(root, flags = {}) {
   // An issue whose number another file carries too says so on its line, with the files of that number.
   // A sub-issue says whose it is, so the report reads as the tree it was.
   const mark = (i) => `${i.shared ? ` (${sharedMark(i.shared)})` : ''}${i.tree && i.tree.parent ? ` · sub-issue of ${i.tree.parent.id}` : ''}`;
-  const row = (i) => `- ${i.id} ${i.title}${mark(i)} (${i.kind})${mergedOf(i) ? ` · merged ${mergedOf(i).sha}${mergedOf(i).repo ? ` in ${mergedOf(i).repo}` : ''}` : ''}`;
+  // A done issue closed after the loop began to name the line a row proves, with acceptance lines no row names, says which.
+  const unnamed = (i) => {
+    const close = (loop.eventsById.get(i.id) || []).filter((e) => e.type === 'move' && profile.is(e.to, 'closes-record')).pop();
+    const left = close && loop.linesFrom !== null && close.n > loop.linesFrom ? unprovedLines(loop, i) : null;
+    return left && left.length ? ` · closed without a row naming acceptance ${linesText(left)}` : '';
+  };
+  const row = (i) => `- ${i.id} ${i.title}${mark(i)} (${i.kind})${mergedOf(i) ? ` · merged ${mergedOf(i).sha}${mergedOf(i).repo ? ` in ${mergedOf(i).repo}` : ''}` : ''}${unnamed(i)}`;
   const repos = Object.keys(byRepo).sort();
   const doneLines = repos.length > 1 ? repos.flatMap((r) => ['', `### ${r} (${byRepo[r].length})`, ...byRepo[r].map(row)]) : done.map(row);
   const split = reviewSplit(loop);

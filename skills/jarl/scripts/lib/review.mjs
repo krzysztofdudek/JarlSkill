@@ -7,13 +7,13 @@ import { readText, writeAtomic } from './files.mjs';
 import { isBulk, newIssueKey } from './ids.mjs';
 import { appendLog, appendLogLines, firstLine } from './journal.mjs';
 import { bodyText, parseIssue, reviewEntries, setSection, unattributedRefusal } from './issues.mjs';
-import { needFormat, tipLines } from './repositories.mjs';
+import { needFormat, tipLinesOf } from './repositories.mjs';
 import { FORMAT_LINES, formatState, loadProfile, reviewerRule } from './profile.mjs';
 import { carriesCode, gateOf, readLoop, reviewerKind, unclearedText } from './loop.mjs';
 import { SEVERITIES, loggedFinding, modelLines, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote } from './models.mjs';
 import { EVIDENCE_HOW, cmdNew, issuesFor, nextIssueNumber, nothingWritten, oneOrMany, proofSince, refiled } from './commands.mjs';
 import { REVIEW_MIN_WORDS, needSaid, raisedText, retractedBy, struck } from './evidence.mjs';
-import { ownerLineWait } from './owner-lines.mjs';
+import { linesText, ownerLineWait, unprovedLines } from './owner-lines.mjs';
 import { resetCaches } from './tips.mjs';
 
 // ---- commands: review ---------------------------------------------------------------------------------
@@ -124,7 +124,8 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   const again = filed.length > 0 || raised;
   if (again) resetCaches();
   const reviewed = again ? issuesFor(root, rawIds) : issues;
-  appendLogLines(root, reviewed.flatMap((issue, n) => [`${issue.id} review ${verdict} · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${marks}${loggedFinding(firstLine(recorded, "the issue's Reviews section"))}`, ...tipLines(root, issue)]));
+  const tips = tipLinesOf(root, reviewed);
+  appendLogLines(root, reviewed.flatMap((issue, n) => [`${issue.id} review ${verdict} · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${marks}${loggedFinding(firstLine(recorded, "the issue's Reviews section"))}`, ...tips(issue)]));
   // Recorded, never refused: a coordinator's approve on a code issue is a fact of the record, but it does not clear
   // the issue for done or the merge queue — the output says so at once. On the command line, in a loop that declares
   // its models, the model notes join it (see reviewModelNotes).
@@ -134,6 +135,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
     const said = [
       verdict === 'approve' && kinds[n] === 'coordinator' && carriesCode(issue) ? `${issue.id} carries code and ${by} is a coordinator — the fresh-review rule: this approve is recorded but does not clear it for done or the merge queue; a fresh reviewer's approve does` : null,
       flags.caller === 'cli' && verdict === 'approve' && proofSince(gateOf(loop, issue.id), issue) === 0 ? `${issue.id} holds no Proof row since the gate's window opened — done needs the worker's row, and the merger's check does not stand in for it: ${EVIDENCE_HOW(issue.id)}` : null,
+      flags.caller === 'cli' && verdict === 'approve' ? unprovedNote(loop, issue) : null,
       ...(lines && (lines.declared || rule !== 'agent') ? reviewModelNotes(loop, issue, verdict, model, lines, loop.eventsById.get(issue.id) || [], rule) : []),
       flags.caller === 'cli' && model !== undefined ? spellingNote(loop, model) : null,
     ].filter(Boolean);
@@ -166,6 +168,13 @@ function needBotFormat(root) {
     if (!(e instanceof Refusal) || formatState(loadProfile(root)).raises) throw e;
     return refuse(e.reason, [{ first: ['jarl.mjs', 'profile'] }, { retry: true }]);
   }
+}
+
+// What an approve says of the acceptance lines no row names, in a loop that names them: done refuses the close without a
+// reason, so the note names the lines and the close that gives one. Null where every line is named, or the loop names none.
+function unprovedNote(loop, issue) {
+  const left = unprovedLines(loop, issue) || [];
+  return left.length ? `${issue.id}: no Proof row names acceptance ${linesText(left)}, and done closes it only with a reason given: ${jarlLine('set', issue.id, 'done', '<why>')}, or a row that names each, ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line>')}` : null;
 }
 
 // Whether the loop holds a batch id: it is in the format that holds one, or Jarl may raise it there.

@@ -17,7 +17,7 @@ import { OWNER, needNoOwnersWords, rulingAuthor } from './owner.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { appendLogLines } from './journal.mjs';
 import { formatState } from './profile.mjs';
-import { acceptanceLines, evidenceRows, findIssue } from './issues.mjs';
+import { acceptanceLines, evidenceRows, evidenceTable, findIssue } from './issues.mjs';
 import { issueRepoPaths, needFormat, worktreeState } from './repositories.mjs';
 import { gateOf, gateWindow, readLoop, wholeOf } from './loop.mjs';
 
@@ -59,6 +59,20 @@ export function needOwnerLines(acceptance) {
 export function ownerLines(issue) {
   return acceptanceLines(issue).map((text, i) => ({ n: i + 1, text, o: ownerLineOf(text) })).filter((l) => l.o).map(({ n, text, o }) => ({ n, text, ...o }));
 }
+
+// The acceptance lines of an issue that no row the done gate counts names, each { n, text }, or null in a loop that has
+// never named one (its first row with --line starts the rule, loop.linesFrom). A row with no --line names no line, and a
+// row keeps the numbers it named when the acceptance is rewritten after it; an issue with no acceptance line has none
+// to name, and a line only the owner ticks is proved by his tick. An issue the journal does not hold is read from its
+// file's rows.
+export function unprovedLines(loop, issue, g = gateOf(loop, issue.id)) {
+  if (loop.linesFrom === null) return null;
+  const rows = g.tracked ? g.rowLog.filter((r) => r.inWindow && !r.retracted) : evidenceTable(issue.sections.evidence).rows.filter((r) => !r.retracted);
+  const named = new Set(rows.flatMap((r) => r.lines || []));
+  return acceptanceLines(issue).map((text, k) => ({ n: k + 1, text })).filter((l) => !named.has(l.n) && !ownerLineOf(l.text));
+}
+// The numbers of lines, as the views print them: "line 2, 3".
+export const linesText = (lines) => `line ${lines.map((l) => l.n).join(', ')}`;
 
 // A material written as a path (not a link, and with a directory in it or a file extension at its end) is looked for on
 // the disk; one named otherwise (a link, an artifact named in words) cannot be, and is there once the work is proven.

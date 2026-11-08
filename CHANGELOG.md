@@ -47,6 +47,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Importing research findings can put every task it files under one parent task with `--parent <id>`, so a set of outside requirements is filed as a tree in one call instead of one command per task.
 - Opening a loop whose goal has no line naming the models per tier now says so, with the command that adds one, as it already does for a missing check. The first lease that raises an agent with a model in such a loop says the same once in its own answer, naming the strongest tier for the jarl and the standard tier for the coordinators; nothing else offers it again.
 - `scope` and the recording of a merge now point out each added line that starts a conflict marker and each added file over 64 MiB, the largest file Jarl accepts as an attachment, with its file. They only say so and never stop a merge.
+- The note of which code a test result, a review or a merge was made on carries a mark that only this Jarl writes, so a line written by an older Jarl never keeps a task's results alive across a pause. The first such note moves the loop to format 3; a loop with no branch to note stays as it is.
+- A piece of proof can name the checkable lines of the task it proves (`evidence --line 2`). Once a loop does that, closing a task lists each of its lines that no proof names, and the task closes only with a reason, which is kept beside those lines and shown in the report. A loop that never names a line closes tasks as before. The first such proof moves the loop to format 3.
 
 ### Changed
 

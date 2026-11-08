@@ -129,9 +129,13 @@ commands:
                                                  --tags, --repo and --only repeat, or take a comma list
   sources [<findings.json>...] [--source <report-dir>] per report: its findings, the issues filed from them and their
                                                  status; with a findings file, the findings nobody filed too
-  evidence <ids> "<text>" | --ran "<command>" --saw "<what-it-printed>" | <id> --file <path> --slot <name> [--by who]
+  evidence <ids> "<text>" | --ran "<command>" --saw "<what-it-printed>" [--line <n>] | <id> --file <path> --slot <name> [--by who]
                                                  append a free-text note (under ### Notes), or one checkable row per --ran/--saw
                                                  pair (repeatable; under ### Proof, after the last row);
+                                                 --line names the acceptance lines each row of the call proves, 1 for
+                                                 the first (repeat it, or a comma list); the first such row raises
+                                                 the record format to 3, and from then on done asks of every issue a
+                                                 row that names each of its acceptance lines, or a reason;
                                                  --file --slot records one attachment as a Proof row: the slot, the path
                                                  under the loop root (relative, no .., no symlink), the file's sha256 and its
                                                  size; nothing is copied. The slot is one the profile's done gate requires of
@@ -201,7 +205,9 @@ commands:
                                                  round), a --ran/--saw row — a free-text note never counts alone —
                                                  and a live approve, on an issue whose lease records a Branch a merge
                                                  recorded (merged), and the owner's tick of every acceptance line only he
-                                                 ticks (see tick)
+                                                 ticks (see tick); in a loop whose rows name acceptance lines (evidence
+                                                 --line), done lists the lines no counted row names and closes the issue
+                                                 only with "<text>", the reason, written under Evidence beside them
   merged <ids> --sha <sha> [--ran "<command>" --saw "<what-it-printed>" | --red <id>] [--ci pending|green|red|none] [--repo <name-or-path>] [--keep] [--by who] | <ids> --ci <ci-state>
                                                  the merge as fields: Merged (sha, and where with --repo) and CI
                                                  (only when given; pending: a pushed commit whose CI will report;
@@ -621,7 +627,7 @@ export const COMMAND_FLAGS = {
     only: 'many', adopt: 'bool', 'dry-run': 'bool', field: 'many', parent: 'value', by: 'value',
   },
   sources: { source: 'value' },
-  evidence: { ran: 'many', saw: 'many', file: 'value', slot: 'value', by: 'value' },
+  evidence: { ran: 'many', saw: 'many', line: 'many', file: 'value', slot: 'value', by: 'value' },
   retract: { by: 'value' }, field: { add: 'bool', remove: 'bool', clear: 'bool', by: 'value' }, split: { line: 'many', by: 'value' }, base: { by: 'value' },
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
   show: { full: 'bool' }, brief: { role: 'value', slice: 'value' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', by: 'value' },
@@ -794,7 +800,7 @@ const FLAG_HOLES = {
   group: '<group>', with: '<loop-root>', base: '<base-branch>', 'stale-hours': '<hours>', sha: '<sha>', ci: '<ci-state>', red: '<another-issue>',
   target: '<what-would-get-weaker>', issue: '<id>', option: '<option>', 'ask option': '<label:effect>', 'applies-to': '<selectors>', until: '<date-or-id>', to: '<jarl-or-owner>', log: '<count>',
   ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', 'waives-review': '<ids>', quote: '<his-own-words>', under: '<a-ruling-in-force>', supersedes: '<a-ruling-in-force>',
-  rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>', line: '<line=id>', outside: '<finding-outside-the-issue>', parent: '<id>',
+  rule: '<rule-id>', area: '<type>', reach: '<number-of-files>', set: '<machine-line>', line: '<line=id>', 'evidence line': '<line>', outside: '<finding-outside-the-issue>', parent: '<id>',
 };
 const PART_HOLES = {
   title: '<title>', priority: '<prio>', tier: '<tier>', kind: '<kind>', tags: '<tag>', files: '<paths>', repo: '<name-or-path>', after: '<ids-it-waits-on>', parent: '<id>',
@@ -1095,7 +1101,7 @@ export const LIST_FIELDS = {
   import: { tags: 'name', repo: 'path', only: 'name' },
   decide: { settles: 'name', 'waives-review': 'name' },
   round: { id: 'name' }, answer: { id: 'name' },
-  evidence: { ids: 'name' }, field: { ids: 'name' }, set: { ids: 'name' }, merged: { ids: 'name' },
+  evidence: { ids: 'name', line: 'name' }, field: { ids: 'name' }, set: { ids: 'name' }, merged: { ids: 'name' },
   review: { ids: 'name' }, changelog: { ids: 'name' },
 };
 const QUOTED = /^["'`]|["'`]$/;
@@ -1417,7 +1423,7 @@ function dispatchCall(root, commandName, rest, flags) {
       case 'import': out = cmdImport(root, rest[0], flags); text = renderImport(out); break;
       case 'sources': out = cmdSources(root, rest, flags); text = renderSources(out); break;
       case 'list': out = cmdList(root, flags); text = renderList(out, R.loadProfile(root)); break;
-      case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]} — the issues: ${jarlLine('list', '--all')}`, { arg: 0, value: '<id>' }); const attachments = attachmentStates(root, i); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted }) => ({ n, ran, saw, retracted })), where: whereOf(root, i), ...(attachments.length ? { attachments } : {}) }; if (!flags.full) { const read = workerEvidence(i.sections.evidence); if (read.retracted) out = { ...out, sections: { ...i.sections, evidence: read.text }, retractedNotes: read.retracted }; } text = issueView(root, i, { full: Boolean(flags.full) }); break; }
+      case 'show': { const i = R.findIssue(root, rest[0]); need(i, `no such issue: ${rest[0]} — the issues: ${jarlLine('list', '--all')}`, { arg: 0, value: '<id>' }); const attachments = attachmentStates(root, i); out = { ...i, evidenceRows: evidenceTable(i.sections.evidence).rows.map(({ n, ran, saw, retracted, lines }) => ({ n, ran, saw, retracted, ...(lines.length ? { lines } : {}) })), where: whereOf(root, i), ...(attachments.length ? { attachments } : {}) }; if (!flags.full) { const read = workerEvidence(i.sections.evidence); if (read.retracted) out = { ...out, sections: { ...i.sections, evidence: read.text }, retractedNotes: read.retracted }; } text = issueView(root, i, { full: Boolean(flags.full) }); break; }
       case 'brief': out = R.briefData(root, rest[0], flags); text = renderBrief(out); break;
       case 'set':
         // A field is written by field, never by set: the refusal ends with the form of the call that writes it.
@@ -1552,7 +1558,7 @@ function endWithAsker(root, flags, out, text) {
 // A section's text on one line, cut where it runs long; a header field as it is.
 const FIELD_SHOWN = 120;
 const renderField = (o) => { const v = String(o.value ?? '').split('\n').map((l) => l.trim()).filter(Boolean).join(' / '); return `${o.id} ${o.field}: ${v ? (v.length > FIELD_SHOWN ? `${v.slice(0, FIELD_SHOWN)}…` : v) : '(cleared)'}`; };
-const renderEvidence = (o) => (o.retractedNote ? `${o.id} evidence note ${o.retractedNote} retracted by ${o.by}` : o.retracted ? `${o.id} evidence row ${o.retracted} retracted by ${o.by}` : o.rows ? `${o.id} evidence row${o.rows.length > 1 ? 's' : ''} recorded` : `${o.id} evidence recorded`);
+const renderEvidence = (o) => (o.retractedNote ? `${o.id} evidence note ${o.retractedNote} retracted by ${o.by}` : o.retracted ? `${o.id} evidence row ${o.retracted} retracted by ${o.by}` : o.rows ? `${o.id} evidence row${o.rows.length > 1 ? 's' : ''} recorded${o.lines ? ` for acceptance line ${o.lines.join(', ')}` : ''}` : `${o.id} evidence recorded`);
 const renderReview = (o) => (o.retracted ? `${o.id} review retracted by ${o.by} (${o.kind}): the approve ${o.retracted}` : `${o.id} review ${o.verdict}${o.by ? ` by ${o.by} (${o.kind})` : ''} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}${o.filed ? ` · filed outside the issue: ${o.filed.join(', ')}` : ''}${o.next ? ` · next: ${o.next}` : ''}`);
 
 // One answer, after its ruling is recorded: a ratified area ruling goes to the type's decision log (and a rule's ratification
