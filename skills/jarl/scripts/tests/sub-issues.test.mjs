@@ -52,6 +52,18 @@ test('an open stuck or stop question that names a parent holds back every issue 
   assert.deepEqual(groups(root), { 1: ['waiting-sub', []], 2: ['waiting-sub', []], 3: ['ready', []], 4: ['held-by-question', ['2']], 5: ['ready', []] });
 });
 
+test('a question on a parent holds up every issue under it on the owner\'s list, each counted', () => {
+  const root = loop();
+  for (const name of ['export', 'csv', 'json', 'docs', 'logo']) jarl(root, 'new', `the ${name}`, '--files', `src/${name}.mjs`);
+  jarl(root, 'field', '2,3,4', 'Parent', '1');
+  jarl(root, 'ask', 'which logo?', '--kind', 'stuck', '--issue', '5');
+  jarl(root, 'ask', 'csv or tsv first?', '--kind', 'stuck', '--issue', '1');
+  const said = jarl(root, 'next', '--as', 'owner');
+  assert.match(said, /^- a-2\b.* · holds up 2, 3, 4$/m);
+  assert.match(said, /^- a-1\b.* · holds up 5$/m);
+  assert.ok(said.indexOf('- a-2') < said.indexOf('- a-1'), `the question that holds up three issues comes first:\n${said}`);
+});
+
 test('list, show and report give each issue its parent in their json alike: the parent\'s id, or null for an issue with none, in a loop with no tree too', () => {
   const root = exportLoop();
   const parents = () => [
