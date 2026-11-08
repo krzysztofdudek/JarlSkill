@@ -111,6 +111,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A tool built on Jarl's record library can now name who changed a task's tags, priority, files or source, and the log shows that name.
 - Changing a long Where of a task now keeps only its first 120 characters and its length in the log, as a changed section does. Before, the whole old text went into the log.
 - The notes about a conflict marker or a mention of a task in a branch or a merge now name the file when its name holds a space, a letter beyond plain English or a quote. Before, such a note named no file.
+- When `models`, a check of a task's repository, a filing from a second copy of the checkout or a lock refuses and names the loop's folder, it now writes the folder in quotes, so a name with a line break or a shell sign stays on its line and runs nothing when the message is pasted.
 
 ## [6.2.0] - 2026-10-19
 

@@ -3,7 +3,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, openSync, closeSync, writeSync, unlinkSync, linkSync } from 'node:fs';
 import { basename, join, resolve, relative, isAbsolute } from 'node:path';
-import { CI_STATES, LEASE_FIELDS, PRIORITIES, Refusal, TIERS, WAIT_KIND, afterView, fieldText, hole, jarlLine, need, noSeparators, refuse, shellWord, slugify, splitList } from './base.mjs';
+import { CI_STATES, LEASE_FIELDS, PRIORITIES, Refusal, TIERS, WAIT_KIND, afterView, echoWord, fieldText, hole, jarlLine, need, noSeparators, refuse, shellWord, slugify, splitList } from './base.mjs';
 import { needNoNewOwnersWords, needNoOwnersWords } from './owner.mjs';
 import { git, gitBytes, gitRun } from './git.mjs';
 import { canonical, issuesDir, jarlDir, normalPath, portablePath, stamp, today } from './where.mjs';
@@ -249,7 +249,7 @@ export function cmdNew(root, title, rawFlags, from = {}) {
   // A linked worktree of a committed loop holds only the copy it was cut with, so a number taken there may already be used
   // in the main checkout: file from the main checkout.
   const placed = mainCheckoutOf(root);
-  need(!placed || !placed.linked || !existsSync(jarlDir(placed.mainRoot)), `${root} is a linked worktree of ${placed?.mainRoot}, which holds this loop: its copy here may lag, and the number would be used twice — file from the main checkout: pass --root ${placed?.mainRoot}`, () => ({ flag: '--root', value: placed?.mainRoot ?? '<the-main-checkout>' }));
+  need(!placed || !placed.linked || !existsSync(jarlDir(placed.mainRoot)), `${echoWord(root)} is a linked worktree of ${echoWord(placed?.mainRoot)}, which holds this loop: its copy here may lag, and the number would be used twice — file from the main checkout: pass --root ${echoWord(placed?.mainRoot)}`, () => ({ flag: '--root', value: placed?.mainRoot ?? '<the-main-checkout>' }));
   let flags = rawFlags;
   let fromTemplate = {};
   if (rawFlags.template !== undefined) {
