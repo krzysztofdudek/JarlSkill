@@ -8,7 +8,7 @@ import { readText } from './files.mjs';
 import { ISSUE_FILE_RE, KEY_RE, cmpId, idKey, idRe, newNumber, writtenForms, writtenId } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
 import { DECISION_HEAD, DECISION_META, firstLine, firstLineReadings } from './journal.mjs';
-import { LINES_SRC, eventsById, issueState, lineNumbers, loopEvents, rowLineHead } from './log.mjs';
+import { LINES_SRC, eventsById, issueState, lineDigests, loopEvents, rowLineHead } from './log.mjs';
 
 // ---- issues ------------------------------------------------------------------------------------
 
@@ -544,8 +544,8 @@ export function mergedOf(issue) {
 // row keeps its number, so a number never moves), the lines it spans (start..end, a row is its first line and the
 // indented lines under it) and whether it is retracted (struck through: `- ~~**ran:** … **saw:** …~~`). The one
 // numbering: show prints it, retract takes it, the done gate counts by it.
-// A row that names the acceptance lines it proves (evidence --line) carries their numbers in its mark, where no text of
-// the row reaches: `- **ran (line 1, 3):** … · **saw:** …` (see rowLineHead for its log line).
+// A row names the acceptance lines it proves by the digest of each line (evidence --line), in its mark, where no text of
+// the row reaches: `- **ran (line a1b2c3d4e5f6):** … · **saw:** …` (see rowLineHead for its log line).
 const ROW_START = new RegExp(`^- (~~)?\\*\\*ran(?: \\(line (${LINES_SRC})\\))?:\\*\\*`);
 const ROW_MARK = new RegExp(`^- (~~)?\\*\\*ran(?: \\(line ${LINES_SRC}\\))?:\\*\\*\\s*`);
 // Which journal line each file row wrote, by position in the file: a row's journal line keeps the first line of its
@@ -582,13 +582,13 @@ export function evidenceTable(text) {
     const cut = body.indexOf(' · **saw:**');
     // The row's first physical line after the marker: what alignRows matches the journal's row line against.
     const first = lines[i].replace(ROW_MARK, '').trim();
-    rows.push({ n: rows.length + 1, start: i, end, retracted, first, lines: lineNumbers(s[2]), ran: (cut === -1 ? body : body.slice(0, cut)).trim(), saw: cut === -1 ? '' : body.slice(cut + ' · **saw:**'.length).trim() });
+    rows.push({ n: rows.length + 1, start: i, end, retracted, first, lines: lineDigests(s[2]), ran: (cut === -1 ? body : body.slice(0, cut)).trim(), saw: cut === -1 ? '' : body.slice(cut + ' · **saw:**'.length).trim() });
     i = end;
   }
   return { lines, rows };
 }
 // The rows that count as evidence: the ones with a --saw and not retracted; a row that names acceptance lines carries
-// their numbers as lines.
+// their digests as lines.
 export function evidenceRows(issue) {
   return evidenceTable(issue.sections.evidence).rows.filter((r) => !r.retracted && r.saw !== '').map((r) => ({ ran: r.ran, saw: r.saw, ...(r.lines.length ? { lines: r.lines } : {}) }));
 }

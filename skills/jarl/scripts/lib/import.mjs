@@ -13,6 +13,7 @@ import { PROPOSED, bodyText, findIssue, loadIssues, sharedMark } from './issues.
 import { repoList, reposWhereLines } from './repositories.mjs';
 import { closedGateLine, disagreementText, gateLine, needOneSlice } from './loop.mjs';
 import { checkLines, checkWaitingText, closedNoCheckText, mergeCheckLines } from './metrics.mjs';
+import { linesCountText } from './lines.mjs';
 import { cmdNew, cmdSource, editorOf, givenFields, needLiveLoop, nextIssueNumbers, parentToFile, putUnder } from './commands.mjs';
 import { leasedByText, schedulerNote, subsText } from './evidence.mjs';
 
@@ -389,6 +390,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
     ...(o.slices ? [slicesLine(o.slices)] : []),
     ...(o.disagreements || []).map(disagreementText),
     ...(o.headerRead || []).map((n) => `note: ${n.line}`),
+    ...(o.lines && o.lines.total ? [linesCountText(o.lines)] : []),
     ...(o.check ? checkLines(o.check) : []),
     ...(o.scheduler ? [schedulerNote(o.scheduler)] : []),
     ...(o.recordFormat && formatOffText(o.recordFormat) ? [formatOffText(o.recordFormat)] : []),

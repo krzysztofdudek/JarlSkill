@@ -12,7 +12,7 @@ import { PARENT_FIELD, SLOT_NAME_RE, clearsOf, clearsWords, formatState, loadPro
 import { appendLog, appendLogLines, firstLine, goalLines, readGoal } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById, rowLinesText } from './log.mjs';
-import { acceptanceLineCount, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteLogText, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
+import { acceptanceLineCount, acceptanceLines, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteLogText, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, needFormat, repoNames, reposWhere, tipLinesOf, whereLines, whereOf } from './repositories.mjs';
 import { approveKind, carriesCode, sentBack, unmergedCode, unmergedText, coordinatorOf, disagreementText, gateOf, gateState, headerReadNotes, readLoop, recordDisagreements, reviewSplit, sameSlice, scopedLoop, sinceText, sliceNamed, sliceOf, slicesOf, waiverVoid, worksInPlace } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText, closedNoCheck } from './metrics.mjs';
@@ -21,7 +21,8 @@ import { ago, leaseLiveness, leaseState, livenessOf, thresholdText } from './rou
 import { attachmentLines, inspectAttachment, requiredSlots, slotProblems } from './attachments.mjs';
 import { ARCHIVE_KEEPS, PERMANENT_MARKER, issuesFor, needLifecycle, needLiveLoop, oneOrMany, rowsOf, waitingOn, waitsOf } from './commands.mjs';
 import { handoffAge, loadAsks, promotionBatch, ratificationBatch } from './questions.mjs';
-import { closedLines, linesText, ownerLineNotes, ownerLineWait } from './owner-lines.mjs';
+import { ownerLineNotes, ownerLineWait } from './owner-lines.mjs';
+import { lineCounts, lineDigest, lineRowForm, lineStates, lineStateText, shownRowLines, unprovedMechanical } from './lines.mjs';
 
 // ---- commands: evidence ------------------------------------------------------------------------------
 
@@ -42,41 +43,47 @@ export function cmdEvidence(root, rawIds, text, flags) {
   }
   const issues = issuesFor(root, rawIds);
   const proved = provedLines(flags, rows, issues);
-  // The first row that names a line raises the record format, before anything is written: a reader of the formats below
-  // it reads no row in the mark that holds the numbers.
-  if (proved.length) needFormat(root, 'proof-line');
-  const mark = rowLinesText(proved);
   // A row is one list item: the lines of a multi-line command or output after the first are indented under it.
   const indented = (v) => String(v).replace(/\r\n?/g, '\n').trim().split('\n').join('\n  ');
-  const added = rows ? rows.map((r) => `- **ran${mark}:** ${indented(r.ran)} · **saw:** ${indented(r.saw)}`).join('\n') : text;
+  // The digest of each line named, per issue: the same number is another text in another issue.
+  const markOf = (issue) => rowLinesText(proved ? proved.digests.get(issue.id) : []);
+  const addedTo = (issue) => (rows ? rows.map((r) => `- **ran${markOf(issue)}:** ${indented(r.ran)} · **saw:** ${indented(r.saw)}`).join('\n') : text);
   for (const issue of issues) {
     const current = (issue.sections.evidence || '').trim();
-    writeAtomic(issue.file, setSection(readText(issue.file), 'Evidence', rows ? placeEvidence(current, 'proof', added, '\n') : placeEvidence(current, 'note', noteText(added, current), '\n\n')));
+    writeAtomic(issue.file, setSection(readText(issue.file), 'Evidence', rows ? placeEvidence(current, 'proof', addedTo(issue), '\n') : placeEvidence(current, 'note', noteText(addedTo(issue), current), '\n\n')));
   }
   // Each row line is followed by the tip of the issue's branch, so the gate knows which code the row was made on.
   const tips = rows ? tipLinesOf(root, issues) : () => [];
-  appendLogLines(root, issues.flatMap((issue) => (rows ? rows.flatMap((r) => [`${issue.id} evidence row${mark} · ${firstLine(r.ran, "the issue's Evidence section")}`, ...tips(issue)]) : [noteLogText(issue.id, text)])));
-  return oneOrMany(rawIds, issues.map((issue) => (rows ? { id: issue.id, rows, ...(proved.length ? { lines: proved } : {}) } : { id: issue.id })));
+  appendLogLines(root, issues.flatMap((issue) => (rows ? rows.flatMap((r) => [`${issue.id} evidence row${markOf(issue)} · ${firstLine(r.ran, "the issue's Evidence section")}`, ...tips(issue)]) : [noteLogText(issue.id, text)])));
+  return oneOrMany(rawIds, issues.map((issue) => (rows ? { id: issue.id, rows, ...(proved?.numbers.length ? { lines: proved.numbers } : {}) } : { id: issue.id })));
 }
 
-// The acceptance lines the rows of one call prove (--line, repeated or as a comma list), each once and in order: every
-// row of the call names them all. Each is a whole number, 1 for the first acceptance line as tick counts them, of a line
-// every issue of the call has; a note proves no line. Rows recorded without --line name none.
+// The acceptance lines the --ran/--saw rows of one call prove (--line, repeated or as a comma list), each once and in
+// order, read as the numbers the caller gave and, for each issue of the call, the digest of the line at that number now:
+// the digest is what a row stores, so a row keeps naming the text it was made for whatever happens to the numbers. A row of
+// proof names at least one line, every row of the call names them all, an attachment names none, and a note proves none.
 function provedLines(flags, rows, issues) {
-  if (!flags || flags.line === undefined) return [];
+  if (!flags) return null;
+  const attachment = flags.file !== undefined;
+  if (flags.line === undefined) {
+    if (rows && !attachment) refuse('a --ran/--saw row names the acceptance line it proves, by its number with --line: a row about nothing in particular proves nothing, and a free note is taken without --ran and --saw', { flag: '--line', value: hole('<line-number>') });
+    return null;
+  }
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
-  need(rows, '--line names the acceptance lines a --ran/--saw row proves, and a free-text note proves none: record the row, or leave --line out', () => ({ drop: '--line' }));
+  need(rows && !attachment, '--line names the acceptance lines a --ran/--saw row proves, and a free-text note or an attachment proves none: record the row, or leave --line out', () => ({ drop: '--line' }));
   const given = [].concat(flags.line).flatMap((v) => String(v).split(',')).map((s) => s.trim()).filter(Boolean);
   need(given.length, '--line needs the number of an acceptance line, 1 for the first', () => ({ flag: '--line', value: hole('<line-number>') }));
   for (const v of given) need(/^\d{1,4}$/.test(v) && Number(v) >= 1, `--line takes the number of an acceptance line, 1 for the first, got "${v.slice(0, 20)}"`, () => ({ flag: '--line', value: hole('<line-number>') }));
-  const lines = [...new Set(given.map(Number))].sort((a, b) => a - b);
+  const numbers = [...new Set(given.map(Number))].sort((a, b) => a - b);
+  const digests = new Map();
   for (const issue of issues) {
-    const count = acceptanceLineCount(issue);
-    const over = lines.filter((n) => n > count);
-    if (!count) refuse(`${issue.id} has no acceptance line, so a row of it names none: leave --line out, or write the acceptance first, ${jarlLine('field', issue.id, 'Acceptance', '<line>')}${nothing}`, { drop: '--line' });
-    need(!over.length, `${issue.id} has ${count} acceptance line${count === 1 ? '' : 's'}: there is no line ${over.join(', ')}${nothing}`, () => ({ flag: '--line', value: hole('<line-number>') }));
+    const lines = acceptanceLines(issue);
+    const over = numbers.filter((n) => n > lines.length);
+    if (!lines.length) refuse(`${issue.id} has no acceptance line, so a row of it can name none: write the acceptance first, ${jarlLine('field', issue.id, 'Acceptance', '<line>')}${nothing}`, ['jarl.mjs', 'field', hole('<id>'), 'Acceptance', hole('<line>')]);
+    need(!over.length, `${issue.id} has ${lines.length} acceptance line${lines.length === 1 ? '' : 's'}: there is no line ${over.join(', ')}${nothing}`, () => ({ flag: '--line', value: hole('<line-number>') }));
+    digests.set(issue.id, [...new Set(numbers.map((n) => lineDigest(lines[n - 1])))]);
   }
-  return lines;
+  return { numbers, digests };
 }
 
 // A text a reviewer or a retracting hand gives must say something: at least two letters or digits (not "", "-", "x").
@@ -215,7 +222,8 @@ export function issueView(root, issue, { full = false, places = true } = {}) {
     const shown = body.map((l, i) => {
       if (hidden.has(i)) return null;
       const r = rows.find((x) => x.start === i);
-      if (r) return l.replace(/^- /, `- [${r.n}] `);
+      // A row names its lines by digest: shown by the numbers they carry now, so a reader sees which line it proves.
+      if (r) return (r.lines.length ? l.replace(/\(line [0-9a-f, ]+\)/, `(line ${shownRowLines(issue, r.lines).join(', ')})`) : l).replace(/^- /, `- [${r.n}] `);
       const m = notes.find((x) => x.start === i);
       if (!m) return l;
       // A waiver whose ruling does not count (superseded, or otherwise void) keeps its words and says why it waives nothing.
@@ -227,7 +235,9 @@ export function issueView(root, issue, { full = false, places = true } = {}) {
   };
   const g = full ? null : gateState(root, issue.id);
   const loop = readLoop(jarlDir(root));
-  const notes = [...recordDisagreements(loop).filter((d) => d.id === issue.id).map(disagreementText), ...headerReadNotes(loop).filter((n) => n.id === issue.id).map((n) => `note: ${n.line}`), ...checkWaiting(loop, [issue]).map(checkWaitingText), ...(places ? whereLines(whereOf(root, issue)) : []), ...ownerLineNotes(root, loop, issue), ...treeLines(loop, issue)];
+  const own = loop.issues.find((i) => i.file === issue.file) ?? issue;
+  const lineNotes = g ? lineStates(loop, own, gateOf(loop, own.id)).map(lineStateText) : [];
+  const notes = [...recordDisagreements(loop).filter((d) => d.id === issue.id).map(disagreementText), ...headerReadNotes(loop).filter((n) => n.id === issue.id).map((n) => `note: ${n.line}`), ...checkWaiting(loop, [issue]).map(checkWaitingText), ...(places ? whereLines(whereOf(root, issue)) : []), ...ownerLineNotes(root, loop, issue), ...lineNotes, ...treeLines(loop, issue)];
   const out = [];
   for (const p of pieces) {
     if (p.name === null && notes.length) {
@@ -487,6 +497,7 @@ function statusOf(root, loop, flags) {
   c.ready = profile.scheduler ? null : unfinished.filter((i) => profile.is(i.status, 'dispatchable') && !c.waitingIds.includes(i.id)).length;
   if (profile.scheduler) c.scheduler = profile.scheduler;
   c.noAcceptance = issues.filter((i) => profile.is(i.status, 'holds-claim') && !acceptanceLineCount(i)).map((i) => i.id);
+  c.lines = lineCounts(loop, issues.filter((i) => i.status !== 'dropped'));
   const inScope = new Set(issues.map((i) => i.id));
   const asks = loop.asks.filter((a) => a.state === 'open' && (!scoped || (a.issue && inScope.has(a.issue)) || (slice !== null && sameSlice(a.slice ?? null, slice))));
   // A ratify item blocks nothing, so it is not counted among the questions the loop waits on.
@@ -743,7 +754,9 @@ export function closedGateFlags(loop) {
       const g = gateOf(loop, id);
       if (!g.tracked) continue;
       const code = carriesCode(issue);
-      if (!g.rowsSince) flag(g.rowLog.some((r) => r.retracted && r.n > g.anchorN) ? 'its proof row was retracted' : `no --ran/--saw row since ${sinceText(g.anchor)}`, jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>'));
+      // Read as the gate reads it now: a closed issue's lines lost their proof when a row was retracted or a line was
+      // rewritten after the close.
+      for (const s of unprovedMechanical(lineStates(loop, issue, g))) flag(`acceptance ${lineStateText(s)}`, lineRowForm(id));
       for (const p of slotProblems(loop.root, profile, issue, g, false)) flag(`slot ${p.slot}: ${p.what}`, p.fix);
       if (profile.doneGate.approve !== 'none') {
         const fresh = jarlLine('review', id, 'approve', '--by', '<a-fresh-reviewer>', '<text>');
@@ -764,10 +777,6 @@ export function closedGateFlags(loop) {
       if (merges.some((m) => m.n > doneAt)) flag('a merge was recorded after it went done', reopen);
       const unmerged = unmergedCode(issue, g);
       if (unmerged) flag(unmerged.why === 'none' ? 'a code issue done with no merge recorded' : `a code issue done, and ${unmergedText(unmerged)}`, reopen);
-      // The line rule, in a loop that names lines and for an issue closed under it: a line a row named at the close and
-      // none names now. A line the close gave its reason for stays given.
-      const lost = closedLines(loop, issue, g)?.lost ?? [];
-      if (lost.length) flag(`no counted row names acceptance ${linesText(lost)} now, and the close counted one and gave no reason for it`, jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>'));
     }
     // Reopening resets the row and the approve, so when it is one of several repairs it comes first: the others would be wasted.
     if (repairs.length > 1 && repairs.includes(reopen)) repairs.splice(0, repairs.length, `${reopen} (it resets the row and the approve, so do it first)`, ...repairs.filter((r) => r !== reopen));

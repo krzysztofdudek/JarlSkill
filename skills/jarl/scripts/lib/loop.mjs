@@ -56,8 +56,6 @@ function makeLoop({ dir, root, profile, issues, events }) {
     coordinators: once(() => coordinatorsIn(root, loop.goalLines)),
     bots: once(() => botNames(profile)),
     branchWorkers: once(() => branchWorkersOf(loop)),
-    // The log line from which the loop names the acceptance lines a row proves: its first row that names one, or null.
-    linesFrom: once(() => events.find((e) => e.type === 'row' && e.lines)?.n ?? null),
   };
   for (const [key, read] of Object.entries(reads)) Object.defineProperty(loop, key, { enumerable: true, get: read });
   return loop;
@@ -544,7 +542,7 @@ export function gateOf(loop, id) {
     }
     before = null;
     if (e.type === 'move') { closeTip = null; if (closedBy(e)) before = e; continue; }
-    if (e.type === 'merged') { const m = { type: 'merged', n: e.n, at: e.at, sha: e.sha }; merges.push(m); before = m; mergeTip = null; continue; }
+    if (e.type === 'merged') { const m = { type: 'merged', n: e.n, at: e.at, sha: e.sha, check: e.check ?? null }; merges.push(m); before = m; mergeTip = null; continue; }
     if (e.type === 'verdict') {
       // The kind is the one recorded, or the one today's names give, whichever is stricter: a name the goal
       // declares as a coordinator after its approve was logged as fresh does not stay fresh, and a name that
@@ -611,7 +609,15 @@ export function gateOf(loop, id) {
   // Only approves logged after the last "changes" verdict are even candidates — a changes still needs its own
   // approve. Among those, and past cut, the strongest kind wins, tie-broken by the more recent.
   let sinceChanges = reviews;
-  for (let i = reviews.length - 1; i >= 0; i -= 1) { if (reviews[i].verdict === 'changes') { sinceChanges = reviews.slice(i + 1); break; } }
+  let lastChanges = null;
+  for (let i = reviews.length - 1; i >= 0; i -= 1) { if (reviews[i].verdict === 'changes') { lastChanges = reviews[i]; sinceChanges = reviews.slice(i + 1); break; } }
+  // A changes verdict stands until the work goes back: a round (or a start or reopen) spends it, and so does a new commit
+  // on the branch, seen by the tip the verdict was given on differing from the tip now. While it stands, no approve clears the
+  // issue: an approve after it counts only once it was given on a later commit, whatever reviewer gives it. A pause and a
+  // resume spend no changes verdict, so its reach is read from the window a pause does not open.
+  const changesSpent = lastChanges === null || lastChanges.n <= firm.cut;
+  const committedSince = (r) => r.tip !== undefined && lastChanges.tip !== undefined && r.tip !== lastChanges.tip;
+  const standingChanges = lastChanges && !changesSpent && !(lastChanges.tip !== undefined && now() !== null && lastChanges.tip !== now()) ? lastChanges : null;
   // Under a reviewer rule that judges the model of an approve, the owner's live waiver is the one that clears the issue,
   // whatever approve it holds: done refuses an approve whose model the rule refuses, and a waiver is the owner's ruling
   // that no review is needed, which no model rule judges. Under the default rule a fresh approve still stands first.
@@ -625,7 +631,7 @@ export function gateOf(loop, id) {
     }
     return best;
   };
-  const approves = sinceChanges.filter((r) => r.verdict === 'approve' && r.inWindow);
+  const approves = sinceChanges.filter((r) => r.verdict === 'approve' && r.inWindow && (r.kind === 'waived' || changesSpent || committedSince(r)));
   // Whether the approves meet the loop's definition of an approved issue (the done gate's "clears"), read for an issue that
   // carries code and for this issue as it is: the reading done, the merge queue and the line after a verdict all take.
   // Each reviewer of the definition is met by its strongest approve, so the approve that meets the default definition is
@@ -650,6 +656,10 @@ export function gateOf(loop, id) {
     rowLog: evidence, trail,
     lastReview: last ? last.verdict : null,
     lastApprove: [...reviews].reverse().find((r) => r.verdict === 'approve' && r.kind !== 'waived') || null,
+    // The changes verdict that stands in the way of any approve, or null.
+    standingChanges,
+    // The merges that count for the code as it is now, each with the check it recorded.
+    countedMerges: () => merges.filter(counts),
     approved,
     selfApproved: Boolean(live && live.kind === 'self'),
     // fresh: the approves clear the issue as one that carries code; cleared: as the issue is. uncleared: why approves stand
@@ -772,7 +782,7 @@ export function inFlightMark(loop, issue) {
     return m.ci === 'pending' || m.ci === 'red' ? 'merged-ci' : 'merged';
   }
   const verdicts = g.trail.filter((r) => r.inWindow && !r.retracted && (r.verdict === 'approve' || r.verdict === 'changes'));
-  if (verdicts.length && verdicts[verdicts.length - 1].verdict === 'changes') return 'changes-requested';
+  if (g.standingChanges || (verdicts.length && verdicts[verdicts.length - 1].verdict === 'changes')) return 'changes-requested';
   return g.rowsSince === 0 ? 'no-rows' : 'rows-no-verdict';
 }
 // Whether a round sent the work back and the worker has recorded no row since: the issue is the worker's again, though its

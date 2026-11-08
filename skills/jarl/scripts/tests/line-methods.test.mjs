@@ -9,7 +9,7 @@ import { gitRepo, jarl, loop as makeLoop, refuses, run } from './helpers.mjs';
 
 const R = await import('../record.mjs');
 
-const FORM = /"\[test\|check\|compare\|read\|owner\] <line>"/;
+const FORM = /<test-check-compare-read-or-owner-line>/;
 const loopOf = (...acceptance) => {
   const root = makeLoop({ prefix: 'jarl-methods-', via: 'cli' });
   jarl(root, 'new', 'the work', ...acceptance.flatMap((a) => ['--acceptance', a]));
@@ -54,14 +54,14 @@ test('a line of any other form is refused by new and by field, the refusal namin
 test('[compare] without · by: is refused, and [check] without · by: means the goal\'s declared check', () => {
   const root = loopOf('[read] a line to keep');
   const refusal = refuses(root, 'new', 'x', '--acceptance', '[compare] the report is unchanged');
-  assert.match(refusal, /\[compare\][^\n]* · by: /);
-  assert.match(lastLine(refusal), /by: <command>/);
+  assert.match(refusal, /compare line that names no command/);
+  assert.match(lastLine(refusal), /<compare-line-with-by-command>/);
   // A check line with no by is the declared check: the landing proves it, and it needs no command of its own.
   const leased2 = leased('[check] the suite passes');
   goal(leased2, '\nCheck: npm test\n');
   assert.match(jarl(leased2, 'merged', '1', '--sha', 'abc1234', '--ran', 'npm test', '--saw', 'pass 3', '--keep').trim(), /merged/);
   approve(leased2);
-  assert.equal(jarl(leased2, 'set', '1', 'done', 'landed'), '001 → done');
+  assert.equal(jarl(leased2, 'set', '1', 'done', 'landed'), '1 → done');
 });
 
 test('a line with no mark reads as read, and import\'s Proposed line counts as no line', () => {
@@ -70,7 +70,7 @@ test('a line with no mark reads as read, and import\'s Proposed line counts as n
   writeFileSync(file, fileText(root).replace('[read] a marked line', 'a line a conversion left unmarked'));
   assert.equal(stateOf(root)[1], 'read');
   jarl(root, 'review', '1', 'approve', '--by', 'rev1', 'read the diff, nothing found');
-  assert.equal(jarl(root, 'set', '1', 'done', 'read and approved'), '001 → done');
+  assert.equal(jarl(root, 'set', '1', 'done', 'read and approved'), '1 → done');
   const proposed = makeLoop({ prefix: 'jarl-methods-', via: 'cli' });
   R.newIssue(proposed, 'from a finding', { acceptance: 'Proposed by the finding — make it checkable before a worker starts: something' });
   assert.equal(JSON.parse(jarl(proposed, 'status', '--json')).noAcceptance.length, 0, 'not leased yet');
@@ -81,7 +81,7 @@ test('a lease on an issue with no line is refused, ending with the form that add
   const root = makeLoop({ prefix: 'jarl-methods-', via: 'cli' });
   jarl(root, 'new', 'no line yet');
   const refusal = refuses(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1');
-  assert.match(refusal, /001 has no acceptance line/);
+  assert.match(refusal, /1 has no acceptance line/);
   assert.match(lastLine(refusal), /^jarl\.mjs field .* Acceptance /);
   assert.match(lastLine(refusal), FORM);
   assert.equal(R.findIssue(root, '1').status, 'open', 'nothing was written');
@@ -96,7 +96,7 @@ test('a [test] line asks for a counted row naming it by the holder of the lease 
   assert.match(onlyHolder, /a name that has not held/);
   assert.match(lastLine(onlyHolder), /evidence .*--line "<line-number>"/);
   row(root, 'rev1');
-  assert.equal(jarl(root, 'set', '1', 'done', 'landed'), '001 → done');
+  assert.equal(jarl(root, 'set', '1', 'done', 'landed'), '1 → done');
   const otherOnly = leased('[test] x');
   row(otherOnly, 'rev1');
   approve(otherOnly);
@@ -116,7 +116,7 @@ test('a row counts only inside the window: a row before the start is not counted
   approve(root);
   assert.match(refuses(root, 'set', '1', 'done', 'try'), /line 1 \[test\][^\n]*the holder/);
   row(root, 'w1');
-  assert.equal(jarl(root, 'set', '1', 'done', 'landed'), '001 → done');
+  assert.equal(jarl(root, 'set', '1', 'done', 'landed'), '1 → done');
 });
 
 test('a [check] line on the declared command is proved by the landing, a stated command by the rows, and a landing on another command proves neither', () => {
@@ -129,12 +129,12 @@ test('a [check] line on the declared command is proved by the landing, a stated 
   goal(named, '\nCheck: npm test\n');
   jarl(named, 'merged', '1', '--sha', 'abc1234', '--ran', 'npm test', '--saw', 'pass', '--keep');
   approve(named);
-  assert.equal(jarl(named, 'set', '1', 'done', 'landed'), '001 → done', 'a check that states the declared command is proved by the landing too');
+  assert.equal(jarl(named, 'set', '1', 'done', 'landed'), '1 → done', 'a check that states the declared command is proved by the landing too');
   const stated = leased('[check] lint is clean · by: npm run lint');
   goal(stated, '\nCheck: npm test\n');
   row(stated, 'w1'); row(stated, 'rev1');
   approve(stated);
-  assert.equal(jarl(stated, 'set', '1', 'done', 'landed'), '001 → done', 'a stated command that is not the declared one is proved by the rows');
+  assert.equal(jarl(stated, 'set', '1', 'done', 'landed'), '1 → done', 'a stated command that is not the declared one is proved by the rows');
 });
 
 test('a [compare] line asks for two rows of the holder with identical saw and a row by a name that has not held it', () => {
@@ -142,7 +142,7 @@ test('a [compare] line asks for two rows of the holder with identical saw and a 
   const twoSame = leased(line);
   row(twoSame, 'w1', 'same output'); row(twoSame, 'w1', 'same output'); row(twoSame, 'rev1', 'same output');
   approve(twoSame);
-  assert.equal(jarl(twoSame, 'set', '1', 'done', 'landed'), '001 → done');
+  assert.equal(jarl(twoSame, 'set', '1', 'done', 'landed'), '1 → done');
   const differs = leased(line);
   row(differs, 'w1', 'before'); row(differs, 'w1', 'after'); row(differs, 'rev1', 'after');
   approve(differs);
@@ -157,10 +157,10 @@ test('a [read] line needs a live approve, a waiver or a profile with no approve 
   const root = leased('[read] the docs describe the new default');
   assert.match(refuses(root, 'set', '1', 'done', 'try'), /no approving review/);
   approve(root);
-  assert.equal(jarl(root, 'set', '1', 'done', 'read and approved'), '001 → done');
+  assert.equal(jarl(root, 'set', '1', 'done', 'read and approved'), '1 → done');
   const waived = leased('[read] the docs describe the new default');
-  jarl(waived, 'decide', 'no-review-for-1', 'the owner reads it himself', '--by', 'owner', '--waives-review', '1');
-  assert.equal(jarl(waived, 'set', '1', 'done', 'on the waiver'), '001 → done');
+  jarl(waived, 'decide', 'no-review-for-1', 'the owner reads it himself', '--by', 'owner', '--quote', 'No review for that one.', '--waives-review', '1');
+  assert.equal(jarl(waived, 'set', '1', 'done', 'on the waiver'), '1 → done');
 });
 
 test('a [owner] line needs his tick', () => {
@@ -185,7 +185,7 @@ test('a row stores the digest of its line and not its number; after a rewording 
   const file = fileText(root);
   assert.doesNotMatch(file, /\*\*ran \(line 2\):/, 'the number is not stored');
   assert.match(file, /\*\*ran \(line [0-9a-f]{12}\):\*\* npm test · \*\*saw:\*\* pass/);
-  assert.match(log(root), /001 evidence row \(line [0-9a-f]{12}\) · npm test/);
+  assert.match(log(root), /1 evidence row \(line [0-9a-f]{12}\) · npm test/);
   assert.match(jarl(root, 'show', '1'), /^- \[1\] \*\*ran \(line 2\):\*\* npm test/m, 'show maps the digest back to the line it names');
   // A line inserted before it moves its number: the rows follow the text.
   jarl(root, 'field', '1', 'Acceptance', '[test] a new first line', '--by', 'jarl');
@@ -209,7 +209,7 @@ test('evidence --ran --saw without --line is refused, ending with the form that 
   const refusal = refuses(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass');
   assert.match(refusal, /--line/);
   assert.match(lastLine(refusal), /evidence .*--line "<line-number>"/);
-  assert.equal(jarl(root, 'evidence', '1', 'a plain note about the work'), '001 evidence added');
+  assert.equal(jarl(root, 'evidence', '1', 'a plain note about the work'), '1 evidence recorded');
 });
 
 test('a changes verdict stands until a round or a new commit: an approve by another reviewer after it does not clear the issue', () => {
@@ -222,7 +222,7 @@ test('a changes verdict stands until a round or a new commit: an approve by anot
   assert.equal(JSON.parse(jarl(root, 'status', '--json')).inFlightRows[0].mark, 'changes-requested');
   jarl(root, 'round', '1', 'the docs were wrong', '--by', 'jarl');
   approve(root, 'rev2');
-  assert.equal(jarl(root, 'set', '1', 'done', 'approved after the round'), '001 → done');
+  assert.equal(jarl(root, 'set', '1', 'done', 'approved after the round'), '1 → done');
 
   const { dir, g } = gitRepo({ prefix: 'jarl-methods-git-', branch: 'main' });
   jarl(dir, 'init', 'work');
@@ -231,7 +231,7 @@ test('a changes verdict stands until a round or a new commit: an approve by anot
   writeFileSync(join(dir, 'b.txt'), 'b\n'); g('add', 'b.txt'); g('commit', '-qm', 'first');
   g('checkout', '-q', 'main');
   jarl(dir, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1-x');
-  jarl(dir, 'review', '1', 'changes', '--by', 'rev1', 'Important: wrong');
+  jarl(dir, 'review', '1', 'changes', '--by', 'rev1', 'Important: this is wrong');
   jarl(dir, 'review', '1', 'approve', '--by', 'rev2', 'looked fine to me');
   assert.match(refuses(dir, 'set', '1', 'done', 'try'), /stands until a round or a new commit/);
   g('checkout', '-q', 'jarl/1-x');
@@ -317,5 +317,5 @@ test('a Check (<name>): line matches the repository\'s own name', () => {
   const right = run(root, ['merged', '1', '--sha', 'abc1234', '--ran', 'npm test', '--saw', 'pass', '--keep']);
   assert.doesNotMatch(right.stderr, /declared check/);
   approve(root);
-  assert.equal(jarl(root, 'set', '1', 'done', 'landed on its check'), '001 → done', 'the landing on the repository\'s own Check line proves the line');
+  assert.equal(jarl(root, 'set', '1', 'done', 'landed on its check'), '1 → done', 'the landing on the repository\'s own Check line proves the line');
 });
