@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { fileAsBefore, oldJarl } from './old-jarl.mjs';
+import { noteHistories } from './note-writers.mjs';
 import { SPAWN_TIMEOUT, jarl, refuses, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
@@ -454,6 +455,13 @@ test('the lines of retracted notes, over every sequence of notes that open alike
     }
   }
   assert.equal(histories, 2 * (8 + 64 * 3 + 27 * 7));
+});
+
+test('notes written by this Jarl, by the pinned writer of record formats 1 and 2 and by the pinned first writer, in every order, each with every set of them retracted: the log tail hides exactly the retracted notes\' lines and counts them', async () => {
+  const { histories, refused } = await noteHistories(R);
+  assert.deepEqual(refused, [], 'every writer writes every history');
+  assert.deepEqual(histories.filter((h) => h.wrong).map((h) => `${h.what} :: ${h.wrong}`), []);
+  assert.equal(histories.length, 30 + 900 * 3 + 216 * 7);
 });
 
 test('a retracted note is read by neither the pinned frozen reader nor the done gate', () => {
