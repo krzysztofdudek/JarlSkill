@@ -113,6 +113,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The notes about a conflict marker or a mention of a task in a branch or a merge now name the file when its name holds a space, a letter beyond plain English or a quote. Before, such a note named no file.
 - When `models`, a check of a task's repository, a filing from a second copy of the checkout or a lock refuses and names the loop's folder, it now writes the folder in quotes, so a name with a line break or a shell sign stays on its line and runs nothing when the message is pasted.
 - When a repository has a declared base branch, the cleanup after a merge and a loop that closes tasks only on a landed merge now look at that base, as the note about the merge does. Before, they looked at the branch the main checkout had open, so the cleanup could delete the base branch and a task merged into the base could be refused.
+- A task with code that is reopened, or sent back by a failed round, after its merge, or that gets new commits after it, can no longer be closed on that old merge: the merger records the merge of the code as it is now first. The status names a finished task that was closed on such a merge. A task merged once and never reopened closes as before.
 
 ## [6.2.0] - 2026-10-19
 

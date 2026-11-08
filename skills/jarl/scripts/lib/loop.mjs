@@ -355,9 +355,25 @@ function waiverVoid(loop, slug, id) {
 // An issue carries code when it records a branch or a merge. Only then does done (and the merge queue) need a
 // fresh approve; an issue with neither — a ruling, a note, a hub document — is still cleared by the coordinator.
 export function carriesCode(issue) { return Boolean(fieldText(issue.fields.branch) || fieldText(issue.fields.merged)); }
-// A code issue whose branch is not merged: its lease records a Branch, and neither its Merged field nor its journal
-// records a merge. The one rule done refuses by and status flags a closed issue by: the merge comes before done.
-export function unmergedCode(issue, events) { return Boolean(fieldText(issue.fields.branch)) && !mergedOf(issue) && !events.some((e) => e.type === 'merged'); }
+// A code issue whose code as it is now is not merged, or null: its lease records a Branch, and its journal records no merge
+// that counts for that code (see mergeState of gateOf; a journal with no merge line leaves it to the Merged field), as
+// { why: 'none' } or the mergeState that says why. The one rule done refuses by and status flags a closed issue by: the
+// merge of the code comes before done.
+export function unmergedCode(issue, g) {
+  if (!fieldText(issue.fields.branch)) return null;
+  const state = g.mergeState();
+  if (state === null) return mergedOf(issue) ? null : { why: 'none' };
+  return state.counts ? null : state;
+}
+// What unmergedCode found, as the words after "and": the done refusal and the status flag say it alike.
+export function unmergedText(u) {
+  if (u.why === 'none') return 'records no merge';
+  const short = (tip) => tip.split(',').map((s) => s.slice(0, 12)).join(',');
+  const last = `its last merge, ${u.last.sha} (${u.last.at}),`;
+  return u.why === 'tip'
+    ? `${last} was recorded on tip ${short(u.last.tip)} and the branch is at ${short(u.tipNow)}, so the commits after it are not merged`
+    : `${last} was recorded before its last start, reopen or red round, which spends a merge as it spends an approve`;
+}
 
 // Every worker one issue's own journal has ever named on an in-progress move — a takeover replaces Worker but
 // is still the same issue, so every lease across every round counts, not only the latest.
@@ -478,6 +494,8 @@ export function gateOf(loop, id) {
   const { anchor, cut } = later(own);
   const firmed = later(firm);
   const firmAnchorN = firmed.anchor ? firmed.anchor.n : -1;
+  // A merge is of the issue's own code, so a sub-issue closing under a parent spends none: its window is the issue's own.
+  const mergeCuts = { cut: own.cut, firm: firm.cut };
   firm.cut = firmed.cut;
   const anchorN = anchor ? anchor.n : -1;
   const evidence = []; const allReviews = [];
@@ -488,6 +506,7 @@ export function gateOf(loop, id) {
   // tip shape written by itself (a note a log command with no refusal of it took, a line added later) is the tip of nothing.
   let before = null;
   let mergeTip = null;   // the tip the newest merge was recorded on
+  const merges = [];     // every merge line, in order, each with the tip recorded after it
   let closeTip = null;   // the tip recorded with the newest move, when that move closed the record
   const closedBy = (e) => e.type === 'move' && profile.is(e.to, 'closes-record');
   // The owner's waivers of this issue's review: the rulings waiverVoid finds nothing against. Each stands where decide
@@ -498,7 +517,7 @@ export function gateOf(loop, id) {
   for (const e of events) {
     if (e.type === 'tip') {
       const own = before && e.n === before.n + 1 && e.at === before.at;
-      if (own && before.type === 'merged') mergeTip = e.tip;
+      if (own && before.type === 'merged') { mergeTip = e.tip; before.tip = e.tip; }
       else if (own && closedBy(before)) closeTip = e.tip;
       else if (own && before.tip === undefined) before.tip = e.tip;
       before = null;
@@ -506,7 +525,7 @@ export function gateOf(loop, id) {
     }
     before = null;
     if (e.type === 'move') { closeTip = null; if (closedBy(e)) before = e; continue; }
-    if (e.type === 'merged') { before = e; mergeTip = null; continue; }
+    if (e.type === 'merged') { const m = { type: 'merged', n: e.n, at: e.at, sha: e.sha }; merges.push(m); before = m; mergeTip = null; continue; }
     if (e.type === 'verdict') {
       // The kind is the one recorded, or the one today's names give, whichever is stricter: a name the goal
       // declares as a coordinator after its approve was logged as fresh does not stay fresh, and a name that
@@ -545,6 +564,13 @@ export function gateOf(loop, id) {
     return tipHere;
   };
   const kept = (e, after) => e.n > after || (e.tip !== undefined && now() !== null && e.tip === now());
+  // A merge counts for the code as it is now when it was recorded after the issue's last start, reopen or red round (the
+  // moves that spend an approve; a sub-issue's close spends none, a merge being of the issue's own code), or before a pause
+  // on the tip the branch has now; and in both cases only on that tip, where its tip line and the branch's tip now are both
+  // known: commits made after a merge are not merged by it.
+  const onTipNow = (m) => m.tip === undefined || now() === null || m.tip === now();
+  const inWindow = (m) => m.n > mergeCuts.cut || (m.n > mergeCuts.firm && m.tip !== undefined && now() !== null && m.tip === now());
+  const counts = (m) => inWindow(m) && onTipNow(m);
   for (const e of evidence) e.inWindow = e.n > anchorN || (e.n > firmAnchorN && kept(e, anchorN));
   for (const r of allReviews) r.inWindow = (r.n > cut || (r.n > firm.cut && kept(r, cut))) && (r.kind !== 'waived' || r.tip === undefined || now() === null || r.tip === now());
   // A retraction names a row by its file-wide ordinal (evidenceTable: the one numbering show prints), and the journal's
@@ -622,6 +648,15 @@ export function gateOf(loop, id) {
     // (waivers on two tips: none), else the newest tip a counted row or approve was made on. Every other row and approve
     // inside the window counts whatever the tip, and one from ahead of a pause, which counts on no tip, can only be added.
     // The commit a merge names is never taken: a squash or a merge commit is a tip no row or waiver was made on.
+    // The merges the journal records, read when asked: null when it records none; else whether one counts for the code as
+    // it is now, and, when none does, the newest with why it does not ('window': recorded before the last start, reopen or
+    // red round; else 'tip': recorded on another tip than the branch's tip now, which `tipNow` is).
+    mergeState: () => {
+      if (!merges.length) return null;
+      if (merges.some(counts)) return { counts: true };
+      const last = merges[merges.length - 1];
+      return { counts: false, last, why: inWindow(last) ? 'tip' : 'window', tipNow: now() };
+    },
     closingTip: () => {
       if (now() !== null) return now();
       const counted = [...evidence.filter((e) => e.inWindow && !e.retracted), ...approves].filter((x) => x.tip !== undefined);

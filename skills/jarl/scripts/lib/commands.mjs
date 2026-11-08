@@ -15,7 +15,7 @@ import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } f
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
 import { baseOf, branchTip, commitRepoNames, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needFormatHeld, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
-import { FIELD_NAMES, activeSlices, carriesCode, unmergedCode, gateOf, isSliceTag, needOneSlice, readLoop, sinceText, sliceOf, unclearedText, unorderedNamings, unorderedText } from './loop.mjs';
+import { FIELD_NAMES, activeSlices, carriesCode, unmergedCode, unmergedText, gateOf, isSliceTag, needOneSlice, readLoop, sinceText, sliceOf, unclearedText, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelRefusalOf, modelReviewForm, modelValue, spellingNote } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
@@ -1518,7 +1518,7 @@ function doneGateIn(root, loop, issue, base) {
     : `${issue.id} has no --ran/--saw evidence row recorded since ${sinceText(g.anchor)} (${g.anchor.at}) — a free-text note, or a row written before that (before a start or a reopen), is not proof of the work: ${how}${gap}` };
   const slots = slotRefusal(root, profile, issue, g);
   if (slots) return { cause: 'slots', text: slots };
-  if (profile.doneGate['requires-merged']) { const m = mergeRefusal(root, issue, base); if (m) return { cause: 'merge', text: m }; }
+  if (profile.doneGate['requires-merged']) { const m = mergeRefusal(root, issue, base, g); if (m) return { cause: 'merge', text: m }; }
   const owner = () => { const text = ownerLineRefusal(root, loop, issue); return text ? { cause: ownerLineRewrite(root, loop, issue) ? 'owner-rewrite' : 'owner', text } : null; };
   if (profile.doneGate.approve === 'none') return owner();
   const code = carriesCode(issue);
@@ -1541,9 +1541,15 @@ function doneGateIn(root, loop, issue, base) {
   if (byModel) return { cause: 'model', text: `${byModel}: ${modelReviewForm(issue.id)}` };
   // A code issue is merged before it is done, the order the approve's reply names and the rule status flags a closed
   // issue by; a profile that requires a landed merge has checked more than this above.
-  if (unmergedCode(issue, loop.eventsById.get(issue.id) || [])) return { cause: 'merge', text: `${issue.id} carries code (its lease records Branch ${fieldText(issue.fields.branch)}) and records no merge — a code issue is merged before it is done: the merger lands the branch and records it, ${jarlLine('merged', issue.id, '--sha', '<sha>')}, then done` };
+  const unmerged = unmergedRefusal(issue, g);
+  if (unmerged) return { cause: 'merge', text: unmerged };
   // Last, an acceptance line only the owner ticks: his look comes on top of the proof and the review, never instead.
   return owner();
+}
+// Why a code issue's code as it is now is not merged (see unmergedCode), as done says it, or null.
+function unmergedRefusal(issue, g) {
+  const u = unmergedCode(issue, g);
+  return u ? `${issue.id} carries code (its lease records Branch ${fieldText(issue.fields.branch)}) and ${unmergedText(u)} — a code issue is merged before it is done: the merger lands the branch and records it, ${jarlLine('merged', issue.id, '--sha', '<sha>')}, then done` : null;
 }
 
 // The done gate's requires-merged: the issue records a merge (merged --sha) and that commit is in the base of the
@@ -1551,10 +1557,13 @@ function doneGateIn(root, loop, issue, base) {
 // the base the merge note and the cleanup read too (see baseOf), or the branch a library caller names as opts.base (a
 // composer that lands into a branch nobody has checked out, such as a team branch, names it). A sha the repository does
 // not know, or one not reachable from the base, is refused: a merge recorded is not a merge landed until the base holds it.
-function mergeRefusal(root, issue, base) {
+// A merge that does not count for the code as it is now (see unmergedCode) is refused before its commit is looked for.
+function mergeRefusal(root, issue, base, g) {
   const m = mergedOf(issue);
   const gate = 'this loop\'s profile closes an issue only on a landed merge (done-gate "requires-merged": true)';
   if (!m) return `${issue.id} records no merge — ${gate}: ${jarlLine('merged', issue.id, '--sha', '<sha>')} once it has landed`;
+  const spent = unmergedRefusal(issue, g);
+  if (spent) return spent;
   const repos = issueRepoPaths(root, issue, m.repo ? [m.repo] : undefined).filter(isGitRepo);
   if (!repos.length) return `${issue.id} records Merged ${m.sha}, but no repository it names is a git repository here — ${gate}, and the merge cannot be checked`;
   const refOf = (r) => (base === undefined ? baseOf(root, r) : base);
