@@ -523,7 +523,7 @@ commands:
 options: --json  --help  --root <loop-root>   (the directory holding .jarl/; without it JARL_ROOT, an absolute path,
          else the loop at the root of the current checkout, or of its main checkout from a worktree: never one in a
          subdirectory; a note names the loops below it, and where the root holds none and loops are below, a call
-         that names none is refused with their list, init and use excepted)
+         that names none is refused with their list, init, use and profile with a file excepted)
 
 The list of what only the command line does, next to the record library, is in the skill: references/composers.md, section "What only the command line does".
 
@@ -1335,14 +1335,17 @@ export function pluginVersionNote(env = process.env, script = installVersion()) 
 }
 
 // The command that reads the checkout rather than a loop in it, whatever loop a call would reach: use reads its path from
-// it. And the one discovery does not refuse where the checkout's root holds no loop: init, which opens one there.
+// it. And the calls discovery does not refuse where the checkout's root holds no loop: init, which opens one there, and profile
+// with a file, which checks the file and needs no loop.
 export const CHECKOUT_COMMANDS = Object.freeze(['use']);
 export const OPENING_COMMANDS = Object.freeze(['init']);
+export const readsNoLoop = (cmd, file) => OPENING_COMMANDS.includes(cmd) || (cmd === 'profile' && file !== undefined);
 // The loop a command-line call reaches, and the note it gets: its --root; for use, the checkout of the working directory;
 // else JARL_ROOT, an absolute path (a relative one would reach another loop from the next directory); else the loop found
 // from the working directory (discoverLoop), which refuses a call where the checkout holds no loop at its root and holds
-// some below it, init excepted. The command line keeps nothing between runs: use prints the JARL_ROOT setting instead.
-export function cliRoot(cmd, flags, env = process.env, cwd = process.cwd()) {
+// some below it, init and profile with a file excepted. The command line keeps nothing between runs: use prints the JARL_ROOT
+// setting instead. `args` are the call's arguments after the command.
+export function cliRoot(cmd, flags, env = process.env, cwd = process.cwd(), args = []) {
   if (flags.root) return { root: R.resolveRoot(flags.root, cwd), note: null };
   if (CHECKOUT_COMMANDS.includes(cmd)) return { root: R.resolveRoot(undefined, cwd), note: null };
   const raw = String(env.JARL_ROOT ?? '').trim();
@@ -1350,7 +1353,7 @@ export function cliRoot(cmd, flags, env = process.env, cwd = process.cwd()) {
     need(isAbsolute(raw), `JARL_ROOT must be an absolute path (got ${escapedEchoes(JSON.stringify(raw), [raw])}) — a relative one would reach another loop from another directory; nothing was read or written`, { flag: '--root', value: hole('<loop-root>') });
     return { root: resolve(raw), note: null };
   }
-  if (OPENING_COMMANDS.includes(cmd)) return { root: R.resolveRoot(undefined, cwd), note: null };
+  if (readsNoLoop(cmd, args[0])) return { root: R.resolveRoot(undefined, cwd), note: null };
   return discoverLoop(cwd);
 }
 
@@ -1363,7 +1366,7 @@ function main() {
   const [cmd, ...rest] = positional;
   if (!cmd || flags.help) { console.log(USAGE); process.exit(flags.help ? 0 : 1); }
   let located;
-  try { located = cliRoot(cmd, flags); } catch (e) { console.error(e.message); process.exit(1); }
+  try { located = cliRoot(cmd, flags, process.env, process.cwd(), rest); } catch (e) { console.error(e.message); process.exit(1); }
   const { root } = located;
   let r;
   try { r = dispatch(root, cmd, rest, flags); } catch (e) {

@@ -7,12 +7,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readdirSync, symlinkSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { SCRIPT, SPAWN_TIMEOUT } from './helpers.mjs';
 import * as R from '../record.mjs';
-import { LOOP_WALK_DEPTH, loopsUnder } from '../jarl-lib.mjs';
+import { BUILTIN_STATUSES, LOOP_WALK_DEPTH, loopsUnder } from '../jarl-lib.mjs';
 import * as mcp from '../jarl-mcp.mjs';
 
 // A checkout (a directory with a .git) holding a loop at each path given, '.' for its root.
@@ -32,12 +32,10 @@ function cli(cwd, args, env = {}) {
 }
 const listing = (dir) => readdirSync(dir, { recursive: true }).map(String).sort();
 
-test('the walk lists the loops under a checkout, down to its depth, and never enters a hidden directory, node_modules, vendor, another checkout or a link', () => {
+test('the walk lists the loops under a checkout, down to its depth, and never enters a hidden directory, node_modules, vendor or another checkout', () => {
   const dir = checkout(['.', 'releases/6.3.0', 'topics/a/b', 'node_modules/pkg', 'vendor/copy', '.hidden/x', 'w/x/y/z/deep']);
   mkdirSync(join(dir, 'other', '.git'), { recursive: true });
   R.initLoop(join(dir, 'other'), 'another checkout');
-  mkdirSync(join(dir, 'link-target'));
-  try { symlinkSync(join(dir, 'releases'), join(dir, 'link-target', 'releases'), 'dir'); } catch { /* a platform that refuses a link here leaves the case out */ }
   const walk = loopsUnder(dir);
   assert.equal(LOOP_WALK_DEPTH, 4);
   assert.deepEqual(walk.loops, ['.', 'releases/6.3.0', 'topics/a/b']);
@@ -45,6 +43,27 @@ test('the walk lists the loops under a checkout, down to its depth, and never en
   assert.equal(walk.depth, 4);
   assert.deepEqual(loopsUnder(dir, { depth: 5 }).loops, ['.', 'releases/6.3.0', 'topics/a/b', 'w/x/y/z/deep'], 'a deeper walk finds the deeper loop');
   assert.equal(loopsUnder(dir, { limit: 3 }).stopped, true, 'the walk stops after its number of directories and says so');
+});
+
+test('the walk follows no link to a directory', (t) => {
+  const dir = checkout(['releases/6.3.0']);
+  mkdirSync(join(dir, 'linked'));
+  try { symlinkSync(join(dir, 'releases'), join(dir, 'linked', 'releases'), 'dir'); } catch (e) {
+    t.skip(`this platform refuses a link to a directory here (${e.code}), so there is no link for the walk to pass by`);
+    return;
+  }
+  assert.deepEqual(loopsUnder(dir).loops, ['releases/6.3.0'], 'the loop behind the link is not listed again');
+});
+
+test('profile with a file checks the file in a checkout whose root holds no loop and holds some below it', () => {
+  const dir = checkout(['releases/6.3.0']);
+  const file = join(dir, 'p.json');
+  writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, statuses: BUILTIN_STATUSES, initial: 'open' }));
+  const r = cli(dir, ['profile', file]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^profile custom/);
+  assert.equal(cli(dir, ['profile']).status, 1, 'the profile of the loop a call reaches is still refused with the list');
+  assert.equal(mcp.callTool('jarl_profile', { file }, {}, dir, { root: null }).isError, false, 'and the tool checks it too');
 });
 
 test('a checkout with no loop at its root and loops below refuses a call that names none, with the list; init and use still run', () => {

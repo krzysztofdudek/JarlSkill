@@ -33,7 +33,7 @@
 // No dependencies beyond the vendored copy, Node 22+.
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AUTHOR_REQUIRED, CHECKOUT_COMMANDS, OPENING_COMMANDS, COMMAND_ARGS, COMMAND_FLAGS, GONE_TEXT_NAMES, INTERNAL_COMMANDS, LIST_FIELDS, REMOVED_FLAGS, REPLACED_COMMANDS, Refusal, replacedMessage, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, discoverLoop, findRoot, isEntry as isEntryOf, installVersion } from './jarl.mjs';
+import { AUTHOR_REQUIRED, CHECKOUT_COMMANDS, COMMAND_ARGS, COMMAND_FLAGS, GONE_TEXT_NAMES, INTERNAL_COMMANDS, LIST_FIELDS, REMOVED_FLAGS, REPLACED_COMMANDS, Refusal, replacedMessage, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, discoverLoop, findRoot, readsNoLoop, isEntry as isEntryOf, installVersion } from './jarl.mjs';
 import { defineTable } from './vendor/runes/dist/cli/index.mjs';
 import {
   buildTools as generateTools, argvFor as generateArgv, commandForTool, serveStdio, InvalidParams,
@@ -265,7 +265,7 @@ export function argvFor(cmd, input = {}) {
 // the checkout: the root field, else the checkout of the server's working directory. Without any of them, the loop found
 // from the working directory (discoverLoop): a note names the loops below the root's, and where the root holds none and
 // loops are below, the call is refused with their list (a Refusal, which the call answers as the command line's refusal),
-// jarl_init excepted, which opens a loop there.
+// jarl_init excepted, which opens a loop there, and jarl_profile with a file, which checks the file.
 export const SESSION = { root: null };
 export function rootOf(input = {}, env = process.env, cwd = process.cwd(), session = SESSION, cmd = null) {
   if (typeof input.root === 'string' && input.root.trim()) return { root: resolve(input.root.trim()), from: 'root' };
@@ -276,7 +276,7 @@ export function rootOf(input = {}, env = process.env, cwd = process.cwd(), sessi
     need(isAbsolute(raw), `JARL_ROOT must be an absolute path (got ${JSON.stringify(raw)}) — a relative one would resolve against the server's own working directory, not the caller's; pass "root" on the call instead, or fix the server's environment`);
     return { root: resolve(raw), from: 'JARL_ROOT' };
   }
-  if (OPENING_COMMANDS.includes(cmd)) return { root: findRoot(cwd), from: 'cwd' };
+  if (readsNoLoop(cmd, input.file)) return { root: findRoot(cwd), from: 'cwd' };
   const found = discoverLoop(cwd);
   return { root: found.root, from: 'cwd', note: found.note };
 }

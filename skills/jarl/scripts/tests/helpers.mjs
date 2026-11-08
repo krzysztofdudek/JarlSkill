@@ -12,6 +12,12 @@ import { printedLine, shellWord } from '../jarl-lib.mjs';
 import * as J from '../jarl.mjs';
 import { NO_EXCLUDES } from './portable.mjs';
 
+// The command line and the server read JARL_ROOT when a call names no loop. A shell that exports it would send every call
+// a test makes without --root (from a checkout, through a shell, or to a server it starts) to that loop, and write into
+// it: the variable is taken out of this process's environment once, here, so nothing a test starts inherits it. A test
+// that means a JARL_ROOT passes it to the call it starts.
+delete process.env.JARL_ROOT;
+
 export const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 export const SPAWN_TIMEOUT = 120_000;
 
