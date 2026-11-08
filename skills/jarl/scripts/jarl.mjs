@@ -267,10 +267,12 @@ commands:
                                                  an open issue reserves its files against the issues of its own slice
   review <ids> <verdict> --by <reviewer> [--model <model-id>] [--relayed] [--bot] [--artifact <path>] [--outside "<finding-outside-the-issue>"]... [--field "<name=value>"]... "<text>"
                                                  the reviewer's verdict; --model is the model the reviewer was raised on
-                                                 (stored as given); --artifact is the render or file the verdict judged,
-                                                 a path inside the repository the work is in, relative to its root: an
-                                                 absolute path, a home (~), a variable ($HOME, %USERPROFILE%), an address
-                                                 with a scheme (file://, https://) or a path that climbs out with .. is
+                                                 (stored as given); --artifact is the render or file the verdict judged:
+                                                 the value is a path inside the repository the work is in, relative to
+                                                 its root, written with no scheme: a value that opens with a scheme
+                                                 (file:, https:, mailto:), a host and a port (localhost:3000), a drive
+                                                 (C:), a slash or a backslash, or a home (~), a variable of a shell where
+                                                 one starts ($HOME, %USERPROFILE%), or a path that climbs out with .. is
                                                  refused; show prints it with the verdict and report counts it; it
                                                  gates nothing, and the first raises the record
                                                  format to 3; --relayed marks a verdict recorded by someone else in

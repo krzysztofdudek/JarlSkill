@@ -89,7 +89,6 @@ function limitsOf(profile, lines) {
     if (b) return `barred by the profile${modelKey(b) === modelKey(model) ? '' : ` (${b})`}`;
     return ceilingRank >= 0 && lines.rank(model) > ceilingRank ? `above the profile's ceiling (${m.ceiling})` : null;
   };
-  // The placed models it allows, the strongest tier first, each tier in the order of its lines.
   // Every placed model, and those it allows, the strongest tier first, each tier in the order of its lines.
   const placed = [];
   for (let k = lines.tiers.length - 1; k >= 0; k -= 1) for (const model of lines.byTier[lines.tiers[k]] || []) if (!placed.some((p) => modelKey(p.model) === modelKey(model))) placed.push({ model, rank: k });

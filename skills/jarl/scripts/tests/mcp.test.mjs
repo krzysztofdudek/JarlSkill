@@ -129,7 +129,9 @@ for (const [label, value] of [['a bare relative path', 'some/loop'], ['./ itself
 // ---- the server over stdio, as a host starts it ----
 
 function startServer(env = {}, cwd = undefined) {
-  const child = spawn(process.execPath, [SERVER], { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, ...env }, cwd });
+  // The server is started with no JARL_ROOT but the one a test passes: an exported one would send its calls elsewhere.
+  const { JARL_ROOT: _exported, ...inherited } = process.env;
+  const child = spawn(process.execPath, [SERVER], { stdio: ['pipe', 'pipe', 'pipe'], env: { ...inherited, ...env }, cwd });
   let buf = '';
   const waiting = new Map();
   child.stdout.setEncoding('utf8');

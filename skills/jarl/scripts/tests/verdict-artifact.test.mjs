@@ -10,7 +10,8 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileAsBefore, formatTwoJarl, oldJarl } from './old-jarl.mjs';
-import { jarl, refuses, loop as makeLoop } from './helpers.mjs';
+import { jarl, refuses, skillText, loop as makeLoop } from './helpers.mjs';
+import { USAGE } from '../jarl.mjs';
 import { FINDINGS } from './findings.mjs';
 import { BUILTIN_STATUSES, loadProfile, loopEvents } from '../jarl-lib.mjs';
 
@@ -60,36 +61,52 @@ test('a finding that opens like an artifact mark is kept as text', () => {
   assert.doesNotMatch(jarl(root, 'report', '--metrics'), /verdicts that name an artifact/);
 });
 
-test('an absolute path, a home path, an address with a scheme, a variable of a shell, a path that climbs out, and one with a separator or a line break are refused with nothing written', () => {
+// The values --artifact refuses, each with the words of its reason: a place on one machine, an address or a host, a
+// variable of a shell where one starts, a path that climbs out, and what one segment of the line cannot hold.
+const PLACE = /is a place on one machine, which the record never holds/;
+const SCHEMED = /opens with a scheme or a host and a port, which names no path inside the repository/;
+const VARIABLE = /holds a variable of a shell, which stands for a place on one machine/;
+const CLIMBS = /climbs out of it with \.\./;
+const REFUSED = [
+  ['/home/someone/render.png', PLACE], ['/', PLACE], ['\\renders\\x.png', PLACE], ['\\\\share\\render.png', PLACE], ['//server/share/x.png', PLACE],
+  ['C:\\Users\\someone\\render.png', PLACE], ['C:/Users/u/x.png', PLACE], ['c:x.png', PLACE], ['a:b', PLACE],
+  ['~/render.png', PLACE], ['~someone/render.png', PLACE],
+  ['file:x.png', SCHEMED], ['file:/home/u/x.png', SCHEMED], ['file:/C:/Users/u/x.png', SCHEMED], ['file:C:/x.png', SCHEMED],
+  ['file://server/share/x.png', SCHEMED], ['file:///home/u/x.png', SCHEMED], ['FILE:///C:/Users/u/x.png', SCHEMED], ['File:////server/share/x.png', SCHEMED],
+  ['https://example.com/render.png', SCHEMED], ['HTTP://localhost:3000/render.png', SCHEMED], ['localhost:3000/x.png', SCHEMED], ['localhost:3000', SCHEMED],
+  ['127.0.0.1:8080/x.png', SCHEMED], ['mailto:x', SCHEMED], ['data:image/png;base64,AAAA', SCHEMED], ['javascript:x', SCHEMED], ['svn+ssh:host/x.png', SCHEMED],
+  ['$HOME/x.png', VARIABLE], ['${HOME}/x.png', VARIABLE], ['renders/$HOME/x.png', VARIABLE], ['renders\\$TMP\\x.png', VARIABLE], ['renders/a${X}.png', VARIABLE],
+  ['%USERPROFILE%\\x.png', VARIABLE], ['renders/%TEMP%/x.png', VARIABLE],
+  ['..', CLIMBS], ['../other/render.png', CLIMBS], ['renders/../../render.png', CLIMBS], ['renders\\..\\..\\x.png', CLIMBS],
+  ['renders · home.png', /--artifact is one path on one line, with no · in it/], ['renders/\nhome.png', /--artifact is one path on one line/], ['  ', /--artifact needs a value/],
+];
+// The values --artifact writes as given: a path inside the repository, a $ or a % inside a name, a .. that stays inside.
+const WRITTEN = ['renders/home page.png', './x', 'a/../b', 'renders\\x', 'renders/50%.png', 'price$total.png', 'a$b/c.png', 'renders/x%y%.png', 'renders/old/../home.png', 'v2.png'];
+
+test('an artifact value with a scheme or a host, a drive, a root, a home, a variable where one starts, a climb out, a separator or a line break is refused with nothing written', () => {
   const { root, id } = inFlight();
   const before = log(root);
-  for (const [path, said] of [
-    ['/home/someone/render.png', /is a place on one machine, which the record never holds/],
-    ['C:\\Users\\someone\\render.png', /is a place on one machine/],
-    ['\\\\share\\render.png', /is a place on one machine/],
-    ['~/render.png', /is a place on one machine/],
-    ['file:///home/u/x.png', /is an address with a scheme, which names no path inside the repository/],
-    ['file:///C:/Users/u/x.png', /is an address with a scheme/],
-    ['https://example.com/render.png', /is an address with a scheme/],
-    ['http://localhost:3000/render.png', /is an address with a scheme/],
-    ['$HOME/x.png', /holds a variable of a shell, which stands for a place on one machine/],
-    ['${HOME}/x.png', /holds a variable of a shell/],
-    ['%USERPROFILE%\\x.png', /holds a variable of a shell/],
-    ['../other/render.png', /climbs out of it with \.\./],
-    ['renders/../../render.png', /climbs out of it with \.\./],
-    ['renders · home.png', /--artifact is one path on one line, with no · in it/],
-    ['renders/\nhome.png', /--artifact is one path on one line/],
-    ['  ', /--artifact needs a value/],
-  ]) {
+  for (const [path, said] of REFUSED) {
     const r = refuses(root, 'review', id, 'approve', '--by', 'rev-a', '--artifact', path, FINDINGS);
     assert.match(r, said, path);
     assert.match(r, /--artifact "<path>"\n$/, `the refusal ends with the form: ${path}`);
   }
   assert.equal(log(root), before, 'nothing was written');
   assert.equal(formatOf(root), 1);
-  // A path that goes down and back up inside the repository stays in it.
-  jarl(root, 'review', id, 'approve', '--by', 'rev-a', '--artifact', 'renders/old/../home.png', FINDINGS);
-  assert.match(log(root), / · artifact renders\/old\/\.\.\/home\.png · /);
+});
+
+test('a path inside the repository is written as given, a $ or a % inside a name and a .. that stays inside among them', () => {
+  const { root, id } = inFlight();
+  for (const path of WRITTEN) jarl(root, 'review', id, 'approve', '--by', 'rev-a', '--artifact', path, FINDINGS);
+  const verdicts = loopEvents(join(root, '.jarl'), loadProfile(root)).filter((e) => e.type === 'verdict');
+  assert.deepEqual(verdicts.map((e) => e.artifact), WRITTEN);
+});
+
+test('the help and the reviewer reference state the rule of an artifact value in the same words', () => {
+  const sentence = (text) => /the value is a path inside the repository the work is in, [^;]*? is refused/i.exec(text.replace(/\s+/g, ' '))?.[0].toLowerCase();
+  const help = sentence(USAGE);
+  assert.ok(help, 'the help states the rule');
+  assert.equal(sentence(skillText('references/reviewer.md')), help);
 });
 
 test('the first verdict that names an artifact raises the loop to format 3, which both readers of the lower formats refuse', () => {
