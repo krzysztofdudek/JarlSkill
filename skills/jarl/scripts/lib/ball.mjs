@@ -21,6 +21,8 @@ export const JARL_HOLDER = 'jarl';
 // How many lines next --as prints before it counts the rest; --all prints every one.
 export const BALL_SHOWN = 7;
 const TITLE = 70;
+// A title in the list of issues one line names.
+const MEMBER_TITLE = 30;
 // A title on one line: a question of several lines is one row, its lines joined.
 const short = (text, n = TITLE) => { const t = fieldText(text); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
 
@@ -168,20 +170,22 @@ function awaitingReview(loop, profile) {
 // issues that wait on it wait on the owner. A question whose issues all have a verdict holds nothing.
 const REVIEW_ASK = 'start a fresh session to review';
 // The sentence a question opens with to ask for a review: the phrase, then "issue" or "issues" and the one list of numbers
-// that runs on from it, joined by a comma and a space, by and or or between spaces, or by an ampersand. The list ends
+// that runs on from it, joined by a comma (with or without a space after it), by and or or between spaces, or by an ampersand. The list ends
 // at the first thing that is not a join and a number, so a number later in the question is not asked about.
-const ASKED_NUMBER = '#?\\d+(?![\\w/-])(?![.,:]\\d)';
-const ASKED_JOIN = '(?:,\\s+(?:(?:and|or)\\s+)?|\\s+(?:and|or)\\s+|\\s*&\\s*)';
+const ASKED_NUMBER = '#?\\d+(?![\\w/-])(?![.:]\\d)';
+const ASKED_JOIN = '(?:,\\s*(?:(?:and|or)\\s+)?|\\s+(?:and|or)\\s+|\\s*&\\s*)';
 const REVIEW_ASK_RE = new RegExp(`^${REVIEW_ASK} issues?\\s+${ASKED_NUMBER}(?:${ASKED_JOIN}${ASKED_NUMBER})*`, 'i');
 // The issues a question asks for a fresh review of, by key: the issues of that one list the loop holds (idsCited reads the
 // numbers of the sentence); none for any other question.
 function reviewAskKeys(loop, question) {
   const m = REVIEW_ASK_RE.exec(question);
-  return m ? idsCited(m[0], loop.byId).map(idKey) : [];
+  return m ? idsCited(m[0].replace(/,(?=\S)/g, ', '), loop.byId).map(idKey) : [];
 }
 // The proofs awaiting a fresh reviewer that an open question names: the ones the owner holds.
+// Only a plain question holds: a ratify item blocks nothing, and an escalation, a rule and a promotion have rows of their own.
+const HOLDS_NO_REVIEW = new Set(['escalation', 'rule', 'ratify']);
 function heldByOwner(loop, awaiting) {
-  const asked = new Set(loop.asks.filter((a) => a.state === 'open').flatMap((a) => reviewAskKeys(loop, a.question)));
+  const asked = new Set(loop.asks.filter((a) => a.state === 'open' && !HOLDS_NO_REVIEW.has(a.kind)).flatMap((a) => reviewAskKeys(loop, a.question)));
   return awaiting.filter((i) => asked.has(idKey(i.id))).map((i) => i.id);
 }
 const joinIds = (issues) => issues.map((i) => i.id).join(', ');
@@ -223,6 +227,7 @@ function reviewRow(todo, holder, verdict, liveness) {
   const waited = !idle.length ? '' : only ? ` for ${idleFor(idle[0])}` : ` for ${idle.map((lv) => `${ago(lv.ageMs)} on ${lv.id}`).join(', ')} (threshold ${thresholdText(idle[0].minutes)})`;
   return [{
     what: 'review', id: todo[0].id, ids: todo.map((i) => i.id), units, title: only ? only.title : '', priority, holder, ...(worker ? { doer: worker } : {}),
+    ...(only ? {} : { issues: todo.map((i) => ({ id: i.id, title: i.title, ...(fieldText(i.fields.worker) ? { doer: fieldText(i.fields.worker) } : {}) })) }),
     ...(idle.length ? { idle: idle.map((lv) => ({ id: lv.id, ageMs: lv.ageMs, minutes: lv.minutes })) } : {}),
     says: `proof recorded, no verdict${waited}; ${only ? `raise a fresh reviewer for ${ids}` : `raise one fresh reviewer per unit: ${units.map(unitText).join(' · ')}`}; if you cannot raise agents, ask the owner to start a fresh session`,
     command: `${only ? verdict(only.id) : verdict('<ids>')}, or ${jarlLine('ask', `${REVIEW_ASK} issue${todo.length === 1 ? '' : 's'} ${ids}`)}`,
@@ -548,7 +553,9 @@ export function cmdNextAs(root, flags = {}) {
 }
 
 export function renderNextAs(o) {
-  const line = (r) => `- ${refOf(r)}${r.what === 'ruling' || !r.title ? '' : ` ${short(r.title)}`}: ${r.says}${r.doer && r.what !== 'worker' && r.what !== 'idle' ? ` (worker ${r.doer})` : ''} — ${r.command}${r.holdsUp.length ? ` · holds up ${r.holdsUp.slice(0, 5).join(', ')}${r.holdsUp.length > 5 ? ` and ${r.holdsUp.length - 5} more` : ''}` : ''}`;
+  // A line for several issues names each with its title and worker, where a line for one carries them in its head.
+  const members = (r) => (r.issues ? ` (${r.issues.map((i) => `${i.id} ${short(i.title, MEMBER_TITLE)}${i.doer ? `, worker ${i.doer}` : ''}`).join('; ')})` : '');
+  const line = (r) => `- ${refOf(r)}${r.what === 'ruling' || !r.title ? '' : ` ${short(r.title)}`}: ${r.says}${r.doer && r.what !== 'worker' && r.what !== 'idle' ? ` (worker ${r.doer})` : members(r)} — ${r.command}${r.holdsUp.length ? ` · holds up ${r.holdsUp.slice(0, 5).join(', ')}${r.holdsUp.length > 5 ? ` and ${r.holdsUp.length - 5} more` : ''}` : ''}`;
   const out = [`On ${holderWord(o.as)} (${o.total})`];
   if (!o.total) out.push(`- (nothing is on ${holderWord(o.as)})`);
   out.push(...o.rows.map(line));
