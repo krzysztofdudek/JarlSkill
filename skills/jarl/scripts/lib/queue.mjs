@@ -81,6 +81,14 @@ export function cmdQueue(root, flags = {}) {
   return { repos: out };
 }
 
+// The merger an issue's approved work goes to through its slice, { slice, name }, from the moment the slice's integration
+// branch exists in a repository of the issue; null for an issue with none and, until that branch is made, for a slice
+// with one: its work queues to the feature branch and is that merger's alone, in every view.
+export function liveMerger(root, loop, issue) {
+  const m = sliceMerger(loop.goalLines, issue);
+  return m && issueRepos(root, issue).filter(isGitRepo).some((r) => refsIn(r).has(integrationBranch(m.slice))) ? m : null;
+}
+
 // The rows of one target branch: the branches of `branches` (issues approved on each) with what the target lacks of them.
 function queueRows(root, loop, repo, real, base, branches, { unsettled, gate, refused }) {
   const rows = [];
@@ -118,7 +126,8 @@ function integrationRows(root, loop, repo, base) {
     const ahead = mb ? Number(git(repo, ['rev-list', '--count', `${mb}..${branch}`]) || 0) : 0;
     if (!ahead) continue;
     const landed = (sha) => git(repo, ['merge-base', '--is-ancestor', sha, base]) !== null;
-    const issues = loop.issues.filter((i) => sameSlice(sliceOf(i), m.slice) && mergedOf(i) && !landed(mergedOf(i).sha)).map((i) => i.id);
+    const issues = loop.issues.filter((i) => sameSlice(sliceOf(i), m.slice) && mergedOf(i) && issueRepos(root, i).includes(canonical(repo)) && !landed(mergedOf(i).sha)).map((i) => i.id);
+    if (!issues.length) continue;   // no merge recorded on it yet: nothing is known to land
     rows.push({ branch, issues, integration: true, slice: m.slice, waitingReview: [], ready: true, ahead, files: [], n: Number.MAX_SAFE_INTEGER });
   }
   return rows;

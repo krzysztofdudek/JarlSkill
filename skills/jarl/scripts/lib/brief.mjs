@@ -8,9 +8,10 @@ import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { IDENTICAL_OUTPUT_TAG, REVIEWER_KIND_SRC, fieldText, hole, jarlLine, meantToAlterNothing, need, printCommand } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
-import { firstLine, firstLineReadings, goalLineOf } from './journal.mjs';
+import { firstLine, firstLineReadings, goalLineOf, goalPath } from './journal.mjs';
+import { outOfGit } from './loop-git.mjs';
 import { acceptanceLines, evidenceNotes, evidenceTable, issueNamed, reviewEntries } from './issues.mjs';
-import { countedRowsOf, lineChanges, lineStates, linesAtLease, readLine, shownRowLines } from './lines.mjs';
+import { countedRowsOf, lineChanges, lineStates, linesAtFirstLease, readLine, shownRowLines, tierAtFirstLease } from './lines.mjs';
 import { gateOf, worksInPlace } from './gate.mjs';
 import { readLoop } from './loop.mjs';
 import { integrationBranch, sameSlice, sliceNamed, sliceOf } from './slices.mjs';
@@ -252,22 +253,23 @@ export function examinerDepth(loop, issues) {
   const rank = (t) => Math.max(tiers.indexOf(t), 0);
   const top = tiers.length - 1;
   const standard = Math.max(tiers.indexOf('standard'), 0);
-  const workerRank = issues.reduce((m, i) => Math.max(m, rank(i.tier)), 0);
-  const rowOf = (lines) => {
-    if (issues.some((i) => rank(i.tier) === top)) return 'strongest';
+  // One side of the comparison: the row and the tier the table gives for these lines on these tiers.
+  const reading = (lines, issueTiers) => {
+    const worker = issueTiers.reduce((m, t) => Math.max(m, rank(t)), 0);
     const methods = lines.map((l) => readLine(l).method);
-    if (methods.length && methods.every((m) => m === 'compare')) return 'compare-only';
-    if (!methods.length || methods.some((m) => m === 'read' || m === 'owner')) return 'judged';
-    return 'mechanical';
+    const row = issueTiers.some((t) => rank(t) === top) ? 'strongest'
+      : methods.length && methods.every((m) => m === 'compare') ? 'compare-only'
+        : !methods.length || methods.some((m) => m === 'read' || m === 'owner') ? 'judged' : 'mechanical';
+    const tierRank = row === 'compare-only' ? 0 : row === 'mechanical' ? Math.max(standard, worker) : row === 'judged' ? Math.max(standard, Math.min(worker + 1, top)) : top;
+    return { row, tierRank, worker };
   };
-  const linesNow = issues.flatMap((i) => acceptanceLines(i));
-  const linesAtLeaseOf = issues.flatMap((i) => { const at = linesAtLease(loop, i); return at ? at.lines : acceptanceLines(i); });
-  const [rowNow, rowLease] = [rowOf(linesNow), rowOf(linesAtLeaseOf)];
-  const row = DEPTH_ROWS.indexOf(rowLease) > DEPTH_ROWS.indexOf(rowNow) ? rowLease : rowNow;
-  const tierRank = row === 'compare-only' ? 0 : row === 'mechanical' ? Math.max(standard, workerRank) : row === 'judged' ? Math.max(standard, Math.min(workerRank + 1, top)) : top;
-  const tier = tiers[tierRank];
-  const secondFamily = row === 'strongest' ? modelLinesIn(loop.goalLines, loop.profile).byTier[tier]?.[1] ?? null : null;
-  return { row, tier, secondFamily, atLease: rowLease, now: rowNow, worker: tiers[workerRank], says: depthWords(row, tier, tiers[workerRank], secondFamily) };
+  const now = reading(issues.flatMap((i) => acceptanceLines(i)), issues.map((i) => i.tier));
+  const atLease = reading(issues.flatMap((i) => linesAtFirstLease(loop, i)), issues.map((i) => tierAtFirstLease(loop, i)));
+  const order = (r) => [DEPTH_ROWS.indexOf(r.row), r.tierRank];
+  const deeper = order(atLease)[0] > order(now)[0] || (order(atLease)[0] === order(now)[0] && order(atLease)[1] > order(now)[1]) ? atLease : now;
+  const tier = tiers[deeper.tierRank];
+  const secondFamily = deeper.row === 'strongest' ? modelLinesIn(loop.goalLines, loop.profile).byTier[tier]?.[1] ?? null : null;
+  return { row: deeper.row, tier, secondFamily, atLease: atLease.row, now: now.row, worker: tiers[deeper.worker], says: depthWords(deeper.row, tier, tiers[deeper.worker], secondFamily) };
 }
 function depthWords(row, tier, worker, secondFamily) {
   if (row === 'compare-only') return `every line is a compare line, so a ${tier} model is allowed: check that each comparison covers everything the change touched`;
@@ -284,13 +286,17 @@ function issueText(root, issue, role) {
   const lines = acceptanceLines(issue);
   return lines.length ? `${show}\n\nLines of ${issue.id}, by number:\n${lines.map((l, k) => `${k + 1}. ${l}`).join('\n')}` : show;
 }
-// The first paragraph of the goal: the text after its heading, up to the first blank line, a section or a machine line.
-function goalParagraph(loop) {
+// The most words of the goal a brief carries: each is a word of the role's own text, under its cap.
+const GOAL_WORDS = 60;
+// The first paragraph of the goal: the text after its heading, up to the first blank line, a section or a machine line,
+// cut at GOAL_WORDS with the pointer to the file that holds the rest.
+function goalParagraph(loop, ctx) {
   const lines = String(loop.goal ?? '').replace(/\r\n?/g, '\n').split('\n').slice(1);
   const start = lines.findIndex((l) => l.trim() && !l.startsWith('#') && !goalLineOf(l));
   if (start === -1) return loop.goalLines.goal ?? '';
   const end = lines.slice(start).findIndex((l) => !l.trim() || l.startsWith('#') || goalLineOf(l));
-  return lines.slice(start, end === -1 ? undefined : start + end).join(' ').trim();
+  const words = lines.slice(start, end === -1 ? undefined : start + end).join(' ').trim().split(/\s+/);
+  return words.length <= GOAL_WORDS ? words.join(' ') : `${words.slice(0, GOAL_WORDS).join(' ')} … (the rest of the goal: ${goalPath(jarlDir(ctx.root))})`;
 }
 // The parent an issue is part of, with its purpose: its Why, or its What, or its title.
 function parentPurpose(issue) {
@@ -322,7 +328,7 @@ function workerCommands(ctx, issues, lease) {
   const tool = toolCommand(ctx);
   const ids = issues.map((i) => i.id).join(',');
   const issueWord = issues.length > 1 ? hole('<id>') : issues[0].id;
-  const proofs = issues.map((i) => ({ what: `proof of a line of ${i.id}, one row per run`, command: tool('evidence', i.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>'), '--by', by) }));
+  const proofs = issues.map((i) => ({ forIssue: i.id, what: `proof of a line of ${i.id}, one row per run`, command: tool('evidence', i.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>'), '--by', by) }));
   return [...proofs,
     { what: 'a note, the choice a line leaves open', command: tool('evidence', issueWord, hole('<text>'), '--by', by) },
     { what: 'stuck: a line you cannot meet without weakening a protection (then stop)', command: tool('ask', hole('<text>'), '--kind', 'stuck', '--issue', issueWord, '--by', by) },
@@ -334,7 +340,7 @@ function reviewerCommands(ctx, issues, lease) {
   const ids = issues.map((i) => i.id).join(',');
   const verdict = tool('review', ids, hole('<verdict>'), hole('<findings-with-a-severity>'), '--by', hole('<reviewer>'), '--model', hole('<model-id>'));
   const diffs = lease.branch ? lease.repos.map((r) => ({ what: `the diff in ${r.label}`, command: printCommand(['git', '-C', r.repo, 'diff', `${r.base}...${lease.branch}`], { globals: [] }) })) : [];
-  const each = issues.map((i) => ({ what: `a re-run of a line of ${i.id}`, command: tool('evidence', i.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>'), '--by', hole('<reviewer>')) }));
+  const each = issues.map((i) => ({ forIssue: i.id, what: `a re-run of a line of ${i.id}`, command: tool('evidence', i.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>'), '--by', hole('<reviewer>')) }));
   return [...diffs, ...each,
     { what: 'the verdict, as the last step (with `--outside "<finding-outside-the-issue>"` for each finding outside the issue, filed as a new issue, never a reason for changes)', command: verdict }];
 }
@@ -381,7 +387,7 @@ function assumedNotes(issue) {
 function proofToReRun(loop, issue) {
   const states = lineStates(loop, issue).filter((s) => s.method === 'test' || s.method === 'check' || s.method === 'compare');
   const rows = countedRowsOf(issue, loop);
-  return states.map((s) => ({ line: s.n, method: s.method, text: s.what, rows: rows.filter((r) => r.lines.includes(s.digest)).map((r) => ({ ran: r.ran, saw: r.saw, by: r.by })) }));
+  return states.map((s) => ({ line: s.n, method: s.method, text: s.what, ...(s.declared ? { declared: true } : {}), rows: rows.filter((r) => r.lines.includes(s.digest)).map((r) => ({ ran: r.ran, saw: r.saw, by: r.by })) }));
 }
 
 function issueBrief(root, loop, rawIds, role, ctx) {
@@ -398,10 +404,12 @@ function issueBrief(root, loop, rawIds, role, ctx) {
   const notes = [...datas.flatMap((d) => d.notes), ...(added.length ? [`${added.map((i) => i.id).join(', ')} ${added.length === 1 ? 'is' : 'are'} on this lease too: the brief covers the whole lease`] : [])];
   const depth = role === 'reviewer' ? examinerDepth(loop, issues) : null;
   const record = role === 'worker' ? workerCommands(ctx, issues, lease) : reviewerCommands(ctx, issues, lease);
+  // A command that names one issue is printed with that issue's own text, so a lease of many issues does not grow the role's.
+  for (const d of datas) for (const r of record.filter((x) => x.forIssue === d.id)) d.text += `\n\n- ${r.what}: ${r.command}`;
   return {
     role, id: first.id, ids: datas.map((d) => d.id), title: first.title, status: first.status,
     roles: sorted(roles), moments: sorted(moments),
-    goal: goalParagraph(loop), parents: datas.filter((d) => d.parent).map((d) => ({ id: d.id, parent: d.parent })),
+    goal: goalParagraph(loop, ctx), parents: datas.filter((d) => d.parent).map((d) => ({ id: d.id, parent: d.parent })),
     root: ctx.root, script: ctx.script, lease, ...(depth ? { depth } : {}),
     issues: datas.map(({ notes: _n, ...d }) => d),
     show: datas.map((d) => d.text).join('\n\n'),
@@ -425,18 +433,19 @@ function mergerBrief(root, loop, slice, ctx) {
   const repoFlag = repos.length > 1 ? ['--repo', hole('<name-or-path>')] : [];
   const record = [
     { what: 'what waits for you, branch by branch', command: tool(...(m ? ['next', '--as', m.name, '--all'] : ['resume', ...repoFlag])) },
-    { what: 'the settings of the merge drivers', command: tool('merge-driver', 'flags') },
+    { what: 'the settings of the merge drivers', command: printCommand([RUNTIME, SCRIPT, 'merge-driver', 'flags'], { globals: [] }) },
     { what: 'what the branch may touch', command: tool('scope', hole('<id>'), '--branch', hole('<branch>')) },
     { what: 'a green merge', command: tool('merged', hole('<ids>'), '--sha', hole('<sha>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), ...repoFlag) },
     { what: 'a red check, the work\'s fault', command: tool('round', hole('<id>'), hole('<text>')) },
     { what: 'a red check, cause outside the branch', command: tool('new', hole('<what-is-red>'), '--tier', hole('<tier>')) },
     { what: 'a landing on red, only on the jarl\'s ruling', command: tool('merged', hole('<ids>'), '--sha', hole('<sha>'), '--red', hole('<id>')) },
     { what: 'closing each issue', command: tool('set', hole('<id>'), 'done', hole('<text>')) },
+    { what: 'the in-place commit, its sha in what it printed', command: tool('evidence', hole('<id>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>')) },
     { what: 'its changelog entries', command: tool('changelog', hole('<ids>')) },
   ];
   return {
     role: 'merger', id: null, ids: [], slice: m ? m.slice : null, merger: m ? m.name : lines.merger, target: m ? integrationBranch(m.slice) : null,
-    root: ctx.root, script: ctx.script, goal: goalParagraph(loop), repos, roles: ['merger'], moments: ['merge'],
+    root: ctx.root, script: ctx.script, goal: goalParagraph(loop, ctx), committed: !outOfGit(root), repos, roles: ['merger'], moments: ['merge'],
     doNot: DO_NOT.merger, rules, record, notes: [],
   };
 }
@@ -494,7 +503,7 @@ const DO_NOT = Object.freeze({
   merger: ['edit code, or a conflict by picking a side', 'judge content or scope: a branch without a fresh approve waits, and that is not your call', 'override a red check'],
 });
 
-const FIRST_STEP = (lease) => (lease.inPlace ? 'You work in place: no branch or worktree of your own, only the files the issue declares, in the checkout of their repository.' : `First: in your worktree, \`git merge ${lease.repos[0]?.base ?? hole('<base-branch>')}\`; \`git status\` must be clean afterwards, and if it is not, stop and report. A platform that gave you a branch of its own name: rename it (\`git branch -m ${lease.branch ?? '<branch>'}\`), never a second branch beside it.`);
+const FIRST_STEP = (lease) => (lease.inPlace ? 'You work in place: no branch or worktree of your own, only the files the issue declares, where they are checked out in their repository. You commit nothing: once the approve stands, the merger where one runs, else the coordinator, commits them.' : `First: in your worktree, \`git merge ${lease.repos[0]?.base ?? hole('<base-branch>')}\`; \`git status\` must be clean afterwards, and if it is not, stop and report. A platform that gave you a branch of its own name: rename it (\`git branch -m ${lease.branch ?? '<branch>'}\`), never a second branch beside it.`);
 
 // The role's text, built from the record and read by nothing else: each part once, as short as it can be said.
 function renderWorker(o, out) {
@@ -517,14 +526,14 @@ function renderWorker(o, out) {
   section(out, 'How to work', [
     `1. ${FIRST_STEP(lease)}`,
     '2. Work only inside the issue, by the repository\'s own rules too (its CLAUDE.md, AGENTS.md, hooks). No file you write carries a task number: only the commit subject names the issue.',
-    '3. Commit at the failing test and at the fix, one issue per commit, never amending, no agent trailer. Never push or touch another branch. To hold work aside copy it to a scratch directory: never `git stash`, whose list every worktree shares.',
+    (lease.inPlace ? '3. Write the declared files and nothing else, and leave them uncommitted. Never push or touch another branch.' : '3. Commit at the failing test and at the fix, one issue per commit, never amending, no agent trailer. Never push or touch another branch. To hold work aside copy it to a scratch directory: never `git stash`, whose list every worktree shares.'),
     '4. Prove each line by its method. [test]: a test red before the change and green after. [check]: its command, passing after it. [compare]: its command before and after, the outputs identical. Record each run with the proof command; never a row for a command you did not run. [read] and [owner] lines take no row.',
     '5. Run the test files you touch, in the foreground, with your tool\'s own timeout set; the merger runs the whole check on the merged result. Never report "waiting for the test run".',
     '6. A choice the lines leave open: make it and record it with the note command, the note starting `Assumed:`. A line you cannot meet without weakening something: the stuck command, then stop.',
     '7. A refused call writes nothing and ends with the form to run: fill its placeholders. Spawn no agents.',
   ]);
   renderCommon(o, out);
-  section(out, 'What you report', 'In under 200 words, once the work is committed and your checks have finished: what changed, the commands and what they printed, every `Assumed:` note, "Found" (what you saw outside the issue), and your commits.');
+  section(out, 'What you report', `In under 200 words, once ${lease.inPlace ? 'your files are written' : 'the work is committed'} and your checks have finished: what changed, the commands and what they printed, every \`Assumed:\` note, "Found" (what you saw outside the issue)${lease.inPlace ? '' : ', and your commits'}.`);
 }
 
 function renderReviewer(o, out) {
@@ -572,12 +581,15 @@ function roundsAndFindings(o, out) {
 }
 
 function lineChangeText(c) {
-  return `- ${c.id} · ${c.at}${c.by ? ` · by ${c.by}` : ' · by an unnamed writer'}${c.removed.length ? ` · was: ${c.removed.join(' | ')}` : ''}${c.added.length ? ` · now: ${c.added.join(' | ')}` : ''}`;
+  const what = c.tier ? ` · Tier was ${c.tier.was}, now ${c.tier.now}` : `${c.removed.length ? ` · was: ${c.removed.join(' | ')}` : ''}${c.added.length ? ` · now: ${c.added.join(' | ')}` : ''}`;
+  return `- ${c.id} · ${c.at}${c.by ? ` · by ${c.by}` : ' · by an unnamed writer'}${what}`;
 }
 function proofLines(o) {
   const out = o.issues.flatMap((i) => (i.reRun || []).map((r) => (r.rows.length
     ? `- ${i.id} line ${r.line} [${r.method}]: re-run ${r.rows.map((x) => `${x.ran} (saw: ${x.saw}${x.by ? `, by ${x.by}` : ''})`).join(' · ')}`
-    : `- ${i.id} line ${r.line} [${r.method}]: no row names it: run it yourself; the worker's missing row is an Important finding`)));
+    : r.declared
+      ? `- ${i.id} line ${r.line} [${r.method}]: on the declared check, which the landing proves: no row is owed`
+      : `- ${i.id} line ${r.line} [${r.method}]: no row names it: run it yourself; the worker's missing row is an Important finding`)));
   return out.length ? out : ['- (no test, check or compare line)'];
 }
 
@@ -590,24 +602,28 @@ function renderMerger(o, out) {
     `You are ${o.merger ?? 'the merger'}. Your target: ${o.target ?? o.repos.map((r) => `${r.base} in ${r.label}`).join(', ') ?? 'the branch the loop lands on'}.`,
     ...o.repos.map((r) => `Repository ${r.label} (${r.repo}), base ${r.base}${o.target ? `, target ${r.target}` : ''}.`),
     `Loop root: ${o.root}. Tool: ${RUNTIME} ${o.script} (every command below is written with both).`,
-    'One writer per target branch: only you merge into it. You work in a worktree of your own on that branch and never share a checkout with another merger. You write the record through the tool, under its lock; only the holder of the main checkout commits `.jarl/`, so several mergers are not several committers there. If you do not hold the main checkout, you never commit `.jarl/`.',
+    'One writer per target branch: only you merge into it, in a worktree of your own on that branch, never a checkout another merger uses. You write the record through the tool, under its lock; only the holder of the main checkout commits `.jarl/`, so several mergers are not several committers there.',
+    o.committed
+      ? 'The loop is committed: if you hold the main checkout, commit `.jarl/` before each merge, since a file left uncommitted in a checkout you reset is lost, and again after each landing, everything in it, in the loop\'s repository even when the merge landed in another. If you do not, you never commit `.jarl/`.'
+      : 'The loop is out of git: you never commit `.jarl/`, and a diff that touches it is reported, not merged, since git treats the ignored loop as expendable and a merge would overwrite it.',
   ]);
   section(out, 'You do not', o.doNot.map((d) => `- ${d}`));
   section(out, 'Each branch, serially', [
-    '1. Read the scope and the diff. A branch without a fresh reviewer\'s approve waits; report it. In the default mode a diff that touches `.jarl/` is reported, not merged: git treats the ignored loop as expendable and a merge would overwrite it.',
+    '1. Read the scope and the diff. A branch without a fresh reviewer\'s approve waits; report it.',
     `2. Merge into ${target}, in your own worktree: git, then the settings the merge-driver command below prints, then \`merge --no-ff\` and the branch. Pass the settings on every merge, never leave them to the clone's configuration. Where the repository has .yggdrasil/, add \`--yg "<command>"\` to the merge-driver call, and run \`yg log merge-resolve\` right after the merge.`,
     '3. A conflict the drivers stopped on (a ruling or log entry both sides changed): `git merge --abort` and report. Any other conflict: resolve only when one side is plainly a superset or the hunks are independent; otherwise abort and report the files.',
     '4. Branches sharing no file may be merged one after another and checked once as a batch; never batch two that touch one file.',
     '5. Run the repository\'s check on the merged result, in the foreground, with your tool\'s own timeout set for the whole run. Report after the check has finished, never before.',
-    '6. Green: the green-merge command, once for the issues on the branch, then close each issue, then `show` it and confirm it reads done: a write nobody read is worse than none. A note `NO PROOF FROM THE WORKER` means done waits for the worker\'s row. `MERGE WITHOUT THE BRANCH` or `WITHOUT THE BASE`: the check did not run on what landed, merge and check again. `APPROVED ON ANOTHER TIP`: report the two tips.',
+    '6. Green: the green-merge command for the issues on the branch, close each issue, then `show` it and confirm it reads done. `NO PROOF FROM THE WORKER`: done waits for the worker\'s row. `MERGE WITHOUT THE BRANCH` or `WITHOUT THE BASE`: merge and check again. `APPROVED ON ANOTHER TIP`: report the two tips.',
     '7. Changelog entries, once the batch is green: paste them under `[Unreleased]`, edited into the repository\'s register, committed as that file alone.',
+    '8. An issue worked in place brings no branch, and none of these steps apply: once its approve stands, commit its declared files, a commit of their own between two merges, record the commit as a row with the in-place command, then close it.',
   ]);
   section(out, 'A red check', [
     'Roll back with `git reset --keep ORIG_HEAD`, never `--hard`, which throws away what others wrote meanwhile. Then one of three cases:',
     '1. A batch went red: reset to before its first merge, and land the branches one at a time, so the branch that fails is found.',
-    '2. One branch\'s work fails it, alone or against the base as it stands, or two good branches break together: that branch (the later of the two) gets a round with what failed; it goes back to a worker, is rebuilt on what landed first, and is examined again before it lands.',
+    '2. One branch\'s work fails it, or two good branches break together: that branch (the later of the two) gets a round with what failed, goes back to a worker, is rebuilt on what landed first, and is examined again.',
     '3. The cause is outside the branch (the base is red without it): file the cause as its own issue, leave the branch approved in the queue; it lands on red only on the jarl\'s ruling.',
-    'Nobody repairs the target branch directly. A defect found after a landing is a small issue whose Found by names the landed issue, with a check line, and it goes through the same chain.',
+    'Nobody repairs the target branch directly: a defect found after a landing is a small issue whose Found by names the landed issue.',
   ]);
   renderCommon(o, out);
   section(out, 'What you report', 'One line per branch: merged <sha> | red: <what-is-red> | conflict: <paths> | nothing to merge. Spawn no agents.');
@@ -618,7 +634,7 @@ function renderCommon(o, out) {
   const ofLoop = o.rules.filter((r) => !r.builtin);
   section(out, 'Rules that reach you', ofLoop.length ? ofLoop.flatMap(ruleLines) : ['- (none of the loop\'s own)']);
   if (o.rulings.inForce) out.push(`${o.rulings.inForce} ruling(s) in force in the loop: ${o.rulings.command}`, '');
-  section(out, 'Commands', o.record.map((r) => `- ${r.what}: ${r.command}`));
+  section(out, 'Commands', o.record.filter((r) => !r.forIssue).map((r) => `- ${r.what}: ${r.command}`));
 }
 function section(out, title, body) { out.push(`## ${title}`, ...(Array.isArray(body) ? body : [body]), ''); }
 

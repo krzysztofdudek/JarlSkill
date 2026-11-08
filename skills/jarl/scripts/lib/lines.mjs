@@ -80,12 +80,12 @@ export function needMarkedLines(acceptance, ready) {
 // names and what it printed. A row of an issue the log holds nothing of has no writer: it counts for no side.
 function countedRows(issue, g) {
   const table = evidenceTable(issue.sections.evidence).rows;
-  if (!g.tracked) return table.filter((r) => !r.retracted && r.saw !== '').map((r) => ({ by: null, lines: r.lines, saw: r.saw }));
+  if (!g.tracked) return table.filter((r) => !r.retracted && r.saw !== '').map((r) => ({ by: null, lines: r.lines, saw: r.saw, ran: r.ran }));
   const aligned = alignRows(issue.id, table, g.rowLog);
   const out = [];
   table.forEach((r, k) => {
     const j = aligned[k];
-    if (j && !j.retracted && j.inWindow) out.push({ by: j.writer ?? null, lines: r.lines, saw: r.saw });
+    if (j && !j.retracted && j.inWindow) out.push({ by: j.writer ?? null, lines: r.lines, saw: r.saw, ran: r.ran });
   });
   return out;
 }
@@ -121,7 +121,7 @@ export function lineStates(loop, issue, g = gateOf(loop, issue.id)) {
     const n = k + 1;
     const line = readLine(text);
     const digest = lineDigest(text);
-    const base = { n, text, digest, method: line.method, what: line.what, by: line.by };
+    const base = { n, text, digest, method: line.method, what: line.what, by: line.by, ...(line.method === 'check' ? { declared: onDeclared(loop, issue, line) } : {}) };
     if (line.method === 'owner') {
       const o = owner.get(n);
       return { ...base, state: o && o.tick ? 'ticked' : 'unproved', missing: o && o.tick ? null : 'the owner\'s tick' };
@@ -148,27 +148,52 @@ export function lineStates(loop, issue, g = gateOf(loop, issue.id)) {
     return { ...base, state: missing.length ? 'unproved' : 'proved', missing: missing.length ? missing.join(', ') : null };
   });
 }
-// The rows counted for an issue's lines, with what they ran, so a brief can offer them to re-run.
-export function countedRowsOf(issue, loop) {
-  const g = gateOf(loop, issue.id);
-  const ran = new Map(evidenceTable(issue.sections.evidence).rows.map((r) => [`${r.saw}\n${r.lines.join()}`, r.ran]));
-  return countedRows(issue, g).map((r) => ({ ...r, ran: ran.get(`${r.saw}\n${r.lines.join()}`) ?? '' }));
+// The live rows counted for an issue's lines, each with its own command, so a brief can offer them to re-run.
+export function countedRowsOf(issue, loop) { return countedRows(issue, gateOf(loop, issue.id)); }
+// The first move of an issue into a status that holds the claim: where the work began, which a handover or a renewal
+// after it never moves, so the base an examiner reads holds however the lease changes hands.
+function firstLease(loop, issue) {
+  const events = loop.eventsById.get(issue.id) || [];
+  return events.find((e) => e.type === 'move' && loop.profile.is(e.to, 'holds-claim')) ?? null;
 }
-// The changes of an issue's lines since its current lease started, as { at, by, removed, added }, each read from the old text the
-// log keeps whole; none for an issue no lease holds, or whose lines are as they were.
+const TIER_CHANGE = / field Tier · ([^·]+?) · was ([^·]+?)(?: · by (.+))?$/;
+// The tier changes of an issue after its first lease, each { at, by, was, now }, read from the log, which keeps the old value.
+function tierChanges(loop, issue) {
+  const start = firstLease(loop, issue);
+  if (!start) return [];
+  return (loop.eventsById.get(issue.id) || []).filter((e) => e.n > start.n).flatMap((e) => {
+    const m = TIER_CHANGE.exec(e.text);
+    return m ? [{ at: e.at, by: m[3] ?? e.writer ?? null, now: m[1], was: m[2] }] : [];
+  });
+}
+// The tier an issue held at its first lease.
+export function tierAtFirstLease(loop, issue) {
+  const changes = tierChanges(loop, issue);
+  return changes.length ? changes[0].was : issue.tier;
+}
+// The changes of an issue's lines and tier since its first lease, in the order they were made: { at, by, removed, added } each
+// read from the old text the log keeps whole, or { at, by, tier: { was, now } }. None for an issue no lease has held.
 export function lineChanges(loop, issue) {
   const events = loop.eventsById.get(issue.id) || [];
-  const claim = (st) => loop.profile.is(st, 'holds-claim');
-  const start = [...events].reverse().find((e) => e.type === 'move' && claim(e.to) && (!claim(e.from) || e.handover));
+  const start = firstLease(loop, issue);
   if (!start) return [];
   const changes = events.filter((e) => e.type === 'body' && e.part === 'acceptance' && e.n > start.n && e.was !== null);
   const texts = changes.map((c) => acceptanceLines({ sections: { acceptance: c.was } }));
   const sets = [...texts, acceptanceLines(issue)];
-  return changes.map((c, k) => {
+  const lines = changes.map((c, k) => {
     const now = sets[k + 1];
     const was = sets[k];
     return { at: c.at, by: c.by ?? c.writer ?? null, removed: was.filter((l) => !now.includes(l)), added: now.filter((l) => !was.includes(l)) };
   }).filter((c) => c.removed.length || c.added.length);
+  const tiers = tierChanges(loop, issue).map(({ at, by, was, now }) => ({ at, by, tier: { was, now } }));
+  return [...lines, ...tiers].sort((a, b) => String(a.at).localeCompare(String(b.at)));
+}
+// The lines an issue held at its first lease, or as they are now where no lease has held it.
+export function linesAtFirstLease(loop, issue) {
+  const start = firstLease(loop, issue);
+  if (!start) return acceptanceLines(issue);
+  const change = (loop.eventsById.get(issue.id) || []).find((e) => e.type === 'body' && e.part === 'acceptance' && e.n > start.n && e.was !== null);
+  return change ? acceptanceLines({ sections: { acceptance: change.was } }) : acceptanceLines(issue);
 }
 
 // The numbers of the lines an issue's worker still owes a row for, before a review is offered: test and compare lines, and

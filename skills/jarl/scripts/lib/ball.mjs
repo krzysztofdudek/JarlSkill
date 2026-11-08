@@ -10,6 +10,7 @@ import { git } from './git.mjs';
 import { readLoop } from './loop.mjs';
 import { gatedMark, modelLines, modelReviewForm } from './models.mjs';
 import { examinerDepth } from './brief.mjs';
+import { liveMerger } from './queue.mjs';
 import { baseOf, issueRepos, repoLabel } from './repositories.mjs';
 import { reasonWord } from './shared.mjs';
 import { waitingOn } from './after.mjs';
@@ -105,12 +106,12 @@ function issueRows(ctx) {
     const onJarl = { ...base, holder: promise ? holder : JARL_HOLDER };
     // An approve not merged is on the one holder the goal's Merger line names, who raises the merger; with none, the jarl.
     // A slice with a merger of its own: on that merger, which lands the slice's work on its integration branch.
-    const slicem = sliceMerger(loop.goalLines, i);
+    const slicem = liveMerger(ctx.root, loop, i);
     const onMerger = { ...base, holder: slicem ? holderOf(slicem.name) : ctx.merger, ...(slicem ? { target: integrationBranch(slicem.slice) } : {}) };
     const withWorker = worker ? `with worker ${worker}` : 'in progress';
     const since = fieldText(i.fields.since) ? ` since ${fieldText(i.fields.since)}` : '';
     const lv = ctx.liveness(i);
-    if (profile.is(i.status, 'holds-claim') && !promise && takeoverDue(ctx.root, i, loop.eventsById.get(i.id) || [])) {
+    if (profile.is(i.status, 'holds-claim') && !promise && !AT_THE_MERGE.has(mark) && takeoverDue(ctx.root, i, loop.eventsById.get(i.id) || [])) {
       // The round that reached the limit said a takeover is due; it stands until a lease is handed over, whatever else the
       // issue's record holds, so no compaction loses it.
       const ids = leaseIds(loop, i);
@@ -121,7 +122,7 @@ function issueRows(ctx) {
     if ((mark === 'no-rows' || backAfterRound) && lv.idle) {
       // Idle past the threshold: a worker stuck on a prompt or a lock writes nothing, so the act is the holder's.
       out.push({ ...base, what: 'idle', idle: { ageMs: lv.ageMs, minutes: lv.minutes }, says: `${withWorker}${since}, no commit, row or log line for ${idleFor(lv)}: ask the worker whether it waits on a prompt or a lock, or hand the lease over`,
-        command: jarlLine('set', i.id, leaseStatus, '<why-the-worker-changed>', '--worker', '<the-new-worker>', '--handover') });
+        command: jarlLine('set', leaseIds(loop, i).join(','), leaseStatus, '<why-the-worker-changed>', '--worker', '<the-new-worker>', '--handover') });
       continue;
     }
     if (mark === 'no-rows' || backAfterRound) {
@@ -213,12 +214,18 @@ function raisesOf(loop, models, row) {
   const worker = (i) => ({ role: 'worker', model: models.defaultOf(i.tier), branch: proposed(i), command: jarlLine('brief', i.id), ...(worksInPlace(profile, i) ? { inPlace: true } : {}) });
   const reviewer = (ids) => { const issues = byId(ids); const tier = examinerDepth(loop, issues).tier; return { role: 'reviewer', model: models.defaultOf(tier), tier, branch: issues[0] ? proposed(issues[0]) : null, command: jarlLine('brief', ids.join(','), '--role', 'reviewer') }; };
   const merger = (extra) => ({ role: 'merger', model: models.defaultOf('standard'), ...extra });
-  if ((row.what === 'ready' || row.what === 'takeover') && loop.byId.has(row.id)) return [worker(loop.byId.get(row.id))];
+  if (row.what === 'takeover' && loop.byId.has(row.id)) {
+    // A takeover moves the whole lease, on the highest tier any issue of it carries, as its brief does.
+    const lease = byId(leaseIds(loop, loop.byId.get(row.id)));
+    const highest = profile.tiers.reduce((best, t) => (lease.some((i) => i.tier === t) ? t : best), lease[0].tier);
+    return [{ role: 'worker', model: models.defaultOf(highest), branch: proposed(lease[0]), command: jarlLine('brief', lease.map((i) => i.id).join(',')) }];
+  }
+  if (row.what === 'ready' && loop.byId.has(row.id)) return [worker(loop.byId.get(row.id))];
   if (row.what === 'review') return (row.units ? row.units.map((u) => u.ids) : [row.ids ?? [row.id]]).map(reviewer);
   if (row.what === 'merge' && row.integration) return [merger({ branch: row.branch, integration: true, command: jarlLine('brief', '--role', 'merger') })];
   if (row.what === 'merge') {
     const i = loop.byId.get(row.id);
-    const m = i ? sliceMerger(loop.goalLines, i) : null;
+    const m = i ? liveMerger(loop.root, loop, i) : null;
     return [merger({ branch: i ? fieldText(i.fields.branch) || null : null, ...(m ? { target: integrationBranch(m.slice) } : {}), command: jarlLine('brief', '--role', 'merger', ...(m ? ['--slice', m.slice] : [])) })];
   }
   return [];
@@ -232,7 +239,7 @@ const idleFor = (lv) => `${ago(lv.ageMs)} (threshold ${thresholdText(lv.minutes)
 function branchInItsTarget(root, loop, issue) {
   const branch = fieldText(issue.fields.branch);
   if (!branch) return false;
-  const m = sliceMerger(loop.goalLines, issue);
+  const m = liveMerger(root, loop, issue);
   const repos = issueRepos(root, issue).filter((r) => git(r, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`]) !== null);
   return repos.length > 0 && repos.every((r) => {
     const into = m && git(r, ['rev-parse', '--verify', '--quiet', `refs/heads/${integrationBranch(m.slice)}^{commit}`]) !== null ? integrationBranch(m.slice) : baseOf(root, r);
@@ -425,7 +432,7 @@ function questionRows(ctx) {
 // Who answers a question: the kinds with a holder of their own are read where they are built. A stuck that names its issue
 // whose asker holds that issue's lease is its director's, the coordinator of its slice or the jarl; asked by
 // the director itself, it is the owner's; asked by anyone else, or naming no issue, the owner's, as it has always been.
-function askHolder(loop, a) {
+export function askHolder(loop, a) {
   if (a.kind && a.kind !== 'stuck') return OWNER_HOLDER;
   const issue = a.issue ? loop.byId.get(a.issue) : null;
   if (!issue) return OWNER_HOLDER;
@@ -514,6 +521,8 @@ export const ROW_SOURCES = [issueRows, integrationRows, leaseConflictRows, keptR
 // The rows a composer's scheduler owns: under an external scheduler Jarl lists only the others.
 const SCHEDULING = new Set([issueRows, integrationRows, leaseConflictRows]);
 
+// The marks at which an approve stands and clears the issue: the work is the merger's, and a takeover due before it is over.
+const AT_THE_MERGE = new Set(['approved', 'merged', 'merged-ci']);
 // The kinds of move, from the end of the line back: close and CI, then the merge, then the verdict, then rework (what went
 // back), then a new start; every other row after those.
 const STAGE_ORDER = Object.freeze({ close: 0, ci: 0, merge: 1, review: 2, check: 2, changes: 3, worker: 3, takeover: 3, idle: 3, ready: 4, other: 5 });
