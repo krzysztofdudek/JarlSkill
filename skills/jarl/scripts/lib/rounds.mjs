@@ -10,7 +10,7 @@ import { appendLog, goalLines, oneLine, parseStamp, readGoal } from './journal.m
 import { journalById, leaseOfMove, withoutWorktree } from './log.mjs';
 import { findIssue, loadIssues, mergedOf } from './issues.mjs';
 import { readLoop } from './loop.mjs';
-import { defaultBase, fetchedRefs, fileAt, isGitRepo, issuePlaces, issueRepoPaths, issueRepos, refsIn, repoFromInput, repoLabel, repoOf, reposNamed, worktreeState, worktreesOf } from './repositories.mjs';
+import { baseOf, fetchedRefs, fileAt, isGitRepo, issuePlaces, issueRepoPaths, issueRepos, refsIn, repoFromInput, repoLabel, repoOf, reposNamed, worktreeState, worktreesOf } from './repositories.mjs';
 import { awaitsMerge, ceilingTier } from './models.mjs';
 
 // ---- rounds, branches, checks ------------------------------------------------------------------
@@ -151,7 +151,9 @@ const markerStart = (text) => (/^(<{7}|>{7})(?: |$)/.test(text) || /^={7}$/.test
 // count, a removed line or a file that grew never does. Each note is { kind, file, line, text, … } for a line, and
 // { kind: 'large-file', file, bytes } for a file.
 export function addedContentNotes(repo, range, { held = null } = {}) {
-  const diff = git(repo, ['diff', '--no-color', '--no-ext-diff', '-U0', range]) || '';
+  // The prefixes are git's defaults whatever the repository's or the machine's settings (diff.noprefix, diff.srcPrefix, diff.dstPrefix,
+  // diff.mnemonicPrefix): the header of each file is read as b/<path>.
+  const diff = git(repo, ['diff', '--no-color', '--no-ext-diff', '--src-prefix=a/', '--dst-prefix=b/', '-U0', range]) || '';
   const notes = [];
   let file = null;
   let line = 0;
@@ -238,7 +240,7 @@ function commitsBeyond(repo, base, branch) {
 // The refusal of a branch no issue records. When the branch carries commits, it says how many and what to file.
 function unrecordedBranch(root, flags) {
   const repo = flags.repo !== undefined ? repoFromInput(root, flags.repo).main : root;
-  const base = flags.base || defaultBase(repo);
+  const base = flags.base || baseOf(root, repo);
   const carried = commitsBeyond(repo, base, flags.branch);
   if (carried) return `no issue records branch ${flags.branch}: it carries ${carried} commit(s) beyond ${base} and no issue holds it (work without an issue) — file the issue, then set it in-progress --branch ${flags.branch}`;
   return `no issue records branch ${flags.branch} — name one (scope <id> --branch ${flags.branch}), or record the package: set <ids> in-progress --branch ${flags.branch}`;
@@ -266,7 +268,7 @@ export function cmdCheck(root, rawId, flags) {
   const repo = flags.repo !== undefined ? repoFromInput(root, flags.repo).main : repoOf(root, reposNamed(issue)[0]);
   const realRepo = canonical(repo);
   const where = repo === root ? '' : ` in ${repo}`;
-  const base = flags.base || defaultBase(repo);
+  const base = flags.base || baseOf(root, repo);
   const tip = git(repo, ['rev-parse', '--verify', flags.branch]);
   need(tip, `no such branch: ${flags.branch}${where}`, () => ({ flag: '--branch', value: '<worker-branch>' }));
   const mergeBase = git(repo, ['merge-base', base, flags.branch]);
@@ -516,7 +518,7 @@ function handedOverFrom(root, issues, realRepo, name, byId) {
 }
 
 function branchesIn(root, repo, flags, issues, minutes = LIVENESS_MINUTES, approved = new Set()) {
-  const base = flags.base || defaultBase(repo);
+  const base = flags.base || baseOf(root, repo);
   const real = canonical(repo);
   const named = (git(repo, ['branch', '--list', 'jarl/*', '--format=%(refname:short)']) || '').split('\n').filter(Boolean);
   const worktrees = (worktreesOf(repo) || []).filter((w) => w.branch);

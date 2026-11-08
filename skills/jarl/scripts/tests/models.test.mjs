@@ -274,6 +274,27 @@ test('in a loop with no Model line the spelling note and the offer of the lines 
   assert.ok(both.search(/another spelling/) < both.search(offer), 'the spelling note comes first');
 });
 
+test('the notes of one lease are each a line of their own that names its subject: the spelling first, then the offer, and a checked --worktree before the offer', () => {
+  const root = loop();
+  const ids = ['a', 'b', 'c'].map((t) => R.newIssue(root, t, { acceptance: 'it works' }).id);
+  notes(root, 'set', [ids[0], 'in-progress', 'go'], { branch: `jarl/${ids[0]}-x`, worker: 'w-0', model: 'claude-opus-5-5' });
+  // The offer is made once; the lines that remember it are taken out so that the next leases are offered again.
+  const remembered = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
+  writeFileSync(join(root, '.jarl', 'log.md'), remembered.split('\n').filter((l) => !l.includes(' · models offered · ')).join('\n'));
+  const both = notes(root, 'set', [ids[1], 'in-progress', 'go'], { branch: `jarl/${ids[1]}-x`, worker: 'w-1', model: 'claude-opus-5.5' }).split('\n');
+  assert.deepEqual(both.map((l) => l.replace(/ — .*$/, '').replace(/, so no model .*$/, '')), [
+    `note: ${ids[1]} claude-opus-5.5 is another spelling of claude-opus-5-5, which the record holds; models counts both as one model.`,
+    `note: ${ids[1]} is leased with a model and the goal declares no Model line`,
+  ]);
+  writeFileSync(join(root, '.jarl', 'log.md'), readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').filter((l) => !l.includes(' · models offered · ')).join('\n'));
+  const checked = notes(root, 'set', [ids[2], 'in-progress', 'go'], { branch: `jarl/${ids[2]}-x`, worker: 'w-2', model: 'claude-opus-5-5', worktree: join(root, 'no-such-worktree') }).split('\n');
+  assert.deepEqual(checked.map((l) => l.replace(/ — .*$/, '').replace(/, so no model .*$/, '')), [
+    `note: ${ids[2]} --worktree was checked and is not recorded`,
+    `note: ${ids[2]} is leased with a model and the goal declares no Model line`,
+  ]);
+  assert.ok(![...both, ...checked].some((l) => l.includes('.;')), 'no semicolon after a full stop');
+});
+
 test('a lease that names another spelling of a model the record holds says which spelling the record holds; the spelling the record holds, and a library call, say nothing', () => {
   const root = loop({ lines: true });
   const first = R.newIssue(root, 'first', { acceptance: 'it works' }).id;

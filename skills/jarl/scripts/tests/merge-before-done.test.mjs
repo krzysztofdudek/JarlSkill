@@ -54,13 +54,14 @@ test('a code issue with a branch in a loop with no repository is merged before i
 // ---- a merge counts for the code as it is now: one from before a reopen or a round, or of a tip the branch has moved past, does not ----
 
 // A loop in a git repository on main whose first issue is leased on jarl/1-fix, with one commit, its row and a fresh approve.
-function codeIssue(initFlags = []) {
+// With approve false, the proof is recorded and no verdict: a loop whose done gate asks for none.
+function codeIssue(initFlags = [], { approve = true } = {}) {
   const { dir: root, g } = gitRepo({ prefix: 'jarl-merge-now-', branch: 'main' });
   jarl(root, 'init', 'goal', ...initFlags);
   jarl(root, 'new', 'the fix', '--acceptance', 'it works');
   g('branch', 'jarl/1-fix');
   const work = (file) => { g('checkout', '-q', 'jarl/1-fix'); writeFileSync(join(root, file), `${file}\n`); g('add', file); g('commit', '-qm', file); g('checkout', '-q', 'main'); return g('rev-parse', 'jarl/1-fix').trim(); };
-  const proved = () => { jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '12 pass, 0 fail'); jarl(root, 'review', '1', 'approve', '--by', 'rev-fresh', 'read the diff and the test, nothing found'); };
+  const proved = () => { jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', '12 pass, 0 fail'); if (approve) jarl(root, 'review', '1', 'approve', '--by', 'rev-fresh', 'read the diff and the test, nothing found'); };
   const merge = () => { g('merge', '-q', '--no-ff', '-m', 'merge 1', 'jarl/1-fix'); const sha = g('rev-parse', 'HEAD').trim(); jarl(root, 'merged', '1', '--sha', sha, '--keep'); return sha; };
   work('one.txt');
   jarl(root, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/1-fix', '--worker', 'w1');
@@ -102,6 +103,43 @@ test('a merge of a tip the branch has moved past does not count once the branch 
   assert.match(said, new RegExp(`and its last merge, ${first} \\([^)]+\\), was recorded on tip ${merged.slice(0, 12)} and the branch is at ${now.slice(0, 12)}, so the commits after it are not merged — `), said);
   merge();
   assert.equal(jarl(root, 'set', '1', 'done', 'merged with the late commit'), '1 → done');
+});
+
+// The row of next --as jarl and the in-flight step of resume for the fixture's one issue.
+const rowOf = (root) => json(root, 'next', '--as', 'jarl', '--all').rows.find((r) => r.id === '1');
+const stepOf = (root) => json(root, 'resume').inFlight.find((x) => x.id === '1');
+
+test('next --as jarl and resume ask for the merge again, with the form of merged, when the branch has a commit after the merge', () => {
+  const { root, work, merge } = codeIssue();
+  merge();
+  assert.equal(rowOf(root).says, 'merged; close it', 'a merge of the tip now: close it');
+  work('late.txt');
+  const row = rowOf(root);
+  assert.equal(row.says, 'approved, and the branch has commits after its last merge; merge it again and record the merge');
+  assert.equal(row.command, 'jarl.mjs merged 1 --sha "<sha>" --ran "<command>" --saw "<what-it-printed>"');
+  const step = stepOf(root);
+  assert.equal(step.mark, 'approved');
+  assert.equal(step.next, 'approved, and the branch has commits after its last merge — next the merger lands it again and records the merge, then set it done');
+  merge();
+  assert.equal(rowOf(root).says, 'merged; close it');
+});
+
+test('next --as jarl asks for the merge again when a red round spent it, and a loop with no approve asks for it after the proof', () => {
+  const { root, proved, merge } = codeIssue();
+  merge();
+  jarl(root, 'round', '1', 'the check went red on the merge');
+  proved();
+  assert.equal(rowOf(root).says, 'approved, and its last merge was spent by a later start, reopen or red round; merge it again and record the merge');
+  const profile = join(mkdtempSync(join(tmpdir(), 'jarl-merge-now-profile-')), 'profile.json');
+  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, format: 1, name: 'landed-no-approve', statuses: BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true, approve: 'none' } }));
+  const bare = codeIssue(['--profile', profile], { approve: false });
+  bare.merge();
+  assert.equal(rowOf(bare.root).says, 'proof recorded; close it');
+  bare.work('late.txt');
+  assert.match(refuses(bare.root, 'set', '1', 'done', 'all green'), /so the commits after it are not merged/, 'done refuses the merge');
+  const row = rowOf(bare.root);
+  assert.equal(row.says, 'proof recorded, and the branch has commits after its last merge; merge it again and record the merge');
+  assert.equal(row.command, 'jarl.mjs merged 1 --sha "<sha>" --ran "<command>" --saw "<what-it-printed>"');
 });
 
 test('a red round after a merge spends it as it spends the approve', () => {

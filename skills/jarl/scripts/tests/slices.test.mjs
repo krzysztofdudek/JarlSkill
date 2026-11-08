@@ -235,7 +235,7 @@ test('the goal\'s Merger line names the one holder that raises the merger: every
   assert.match(run(root, ['verify']).stdout, /Merger: loki" — loki is neither the jarl nor a coordinator of the Coordinators line, so no holder of the loop raises its merger/);
 });
 
-test('with more than one slice in play, a lease on an issue that declares no Files or Resources is refused with the command to declare them', () => {
+test('with more than one slice in play, a lease on an issue that declares no Files or Resources is refused, ending with the form that declares them, its ids a placeholder', () => {
   const root = loop();
   jarl(root, 'goal', '--set', 'Coordinators: odin, thor');
   jarl(root, 'new', 'odin bare', '--tags', 'slice:odin');                     // 1
@@ -243,7 +243,7 @@ test('with more than one slice in play, a lease on an issue that declares no Fil
   jarl(root, 'new', 'no slice, bare');                                         // 3
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   for (const id of ['1', '3']) {
-    assert.match(refuses(root, 'set', id, 'in-progress', 'go', '--worker', 'w', '--branch', `jarl/${id}`), new RegExp(`^${id} declares no Files or Resources, and 3 slices are in play \\(slice:odin, slice:thor, the issues in no slice\\): across slices only leases hold, and a lease holds only what its issue declares — declare them first, its files or its resources \\(jarl\\.mjs field ${id} Resources "<resource-name>"\\)\njarl\\.mjs field ${id} Files "<paths>"\njarl\\.mjs set "<ids>" "<status>" "<why>" --worker "<the-new-worker>" --branch "<worker-branch>"\n$`));
+    assert.match(refuses(root, 'set', id, 'in-progress', 'go', '--worker', 'w', '--branch', `jarl/${id}`), new RegExp(`^${id} declares no Files or Resources, and 3 slices are in play \\(slice:odin, slice:thor, the issues in no slice\\): across slices only leases hold, and a lease holds only what its issue declares — declare them first, its files or its resources \\(jarl\\.mjs field "<ids>" Resources "<resource-name>"\\)\njarl\\.mjs field "<ids>" Files "<paths>"\njarl\\.mjs set "<ids>" "<status>" "<why>" --worker "<the-new-worker>" --branch "<worker-branch>"\n$`));
   }
   assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), log, 'nothing was written');
   jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'w2', '--branch', 'jarl/2');

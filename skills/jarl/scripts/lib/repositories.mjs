@@ -266,13 +266,18 @@ export function reposNamed(issue) { return splitList(issue.fields.repo); }
 // reason (of the lock), prunable }, the main checkout first. Null where git does not answer. The one place the list is
 // split into entries. The first entry of a repository kept in a submodule is git's own directory for it (inside the
 // superproject's .git), not a working tree: its working tree is the directory its core.worktree names, and one without
-// that setting has none (bare).
+// that setting has none (bare). The list is read with -z, each attribute ended by a NUL and each entry by one more, so a
+// path that holds a line break is read whole; a git that does not know -z there gives the list with line ends.
 function worktreesOf(dir) {
-  const text = git(dir, ['worktree', 'list', '--porcelain']);
-  if (text === null) return null;
-  return text.split(/\n\s*\n/).map((b) => ({
-    path: /^worktree (.+)$/m.exec(b)?.[1], branch: /^branch refs\/heads\/(.+)$/m.exec(b)?.[1] || null, bare: /^bare$/m.test(b),
-    locked: /^locked(?: |$)/m.test(b), reason: /^locked (.+)$/m.exec(b)?.[1], prunable: /^prunable(?: |$)/m.test(b),
+  const z = git(dir, ['worktree', 'list', '--porcelain', '-z']);
+  const text = z === null ? git(dir, ['worktree', 'list', '--porcelain']) : null;
+  if (z === null && text === null) return null;
+  const blocks = z !== null ? z.split('\0\0').map((b) => b.split('\0')) : text.split(/\n\s*\n/).map((b) => b.split('\n'));
+  // The value of an attribute: the text after its name and a space, '' for a name alone, undefined when absent.
+  const value = (lines, name) => { const l = lines.find((x) => x === name || x.startsWith(`${name} `)); return l === undefined ? undefined : l.slice(name.length + 1); };
+  return blocks.map((lines) => ({
+    path: value(lines, 'worktree') || undefined, branch: /^refs\/heads\/(.+)$/s.exec(value(lines, 'branch') ?? '')?.[1] || null, bare: lines.includes('bare'),
+    locked: value(lines, 'locked') !== undefined, reason: value(lines, 'locked') || undefined, prunable: value(lines, 'prunable') !== undefined,
   })).filter((e) => e.path).map((e, k) => {
     if (k !== 0 || e.bare || !existsSync(join(e.path, 'HEAD')) || existsSync(join(e.path, '.git'))) return e;
     const tree = git(e.path, ['config', '--get', 'core.worktree']);

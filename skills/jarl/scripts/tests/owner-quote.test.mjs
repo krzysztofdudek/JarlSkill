@@ -144,7 +144,7 @@ for (const [name, marker] of Object.entries(SPELLINGS)) {
     const before = files();
     const tries = {
       'decide by jarl': () => R.decide(root, 'r1', `Ruling.\n\n${marker}`, { by: 'jarl', settles: ['1'] }),
-      'decide with no author': () => R.decide(root, 'r2', marker),
+      'decide through the library with no author': () => R.decide(root, 'r2', marker),
       'decide by the owner': () => R.decide(root, 'r3', `Ruling.\n\n${marker}`, { by: 'owner', quote: 'yes' }),
       'decide with the marker in the quote': () => R.decide(root, 'r4', 'Ruling.', { by: 'owner', quote: marker }),
       'ask': () => R.ask(root, `Which?\n\n${marker}`),

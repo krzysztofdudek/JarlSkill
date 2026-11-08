@@ -1509,7 +1509,7 @@ function dispatchCall(root, commandName, rest, flags) {
           refuse(`${rest[1]} is a field, not a status: field writes it`, fieldForm(String(rest[1]).trim(), { clear: clearing, by: flags.by !== undefined }));
         }
         out = setCommand(root, rest[0], rest[1], rest[2], flags);
-        text = each(out, (o) => (o.header ? `header of ${o.id} rewritten from the log: ${o.status}` : `${o.id} → ${o.status}${o.branch ? ` · ${o.branch}` : ''}${o.worker ? ` · ${o.worker}` : ''}${o.handover ? ' · handed over' : ''}`)); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.id} ${o.note}`); break;
+        text = each(out, (o) => (o.header ? `header of ${o.id} rewritten from the log: ${o.status}` : `${o.id} → ${o.status}${o.branch ? ` · ${o.branch}` : ''}${o.worker ? ` · ${o.worker}` : ''}${o.handover ? ' · handed over' : ''}`)); warn = [].concat(out).filter((o) => o.note).flatMap((o) => o.note.split('\n').map((n) => `note: ${o.id} ${n}`)); break;
       case 'field':
         out = cmdField(root, rest[0], rest[1], fieldListValue(rest[1], rest[2], flags.remove === true), { ...flags, caller: 'cli' });
         text = each(out, renderField);
@@ -1558,7 +1558,8 @@ function dispatchCall(root, commandName, rest, flags) {
       case 'branches': out = cmdBranches(root, flags); text = renderBranches(out, root); break;
       case 'ask': out = R.ask(root, rest[0], { ...flags, width: undefined }); text = askText(out); break;
       // The library's answer (jarl-record/1) takes no opts: --by and --option reach the answer through jarl-lib.mjs, under the lock held here.
-      // A judgement names its author: an answer and a ruling are refused without --by, with the call that names one.
+      // A judgement names its author: on the command line an answer and a ruling are refused without --by, and the refusal
+      // ends with the form of the call, its --by a placeholder. The library takes a call that names nobody.
       case 'answer':
         need(flags.by !== undefined, 'answer records who answered with --by, owner for the owner', () => ([{ flag: '--by', value: '<who>' }, ...(rest[1] === undefined && flags.option === undefined ? [{ arg: 1, value: '<text>' }] : [])]));
         out = cmdAnswerMany(root, rest[0], rest[1], flags); break;   // text below: the type log is written outside the lock

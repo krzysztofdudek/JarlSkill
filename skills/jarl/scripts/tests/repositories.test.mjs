@@ -316,6 +316,27 @@ test('a loop opened in a linked worktree resolves its siblings beside the main c
   assert.equal(L.repoOf(wt, 'tool'), tool);
 });
 
+test('worktrees whose paths hold a line break are read whole: a linked worktree knows its main checkout, and new there is refused', { skip: process.platform === 'win32' && 'a directory name cannot hold a line break on Windows' }, () => {
+  for (const [main, linked] of [['hub\nmain', 'hub-worktree'], ['hub', 'hub\nworktree'], ['hub\nmain', 'hub\n\nworktree']]) {
+    const parent = tmp('jarl-linked-break-');
+    const hub = repoAt(join(parent, main));
+    jarl(hub, 'init', 'goal', '--committed');
+    jarl(hub, 'new', 'first', '--tier', 'light');
+    git(hub, 'add', '-A');
+    git(hub, 'commit', '-qm', 'loop');
+    const wt = join(parent, linked);
+    git(hub, 'worktree', 'add', '-q', '-b', 'side', wt);
+    const said = JSON.stringify([main, linked]);
+    const before = readdirSync(join(wt, '.jarl', 'issues'));
+    const r = run(wt, ['new', 'from the worktree', '--tier', 'light']);
+    assert.notEqual(r.status, 0, `${said}: ${r.stdout}`);
+    assert.match(r.stderr, /is a linked worktree of [^]*, which holds this loop/, said);
+    assert.deepEqual(readdirSync(join(wt, '.jarl', 'issues')), before, `${said}: nothing was filed`);
+    const found = L.mainCheckoutOf(wt);
+    assert.deepEqual([found.main, found.linked, found.copies], [hub, true, [hub, wt]], said);
+  }
+});
+
 // A superproject with the loop and a repository as submodules: git's directory for a submodule is inside the superproject's
 // .git, and its working tree is where the submodule is checked out.
 function submoduleWorld() {

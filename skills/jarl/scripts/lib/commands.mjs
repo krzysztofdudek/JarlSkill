@@ -1232,7 +1232,9 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
   const worktreeNote = caller === 'cli' && holds && flags.worktree !== undefined ? '--worktree was checked and is not recorded — the worktree of a lease is found through its branch' : null;
   const limit = caller === 'cli' && holds ? limitNote(root, model) : null;
-  const leaseNotes = [leaseNoModel, worktreeNote, spelling, limit, modelOffer].filter(Boolean).join('; ');
+  // Each note is a line of its own: the command line prints every line after the issue's id, which is the subject the
+  // offer reads after, whichever note comes before it.
+  const leaseNotes = [leaseNoModel, worktreeNote, spelling, limit, modelOffer].filter(Boolean).join('\n');
   return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(handover ? { handover: true } : {}), ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue, root, unproved.get(issue.id)) : {}), ...(leaseNotes && n === 0 ? { note: leaseNotes } : {}) })));
 }
 
@@ -1289,14 +1291,15 @@ function needLeaseHolds(root, profile, issues, status, why, flags, handover, not
   if (composed) return;
   // With more than one slice in play, a lease holds only what its issue declares, so one that declares nothing would
   // collide with another slice's work unseen: it is refused until the issue declares its files or its resources. The issues
-  // in no slice, the jarl's own, are one more slice of work beside the coordinators' when one of them is in play.
+  // in no slice, the jarl's own, are one more slice of work beside the coordinators' when one of them is in play. The
+  // reason names the issue; the forms carry a placeholder for the ids.
   const loop = readLoop(jarlDir(root));
   const unsliced = loop.issues.some((i) => sliceOf(i) === null && loop.profile.active(i.status));
   const slices = [...activeSlices(loop).map((x) => x.tag), ...(unsliced ? ['the issues in no slice'] : [])];
   if (slices.length > 1) {
     for (const issue of issues) {
       if ((leased(issue) && !handover) || issue.files.length || issue.resources.length) continue;
-      need(false, `${issue.id} declares no Files or Resources, and ${slices.length} slices are in play (${slices.join(', ')}): across slices only leases hold, and a lease holds only what its issue declares — declare them first, its files or its resources (${jarlLine('field', issue.id, 'Resources', '<resource-name>')})${nothing}`, () => [{ first: ['jarl.mjs', 'field', issue.id, 'Files', '<paths>'] }, { retry: true }]);
+      need(false, `${issue.id} declares no Files or Resources, and ${slices.length} slices are in play (${slices.join(', ')}): across slices only leases hold, and a lease holds only what its issue declares — declare them first, its files or its resources (${jarlLine('field', '<ids>', 'Resources', '<resource-name>')})${nothing}`, () => [{ first: ['jarl.mjs', 'field', hole('<ids>'), 'Files', hole('<paths>')] }, { retry: true }]);
     }
   }
   const others = otherLeases(root, profile, taken);
