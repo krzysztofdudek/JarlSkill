@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, appendFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,7 +30,7 @@ export const COMMAND_LINE_ONLY = [
   { item: 'Who answered', cases: ['answer with a name'], cli: 'records `--by`, which it requires', library: 'records the owner; the contract\'s answer takes no name', why: 'a composer cannot name the ratifier through the library, because the answer keeps the arguments the contract names' },
   { item: 'Who ruled', cases: ['decide by the jarl'], cli: 'records `--by`, which it requires', library: 'records the coordinator unless `by` names another', why: 'at the command line the author of a ruling is said, never assumed; a composer calls as the coordinator of its loop, which the contract\'s decide records when it names nobody' },
   { item: 'Ratified area rulings', cases: [], cli: 'writes the type\'s decision log and the rule\'s log through the Yggdrasil edge', library: 'returns the entries and writes neither', why: 'the Yggdrasil write is the only call from Jarl to another family tool; a composer writes into its own graph; no twin case exists, because it needs a loop with an area ruling and a graph' },
-  { item: 'Replies and notes', cases: [], cli: 'prints notes and replies that depend on the caller: the goal that names no check (`init`), the tier of a new issue (`new`), the lease notes (`set`), the proof and fresh-review notes (`merged`), the model and proof notes and the next step (`review`), the owner\'s word with no question (`decide`), and a long free-text note (`evidence`)', library: 'writes the same files and prints none of them', why: 'the notes are for a person at the command line; the twin cases compare files and log lines, and the notes are neither' },
+  { item: 'Replies and notes', cases: [], cli: 'prints notes and replies that depend on the caller: the goal that names no check or no Model line (`init`), the offer of the Model lines (`set`; the log lines that remember it are written by the library too), the tier of a new issue (`new`), the lease notes (`set`), the proof and fresh-review notes (`merged`), the model and proof notes and the next step (`review`), the owner\'s word with no question (`decide`), and a long free-text note (`evidence`)', library: 'writes the same files and log lines, and prints none of them', why: 'the notes are for a person at the command line; the twin cases compare files and log lines, and a note is neither, except the lines that remember the offer of the Model lines, which the twin cases compare' },
   { item: 'Lists of ids', cases: [], cli: 'takes a list of ids (`12,13`, `203-206`) for `field` and `round`, and checks every id before it writes one', library: '`setBody`, `setFiles`, `setRepo`, `setAfter` and `setSource` take one id each', why: 'a person at the command line writes a package of issues in one call; a composer calls the operation for each id it holds and decides what a refusal on one of them means; no twin case exists, because the twin loops run one id' },
   { item: 'Count of findings of a round', cases: ['round with findings'], cli: 'records the count of findings a round left, given with `--findings <n>`', library: '`addRound` records the round with no count, and a takeover block shows a dash for it', why: 'the contract\'s addRound keeps the arguments it names, so the count is given at the command line' },
   { item: 'The verbs `retract` and `field`', cases: [], cli: 'retracts an approve or an evidence row with `retract`, and writes every part of the description with `field`: a value, `--add`, `--remove` or `--clear`', library: 'retracts with `review` (verdict `retract`) and `addEvidence` (`retract`); `setBody`, `setTags`, `setPriority`, `setFiles`, `setRepo`, `setAfter`, `setSource` and `setField` each write their part whole, and `setStatus` with the name `resources` writes Resources; a field is emptied with an empty value', why: 'the verbs are the command line\'s grammar over the operations; the library keeps the operations its contract names' },
@@ -146,6 +146,23 @@ function merged(root) {
   execFileSync('git', ['worktree', 'add', `${root}-wt`, 'work/first'], { cwd: root, encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
+// Three issues that wait on nothing, for the cases of the offer of the Model lines; and the lease the library gives one.
+function ready(root) {
+  R.initLoop(root, 'goal');
+  for (const t of ['first', 'second', 'third']) R.newIssue(root, t, { acceptance: 'it works' });
+}
+const raise = (root, id) => R.setStatus(root, id, 'in-progress', undefined, { branch: `work/${id}`, worker: `w${id}`, model: 'some-model' });
+const raiseArgs = (id) => ['set', id, 'in-progress', '--branch', `work/${id}`, '--worker', `w${id}`, '--model', 'some-model'];
+const MODEL_LINES = '\nModel (strong): big-model\nModel (standard): mid-model\n';
+const goalOf = (root) => join(root, '.jarl', 'goal.md');
+// A loop run by an external scheduler: its composer places the models.
+function scheduled(root) {
+  const file = join(root, 'profile.json');
+  writeFileSync(file, JSON.stringify({ 'jarl-profile': R.PROFILE_VERSION, name: 'p', statuses: { queued: ['dispatchable'], running: ['lease'], done: ['settles-dependents', 'terminal', 'closes-record'] }, initial: 'queued', 'external-scheduler': 'composer tick' }));
+  R.initLoop(root, 'g', { profile: file });
+  R.newIssue(root, 't');
+}
+
 // Each case: `pre` builds the state on both loops with the library; `lib` runs on one loop as the library calls it;
 // `cli` is the command line's arguments (the loop's --root is added), run on the other; `git` makes a checkout; `spell`
 // compares the ids with their padding taken out; `refusal` says which side refuses, when the two must differ in that.
@@ -154,6 +171,12 @@ const CASES = [
   { op: 'initLoop', name: 'init', git: false, pre: () => {}, lib: (root) => R.initLoop(root, 'goal'), cli: ['init', 'goal'] },
   { op: 'newIssue', name: 'new', pre: base, spell: true, lib: (root) => R.newIssue(root, 'third', { kind: 'gap', prio: '2', acceptance: 'it works' }), cli: ['new', 'third', '--kind', 'gap', '--prio', '2', '--acceptance', 'it works'] },
   { op: 'setStatus', name: 'set in-progress', pre: base, lib: (root) => R.setStatus(root, '1', 'in-progress', undefined, { branch: 'work/first', worker: 'w1' }), cli: ['set', '1', 'in-progress', '--branch', 'work/first', '--worker', 'w1'] },
+  // The offer of the Model lines: the lines that remember it are written by both, the offer text is the command line's.
+  { op: 'setStatus', name: 'lease with a model, offered', pre: ready, lib: (root) => raise(root, '1'), cli: raiseArgs('1') },
+  { op: 'setStatus', name: 'second lease with a model, not offered again', pre: (root) => { ready(root); raise(root, '1'); }, lib: (root) => raise(root, '2'), cli: raiseArgs('2') },
+  { op: 'setStatus', name: 'lease that finds the lines, closes the offer', pre: (root) => { ready(root); raise(root, '1'); appendFileSync(goalOf(root), MODEL_LINES); }, lib: (root) => raise(root, '2'), cli: raiseArgs('2') },
+  { op: 'setStatus', name: 'lease after the lines are gone, offered again', pre: (root) => { ready(root); const goal = readFileSync(goalOf(root), 'utf8'); raise(root, '1'); appendFileSync(goalOf(root), MODEL_LINES); raise(root, '2'); writeFileSync(goalOf(root), goal); }, lib: (root) => raise(root, '3'), cli: raiseArgs('3') },
+  { op: 'setStatus', name: 'lease under an external scheduler, nothing offered', pre: scheduled, lib: (root) => R.setStatus(root, '1', 'running', undefined, { branch: 'work/1', worker: 'w1', model: 'some-model' }), cli: ['set', '1', 'running', '--branch', 'work/1', '--worker', 'w1', '--model', 'some-model'] },
   { op: 'setStatus', name: 'set done', pre: proven, lib: (root) => R.setStatus(root, '1', 'done'), cli: ['set', '1', 'done'] },
   { op: 'setStatus', name: 'status as cli', pre: recordOwned, lib: (root) => R.setStatus(root, '1', 'doing'), cli: ['set', '1', 'doing'], refusal: { lib: false, cli: true } },
   { op: 'setStatus', name: 'worktree as cli', pre: base, lib: (root) => R.setStatus(root, '1', 'in-progress', undefined, { branch: 'work/first', worker: 'w1', worktree: join(root, '.jarl') }), cli: (root) => ['set', '1', 'in-progress', '--branch', 'work/first', '--worker', 'w1', '--worktree', join(root, '.jarl')], refusal: { lib: false, cli: true } },

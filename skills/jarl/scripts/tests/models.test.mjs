@@ -252,8 +252,30 @@ test('a library caller gets no note and its results do not change', () => {
   assert.equal(made.note, undefined);
 });
 
-test('a lease that names another spelling of a model the record holds says which spelling the record holds; the spelling the record holds, and a library call, say nothing', () => {
+test('in a loop with no Model line the spelling note and the offer of the lines are each said on their own lease, and both on one lease, the spelling first', () => {
   const root = loop();
+  const goal = readFileSync(join(root, '.jarl', 'goal.md'), 'utf8');
+  const ids = ['a', 'b', 'c', 'd'].map((t) => R.newIssue(root, t, { acceptance: 'it works' }).id);
+  const lease = (n, model) => notes(root, 'set', [ids[n], 'in-progress', 'go'], { branch: `jarl/${ids[n]}-x`, worker: `w-${n}`, model });
+  const offer = /is leased with a model and the goal declares no Model line/;
+  const spelling = /claude-opus-5\.5 is another spelling of claude-opus-5-5/;
+  const first = lease(0, 'claude-opus-5-5');
+  assert.match(first, offer);
+  assert.doesNotMatch(first, spelling, 'nothing held yet, so no other spelling');
+  const second = lease(1, 'claude-opus-5.5');
+  assert.match(second, spelling);
+  assert.doesNotMatch(second, offer, 'the offer is made once');
+  appendFileSync(join(root, '.jarl', 'goal.md'), LINES);
+  assert.equal(lease(2, 'claude-sonnet-5-5'), '', 'the lines are there: the offer closes in silence');
+  writeFileSync(join(root, '.jarl', 'goal.md'), goal);
+  const both = lease(3, 'claude-sonnet-5.5');
+  assert.match(both, /claude-sonnet-5\.5 is another spelling of claude-sonnet-5-5/);
+  assert.match(both, offer, 'offered again after the lines are gone');
+  assert.ok(both.search(/another spelling/) < both.search(offer), 'the spelling note comes first');
+});
+
+test('a lease that names another spelling of a model the record holds says which spelling the record holds; the spelling the record holds, and a library call, say nothing', () => {
+  const root = loop({ lines: true });
   const first = R.newIssue(root, 'first', { acceptance: 'it works' }).id;
   const second = R.newIssue(root, 'second', { acceptance: 'it works' }).id;
   const third = R.newIssue(root, 'third', { acceptance: 'it works' }).id;
@@ -392,6 +414,21 @@ test('goal --set writes a takeover line for a kind the profile declares and refu
   assert.match(set('Takeover (poetry): 2').stderr, /the profile declares no kind "poetry"/);
   assert.match(set('Takeover (docs): 0').stderr, /whole number of rounds/);
   assert.match(set('Takeover (docs): many').stderr, /whole number of rounds/);
+});
+
+test('init says once, on the command line, that a goal with no Model line places no model, with the form that adds one', () => {
+  const fresh = () => { const dir = mkdtempSync(join(tmpdir(), 'jarl-models-init-')); mkdirSync(join(dir, '.git')); return dir; };
+  const bare = fresh();
+  const said = cli(bare, 'init', 'a goal with no model');
+  assert.equal(said.status, 0, said.stderr);
+  assert.match(said.stderr, /^note: the goal declares no Model line \("Model \(<tier>\): <model-id>"\), so models places no model and ranks none until it does — add one for each tier: jarl\.mjs goal --set "<machine-line>" --root /m);
+  const named = fresh();
+  assert.doesNotMatch(cli(named, 'init', `a goal${LINES}`).stderr, /Model line/);
+  const lib = fresh();
+  assert.equal(R.initLoop(lib, 'a library goal').modelNote, undefined, 'a library caller is told nothing');
+  // The form it prints works: a line given through it is a Model line, and models then reads it.
+  assert.equal(cli(bare, 'goal', '--set', 'Model (strong): big-model').status, 0);
+  assert.doesNotMatch(cli(bare, 'models').stdout, /declares no Model/);
 });
 
 test('a limit lowered below the rounds already counted gives the takeover at the next round', () => {

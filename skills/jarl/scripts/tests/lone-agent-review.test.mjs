@@ -33,7 +33,7 @@ test('proofs of code with no verdict are one line on the jarl: one fresh reviewe
   assert.deepEqual(group.holdsUp, ['4']);
   assert.deepEqual(o.rows.filter((r) => r.what === 'review').map((r) => r.id), ['1', '3'], 'the proof of the issue without code keeps its own line');
   const text = jarl(root, 'next', '--as', 'jarl', '--all');
-  assert.match(text, new RegExp(`^- 1, 2: proof recorded, no verdict; raise one fresh reviewer per unit: 1 · 2; if you cannot raise agents, ask the owner to start a fresh session — jarl\\.mjs review "<ids>" "<verdict>" --by "<reviewer>" "<text>", or ${ASK.replace(/[.\\"]/g, '\\$&')} · holds up 4$`, 'm'));
+  assert.match(text, new RegExp(`^- 1, 2: proof recorded, no verdict; raise one fresh reviewer per unit: 1 · 2; if you cannot raise agents, ask the owner to start a fresh session \\(1 first change, worker me; 2 second change, worker me\\) — jarl\\.mjs review "<ids>" "<verdict>" --by "<reviewer>" "<text>", or ${ASK.replace(/[.\\"]/g, '\\$&')} · holds up 4$`, 'm'));
   assert.match(text, /^- 3 a note: proof recorded, no verdict; raise a reviewer \(worker me\) — jarl\.mjs review 3 /m);
   assert.deepEqual(json(root, 'next', '--as', 'owner', '--all').rows, []);
 });
@@ -116,4 +116,36 @@ test('a proof recorded after the question is asked is the jarl\'s again, and the
   jarl(root, 'answer', '1', 'reviewed in a fresh session', '--by', 'owner');
   assert.deepEqual(json(root, 'next', '--as', 'jarl', '--all').rows.filter((r) => r.ids).map((r) => r.ids), [['1', '2', '5']]);
   assert.deepEqual(json(root, 'next', '--as', 'owner', '--all').rows, []);
+});
+
+test('a ratify item or an escalation worded as the question for a fresh session holds no review: only a plain question does', () => {
+  const root = loneLoop();
+  const grouped = () => json(root, 'next', '--as', 'jarl', '--all').rows.filter((r) => r.ids).map((r) => r.ids);
+  jarl(root, 'ask', 'start a fresh session to review issues 1, 2', '--kind', 'ratify');
+  assert.deepEqual(grouped(), [['1', '2']], 'a ratify item blocks nothing, so the review stays with the jarl');
+  const owner = json(root, 'next', '--as', 'owner', '--all');
+  assert.deepEqual(owner.rows.map((r) => [r.what, r.reviewing, r.holdsUp]), [['ratify', undefined, []]]);
+  jarl(root, 'answer', '1', 'yes', '--by', 'owner');
+  jarl(root, 'ask', 'start a fresh session to review issues 1, 2', '--kind', 'escalation', '--issue', '1');
+  assert.deepEqual(grouped(), [['1', '2']], 'an escalation is the jarl\'s own row and holds no review either');
+});
+
+test('a list written without a space after the comma holds the same issues as one written with it', () => {
+  const root = loneLoop();
+  const grouped = () => json(root, 'next', '--as', 'jarl', '--all').rows.filter((r) => r.ids).map((r) => r.ids);
+  jarl(root, 'ask', 'start a fresh session to review issues 1,2');
+  assert.deepEqual(grouped(), [], 'both issues are asked about');
+  assert.deepEqual(json(root, 'next', '--as', 'owner', '--all').rows.map((r) => r.reviewing), [['1', '2']]);
+});
+
+test('a line for several proofs names each issue with its title and its worker', () => {
+  const root = loop();
+  jarl(root, 'new', 'first change', '--files', 'a.mjs');
+  jarl(root, 'new', 'second change', '--files', 'b.mjs');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'me', '--branch', 'jarl/1');
+  jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'you', '--branch', 'jarl/2');
+  for (const id of ['1', '2']) jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'green');
+  const row = json(root, 'next', '--as', 'jarl', '--all').rows.find((r) => r.ids);
+  assert.deepEqual(row.issues, [{ id: '1', title: 'first change', doer: 'me' }, { id: '2', title: 'second change', doer: 'you' }]);
+  assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- 1, 2: proof recorded, no verdict; raise one fresh reviewer per unit: 1 · 2; if you cannot raise agents, ask the owner to start a fresh session \(1 first change, worker me; 2 second change, worker you\) — /m);
 });

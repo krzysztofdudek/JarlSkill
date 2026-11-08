@@ -7,7 +7,8 @@ import { evidenceRows } from './issues.mjs';
 import { canonical, jarlDir } from './where.mjs';
 import { cmpId } from './ids.mjs';
 import { loadProfile, reviewerRule } from './profile.mjs';
-import { GOAL_FILE, LOG_FILE, goalLines, logPath, readGoal } from './journal.mjs';
+import { GOAL_FILE, LOG_FILE, appendLog, goalLines, logPath, readGoal } from './journal.mjs';
+import { readText } from './files.mjs';
 import { repoLabel, reposNamed } from './repositories.mjs';
 import { gateOf, readLoop } from './loop.mjs';
 import { filedAndClosed, followUpsOf, share } from './metrics.mjs';
@@ -68,6 +69,33 @@ function modelLinesIn(lines, profile) {
     defaultOf: (tier) => (byTier[tier] || [])[0] || null,
     placedTier: (model) => (rank(model) >= 0 ? profile.tiers[rank(model)] : null),
   };
+}
+
+// The offer of the Model lines is the answer of a lease, once. A lease that records a model (an agent raised) in a loop
+// whose goal declares no Model line, and in which no offer stands, writes one log line and says the offer in its own
+// answer; a lease that finds the lines present while an offer stands writes the line that closes it, and a lease after
+// the lines are gone again offers once more. A lease that records no model raises nobody (an agent working alone), and
+// a loop run by an external scheduler places its models in its composer: neither writes nor says anything. The log
+// command refuses a note in the shape of either line, so a free note cannot open or close the offer.
+const OFFER_MARK = /^- \d{4}-\d\d-\d\d \d\d:\d\d(?: key \S+)?(?: by [^·]+)? · models (offered|offer closed) · /;
+function lastOfferMark(root) {
+  const path = logPath(jarlDir(root));
+  if (!existsSync(path)) return null;
+  let last = null;
+  for (const line of readText(path).split('\n')) last = OFFER_MARK.exec(line)?.[1] ?? last;
+  return last;
+}
+// Called under the write lock right after a lease is written; gives the offer to say, or null.
+export function modelOfferAtLease(root, model) {
+  if (loadProfile(root).scheduler != null) return null;
+  const last = lastOfferMark(root);
+  if (modelLines(root).declared) {
+    if (last === 'offered') appendLog(root, 'models offer closed · the goal declares a Model line at a lease');
+    return null;
+  }
+  if (model === undefined || last === 'offered') return null;
+  appendLog(root, 'models offered · the goal declares no Model line at a lease that records a model');
+  return `is leased with a model and the goal declares no Model line, so no model is placed and none ranked; add one line for each tier: Model (strong): <model-id> for the jarl, Model (standard): <model-id> for the coordinators — ${jarlLine('goal', '--set', hole('<machine-line>'))}`;
 }
 
 // Every model an issue was leased on, from its own journal (a takeover adds one).

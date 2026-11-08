@@ -221,6 +221,8 @@ const LINE_CALLS = {
   tick: (id) => ['tick', id, hole('<line>'), '--by', hole('<the-owner-himself>')], 'tick-retract': (id) => ['retract', id, hole('<tick-n>'), hole('<why>'), '--by', hole('<the-owner-himself>')], tip: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')],
 };
 const MOVE_SHAPE = idRe('^{id} →');
+// The first group is set for the lease's lines, the second for the path note's.
+const REMEMBERED_NOTE = /^(?:(models (?:offered|offer closed)) · |repo path .+ noted · (?:profile|occupied|elsewhere)$)/;
 // A free line for the journal (the log command and record.appendLog): a note about the loop or an issue. A line that
 // reads as one of the kinds above (a filing, a move, a round, a verdict, a retraction, a row, a tip, a merge, a CI state, a
 // body change or a tick) is refused and names the command that writes it, so every line the views and the gate read as state was
@@ -230,6 +232,9 @@ export function appendNote(root, event) {
   const text = oneLine(event);
   const id = LEADING_ID.exec(text)?.[1] ?? null;
   need(!MOVE_SHAPE.test(text), `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" has the shape of a move (an id, an arrow), which set writes: ${lineWriter('move')}`, () => ['jarl.mjs', ...LINE_CALLS.move(hole('<ids>'))]);
+  // The lines a lease and a repository given by its path write to remember what they said once: a note in their shape would open or close what they remember.
+  const remembered = REMEMBERED_NOTE.exec(text);
+  need(!remembered, `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" has the shape of a line ${remembered?.[1] ? 'a lease' : 'a filing or a field call'} writes to remember what it said: ${remembered?.[1] ? lineWriter('move') : jarlLine('field', hole('<id>'), 'Repo', hole('<name-or-path>'))}`, () => (remembered?.[1] ? ['jarl.mjs', ...LINE_CALLS.move(hole('<ids>'))] : ['jarl.mjs', 'field', hole('<id>'), 'Repo', hole('<name-or-path>')]));
   const type = id === null ? 'other' : parseEvent(id, text, loadProfile(root)).type;
   need(type === 'other', `log writes a note, and "${text.length > 80 ? `${text.slice(0, 77)}...` : text}" reads as ${type === 'filed' ? 'a filing' : `a ${type.replace('-', ' ')} line`}, which the journal's own command writes with its checks: ${type === 'row' && attachmentOf(text.slice(`${id} evidence row · `.length)) ? jarlLine('evidence', '<id>', '--file', '<path>', '--slot', '<slot>') : lineWriter(type)}`, () => ['jarl.mjs', ...LINE_CALLS[type](hole('<id>'))]);
   appendLog(root, event);

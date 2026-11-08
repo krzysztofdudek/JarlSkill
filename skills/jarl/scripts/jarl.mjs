@@ -1405,7 +1405,7 @@ function dispatchCall(root, commandName, rest, flags) {
     (writes ? (fn) => withLock(root, fn) : (fn) => fn())(() => withWriter(writer, writer === null ? null : (r) => needFormat(r, 'writer'), () => {
     if (writer !== null) needWriterFormat(root, cmd, flags);
     switch (cmd) {
-      case 'init': out = R.initLoop(root, rest[0], { ...flags, caller: 'cli' }); text = `opened ${out.dir} · ${out.permanent ? 'permanent record, no branch' : out.committed ? 'committed with the work' : 'kept out of git'}${out.profile ? ` · profile ${out.profile}` : ''}`; warn = out.note ? [`note: ${out.note}`] : []; break;
+      case 'init': out = R.initLoop(root, rest[0], { ...flags, caller: 'cli' }); text = `opened ${out.dir} · ${out.permanent ? 'permanent record, no branch' : out.committed ? 'committed with the work' : 'kept out of git'}${out.profile ? ` · profile ${out.profile}` : ''}`; warn = [out.note, out.modelNote].filter(Boolean).map((n) => `note: ${n}`); break;
       // The command line says caller 'cli': the notes (the tier a new issue got) are for it, never for a library caller.
       case 'new': out = R.newIssue(root, rest[0], { ...flags, caller: 'cli', width: undefined }); out = { ...out, ...describeNew(out.file) }; text = renderNewReply(out); warn = out.note ? [out.note] : []; break;
       case 'renumber': out = cmdRenumber(root, rest[0], flags); text = `${out.from} → ${out.id} · issues/${basename(out.file)} · key ${out.key}`; break;

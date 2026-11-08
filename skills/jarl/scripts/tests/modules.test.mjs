@@ -6,6 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
+import { withoutComments } from './source-text.mjs';
 
 const LIB = new URL('../lib/', import.meta.url);
 const MODULES = readdirSync(LIB).filter((f) => f.endsWith('.mjs')).sort();
@@ -27,7 +28,9 @@ const LAYERS = [
 // outright, and so is an import or a re-export the reader cannot place: the graph is read from the text alone.
 const IMPORT = /^[ \t]*import\s*(?:([\w$]+)\s*(?:,\s*)?)?(?:\*\s*as\s+([\w$]+)\s*|\{([^}]*)\}\s*)?(?:from\s*)?(['"])([^'"]+)\4\s*;?/gm;
 const REEXPORT = /^[ \t]*export\s*(?:\*(?:\s*as\s+[\w$]+)?|\{[^}]*\})\s*from\s*(['"])([^'"]+)\1\s*;?/gm;
-function importsOf(text) {
+function importsOf(source) {
+  // Comments are blanked first: an import in a comment is no import, and import( in one is no dynamic import.
+  const text = withoutComments(source);
   assert.doesNotMatch(text, /\bimport\s*\(/, 'a dynamic import');
   const named = (list) => (list || '').split(',').map((s) => s.trim()).filter(Boolean).map((s) => {
     const [imported, local = imported] = s.split(/\s+as\s+/);
@@ -93,11 +96,11 @@ function cyclesOf(graph) {
   return out;
 }
 
-// Every name a module imports and never uses, as "module: name". A use is the name as a whole word outside the
-// import statements, and not a property after a dot (a spread's three dots are a use).
+// Every name a module imports and never uses, as "module: name". A use is the name as a whole word in the code outside
+// the import statements of every form and outside comments, and not a property after a dot (a spread's three dots are a use).
 function unusedImports(sources) {
   return Object.entries(sources).flatMap(([f, text]) => {
-    const body = text.replace(/^import\s*\{[^}]*\}\s*from\s*['"][^'"]+['"];?$/gm, '');
+    const body = withoutComments(text).replace(IMPORT, '').replace(REEXPORT, '');
     return importsOf(text).flatMap((i) => i.names.filter((n) => !new RegExp(`(?<![\\w$])(?<![^.]\\.)${n.local.replace(/\$/g, '\\$')}(?![\\w$])`).test(body)).map((n) => `${f}: ${n.local}`));
   });
 }
@@ -149,4 +152,29 @@ test('a module of the library imports only the names it uses', () => {
   assert.deepEqual(unusedImports(SOURCES), []);
   assert.deepEqual(unusedImports({ 'a.mjs': "import { join, dirname } from 'node:path';\nimport { need as must } from './base.mjs';\nexport const x = join('a', 'b');\nconst y = o.dirname;\n" }), ['a.mjs: dirname', 'a.mjs: must']);
   assert.deepEqual(unusedImports({ 'a.mjs': "import { KINDS } from './base.mjs';\nconst all = [...KINDS];\n" }), [], 'a spread is a use');
+  // A default import and a namespace import are read like a named one: used, or listed.
+  assert.deepEqual(unusedImports({ 'a.mjs': "import base from './base.mjs';\nexport const x = 1;\n" }), ['a.mjs: base'], 'an unused default import');
+  assert.deepEqual(unusedImports({ 'a.mjs': "import * as B from './base.mjs';\nexport const x = 1;\n" }), ['a.mjs: B'], 'an unused namespace import');
+  assert.deepEqual(unusedImports({ 'a.mjs': "import base, * as B from './base.mjs';\nimport {\n  a,\n  b as c,\n} from './d.mjs';\nexport const x = [base, B.y, a];\n" }), ['a.mjs: c'], 'a default, a namespace and a multi-line list together');
+  assert.deepEqual(unusedImports({ 'a.mjs': "import base from './base.mjs';\nimport * as B from './b.mjs';\nexport const x = base(B.y);\n" }), [], 'used ones');
+  assert.deepEqual(unusedImports({ 'a.mjs': "import { need } from './base.mjs';\n// need is named here, and in /* a block */ too\nexport const x = 1;\n" }), ['a.mjs: need'], 'a name in a comment is no use');
+});
+
+test('the imports of a module are read from its code: comments, strings and patterns hold none', () => {
+  // An import line inside a block comment whose lines carry no leading star is no import.
+  assert.deepEqual(importsOf("/*\nimport { x } from '../record.mjs';\nmore text\n*/\nimport { y } from './b.mjs';\n").map((i) => i.spec), ['./b.mjs']);
+  assert.deepEqual(importsOf("/* import { x } from '../record.mjs'; */\n  /**\n   * import z from '../jarl.mjs';\n   */\nimport { y } from './b.mjs';\n").map((i) => i.spec), ['./b.mjs']);
+  // import( in a comment, of either kind, is no dynamic import; in code it still is one.
+  assert.deepEqual(importsOf("// the old import('./x.mjs') is gone\n/* a call import( inside\n a block */\nimport { y } from './b.mjs'; // import(\n").map((i) => i.spec), ['./b.mjs']);
+  assert.throws(() => importsOf("const m = await import('./b.mjs'); // not a comment-only line"), /dynamic import/);
+  // A comment marker inside a string, a template or a pattern starts no comment, so the import after it is read.
+  assert.deepEqual(importsOf("const u = 'http://x/*';\nconst t = `a // b ${'/*'} c`;\nconst r = /['\"]\\/\\*/g;\nimport { y } from './b.mjs';\n").map((i) => i.spec), ['./b.mjs']);
+  // The blanked text keeps its lines where they were: the same length and the same breaks, for every module of the library.
+  for (const [f, text] of Object.entries(SOURCES)) {
+    const code = withoutComments(text);
+    assert.equal(code.length, text.length, f);
+    assert.deepEqual([...code.matchAll(/\n/g)].map((m) => m.index), [...text.matchAll(/\n/g)].map((m) => m.index), f);
+  }
+  assert.equal(withoutComments('a /* x\ny */ b // c\nd').split('\n').length, 3);
+  assert.equal(withoutComments("const s = 'x // y'; // z\nconst q = a / b / c; // w"), "const s = 'x // y';     \nconst q = a / b / c;     ");
 });

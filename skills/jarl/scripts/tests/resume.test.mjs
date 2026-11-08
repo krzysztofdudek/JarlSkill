@@ -222,9 +222,11 @@ function bigLoop(count) {
 }
 
 // What resume costs on a large loop is judged against measurements of the same run, never against a fixed number of
-// seconds: the git processes it starts are counted (the same on a quiet machine and a busy one), and its time is set
-// against a git process started now and against its own time on a loop a quarter the size (load slows all three). A git
-// process per issue, or a pass over every issue for each issue, fails; a busy machine does not.
+// seconds or the speed of a machine's git: the git processes it starts are counted (the same on a quiet machine and a
+// busy one, and the count is the whole of its git cost), and its time is set against its own time on a loop a quarter
+// the size and against a calibration of bare git starts and a plain read of the loop's files, which runs none of Jarl's
+// code (load slows all of them). A git process per issue, a pass over every issue for each issue, or a slowdown of code
+// that other commands share too, fails; a busy machine does not.
 test('resume stays fast on a loop of hundreds of issues naming another repository and a long log', async () => {
   const { dispatch } = await import(new URL('../jarl.mjs', import.meta.url).href);
   const large = bigLoop(425);
@@ -243,30 +245,45 @@ test('resume stays fast on a loop of hundreds of issues naming another repositor
     return readFileSync(trace, 'utf8').split('\n').filter((l) => /\btrace: (built-in|exec): /.test(l)).length;
   };
   // Resume starts one git process for each issue in flight and a fixed few besides, so the large loop may start that
-  // many more than the small one, and a few spare.
+  // many more than the small one, and three spare.
   const fewer = processes(small.hub);
   const used = processes(large.hub);
-  const allowed = large.inFlight - small.inFlight + 10;
+  const allowed = large.inFlight - small.inFlight + 3;
   assert.ok(used - fewer <= allowed, `resume started ${used} git processes on the large loop and ${fewer} on the small one; ${large.inFlight - small.inFlight} more issues in flight allow ${allowed} more`);
 
-  // time, against clocks measured in this run: a git process started on this machine now (the unit), and resume on a
-  // loop a quarter the size. The best of several runs of each, taken one after the other, so a busy machine moves the
-  // unit and the baseline with the large run. Linear growth is 4x for 4x the issues and a pass over every issue for
-  // each issue is 16x; resume costs about 150 units, and the bounds leave room for the noise of one run.
-  const best = (runs, fn) => {
-    let least = Infinity;
-    for (let i = 0; i < runs; i += 1) {
-      const t0 = process.hrtime.bigint();
-      fn();
-      least = Math.min(least, Number(process.hrtime.bigint() - t0) / 1e6);
+  // time, against clocks measured in this run from work that does not run Jarl's code, so code that resume and every other
+  // command share cannot slow the clock with it: the calibration is what resume has to do at the least, with plain node and
+  // bare git: one git process for each that resume started, and a read and a pattern scan of every issue file and of the
+  // log of the large loop. The calibration, resume on the large loop and resume on a loop a quarter the size are timed in
+  // turn, five rounds, and the least of each kept, so a busy machine slows all of them together. Resume measures a little
+  // over one calibration, and three are allowed; linear growth is four times the work for four times the issues (resume
+  // measures under three times) and a pass over every issue for each issue is sixteen times, and seven are allowed.
+  const issuesDir = join(large.hub, '.jarl', 'issues');
+  const calibrate = () => {
+    for (let k = 0; k < used; k += 1) execFileSync('git', ['--version'], { stdio: 'ignore', timeout: 120_000 });
+    let seen = 0;
+    for (const f of readdirSync(issuesDir)) seen += (readFileSync(join(issuesDir, f), 'utf8').match(/^\*\*[A-Za-z -]+:\*\*/gm) || []).length;
+    seen += (readFileSync(join(large.hub, '.jarl', 'log.md'), 'utf8').match(/^- \d{4}-\d\d-\d\d \d\d:\d\d · \d+ \w+/gm) || []).length;
+    return seen;
+  };
+  const timesInTurn = (rounds, fns) => {
+    const least = fns.map(() => Infinity);
+    for (let i = 0; i < rounds; i += 1) {
+      fns.forEach((fn, k) => {
+        const t0 = process.hrtime.bigint();
+        fn();
+        least[k] = Math.min(least[k], Number(process.hrtime.bigint() - t0) / 1e6);
+      });
     }
     return least;
   };
-  const unit = best(10, () => execFileSync('git', ['--version'], { stdio: 'ignore', timeout: 120_000 }));
-  const base = best(3, () => dispatch(small.hub, 'resume', [], {}));
-  const grown = best(3, () => dispatch(large.hub, 'resume', [], {}));
-  assert.ok(grown < unit * 400, `resume took ${grown.toFixed(0)} ms on the large loop, ${(grown / unit).toFixed(0)} times a git process (${unit.toFixed(1)} ms)`);
+  const [reference, base, grown] = timesInTurn(5, [
+    calibrate,
+    () => dispatch(small.hub, 'resume', [], {}),
+    () => dispatch(large.hub, 'resume', [], {}),
+  ]);
   assert.ok(grown < base * 7, `resume took ${grown.toFixed(0)} ms on the large loop and ${base.toFixed(0)} ms on one a quarter its size: ${(grown / base).toFixed(1)}x for 4x the issues`);
+  assert.ok(grown < reference * 3, `resume took ${grown.toFixed(0)} ms on the large loop; ${used} bare git processes and a plain read of its files take ${reference.toFixed(0)} ms: ${(grown / reference).toFixed(1)}x`);
 });
 
 // The live loop of the family release, when this checkout sits beside it: resume and handoff read on a copy, with

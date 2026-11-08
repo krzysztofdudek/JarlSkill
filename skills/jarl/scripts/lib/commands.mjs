@@ -15,9 +15,9 @@ import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } f
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
 import { branchTip, commitRepoNames, declaredBaseOf, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needFormatHeld, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
-import { FIELD_NAMES, activeSlices, carriesCode, unmergedCode, gateOf, isSliceTag, needOneSlice, readLoop, sinceText, sliceOf, unclearedText, unorderedNamings, unorderedText } from './loop.mjs';
+import { FIELD_NAMES, activeSlices, carriesCode, unmergedCode, gateOf, isSliceTag, leaseConflictOf, needOneSlice, readLoop, sinceText, sliceOf, unclearedText, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
-import { modelLines, modelRefusalOf, modelReviewForm, modelValue, spellingNote } from './models.mjs';
+import { modelLines, modelRefusalOf, modelReviewForm, modelValue, modelOfferAtLease, spellingNote } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
 import { NOTE_LIMIT, addedContentNotes, addedNoteText } from './rounds.mjs';
 import { resetCaches } from './tips.mjs';
@@ -62,7 +62,10 @@ export function cmdInit(root, goal, flags = {}) {
   appendLog(root, `opened · ${goal.trim()}${prof ? ` · profile ${prof.profile.name}` : ''}`);
   // Said once, on the command line: a goal that names no check lands its merges on testimony, whatever they record.
   const noCheck = flags.caller === 'cli' && declaredChecks(root).length === 0;
-  return { dir: jarlDir(root), committed, permanent, ...(prof ? { profile: prof.profile.name } : {}), ...(noCheck ? { note: 'the goal names no check (a "Check: <command>" line, or "Check (<name>): <command>" for one repository) — this loop lands on testimony alone, whatever its merges record, until the goal declares one' } : {}) };
+  // The same for the models: a goal with no Model line leaves every model unplaced, and `models` can rank nothing.
+  const noModels = flags.caller === 'cli' && !modelLines(root).declared;
+  return { dir: jarlDir(root), committed, permanent, ...(prof ? { profile: prof.profile.name } : {}),
+    ...(noModels ? { modelNote: `the goal declares no Model line ("Model (<tier>): <model-id>"), so models places no model and ranks none until it does — add one for each tier: ${jarlLine('goal', '--set', hole('<machine-line>'))}` } : {}), ...(noCheck ? { note: 'the goal names no check (a "Check: <command>" line, or "Check (<name>): <command>" for one repository) — this loop lands on testimony alone, whatever its merges record, until the goal declares one' } : {}) };
 }
 
 // A live loop is one with a goal; a .jarl/ holding only archive/ and the mode markers has none.
@@ -1105,11 +1108,14 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const judged = closes ? readLoop(jarlDir(root)) : null;
   const closeTip = (issue) => { const tip = gateOf(judged, issue.id).closingTip(); return tip ? [`${issue.id} tip ${tip}`] : []; };
   appendLogLines(root, issues.flatMap((issue) => [`${issue.id} → ${status}${reason ? ` · ${reason}` : ''}${leaseNote ? ` · ${leaseNote}` : ''}`, ...(closes ? closeTip(issue) : [])]), since);
+  // The lines that remember the offer are written for every caller; its text is the command line's answer alone.
+  const offered = holds && leaseNote ? modelOfferAtLease(root, model) : null;
+  const modelOffer = caller === 'cli' ? offered : null;
   for (const w of writes) writeAtomic(w.issue.file, w.edit(readText(w.issue.file)));
   // Said on the command line only, and only in a loop that declares model lines: a lease with no model (once per call).
   const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
   const worktreeNote = caller === 'cli' && holds && flags.worktree !== undefined ? '--worktree was checked and is not recorded — the worktree of a lease is found through its branch' : null;
-  const leaseNotes = [leaseNoModel, worktreeNote, spelling].filter(Boolean).join('; ');
+  const leaseNotes = [leaseNoModel, worktreeNote, spelling, modelOffer].filter(Boolean).join('; ');
   return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(handover ? { handover: true } : {}), ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue, root) : {}), ...(leaseNotes && n === 0 ? { note: leaseNotes } : {}) })));
 }
 
@@ -1157,7 +1163,8 @@ function needLeaseHolds(root, profile, issues, status, why, flags, handover, not
   for (const issue of issues) {
     if (handover) {
       need(leased(issue), `${issue.id} holds no lease to hand over${nothing} — lease it without --handover: ${jarlLine('set', issue.id, status, '<text>', ...leaseFlags)}`, () => ({ rename: '--handover', to: hole('<no-flag-here>') }));
-      need(replaces(issue), `--handover names the lease ${issue.id} already has (${holderText(issue)}) — a handover names the new --worker or --branch${nothing}`, () => ({ flag: '--worker', value: '<the-new-worker>' }));
+      // A lease the log holds twice is settled by a handover to either of its two holders, the one the issue's header already names too.
+      need(replaces(issue) || ((named('worker') !== null || named('branch') !== null) && leaseConflictOf(readLoop(jarlDir(root)), issue) !== null), `--handover names the lease ${issue.id} already has (${holderText(issue)}) — a handover names the new --worker or --branch${nothing}`, () => ({ flag: '--worker', value: '<the-new-worker>' }));
     } else if (!composed) {
       need(!(leased(issue) && replaces(issue)), `${issue.id} is leased already (${holderText(issue)}) — a second lease would replace it in silence, and ${fieldText(issue.fields.worker) || 'its worker'} would go on working on a branch the record does not name; when the work changes hands, say why: ${jarlLine('set', issue.id, status, '<why-the-worker-changed>', ...leaseFlags, '--handover')}${nothing}`, () => ([...(why ? [] : [{ arg: 2, value: '<why-the-worker-changed>' }]), { flag: hole('<--handover-or-none>') }]));
     }

@@ -17,10 +17,11 @@ const CONFLICT_OPEN = /^<{7}(?: .*)?$/;
 const CONFLICT_MIDDLE = /^={7}$/;
 const CONFLICT_CLOSE = /^>{7}(?: .*)?$/;
 const CONFLICT_MARKERS = [CONFLICT_OPEN, CONFLICT_MIDDLE, CONFLICT_CLOSE];
-// The line numbers of the opening markers of the conflicts `lines` hold: the first opening marker, then the first
-// separator after it, then the first closing marker after that, and so on after each closing marker. Any other marker line
-// is passed over, so a stray marker inside a conflict's sides never hides it, and markers in another order are no
-// conflict. A fenced block is no exception, because git writes its markers inside a fence both sides share; text the tool
+// The line numbers of the opening markers of the conflicts `lines` hold: an opening marker, then the first separator after
+// it, then the first closing marker after that, and so on after each closing marker. An opening marker with no separator
+// before the next opening marker is text, and the next one opens the conflict, so a lone marker above a conflict is never
+// the line reported. Any other marker line is passed over, so a stray marker inside a conflict's sides never hides it, and
+// markers in another order are no conflict. A fenced block is no exception, because git writes its markers inside a fence both sides share; text the tool
 // writes holds no marker line (see escapeMarkers), so a conflict found is one a merge left.
 function conflictsIn(lines) {
   const out = [];
@@ -28,7 +29,7 @@ function conflictsIn(lines) {
   let middle = false;
   lines.forEach((line, i) => {
     if (open === null) { if (CONFLICT_OPEN.test(line)) open = i + 1; }
-    else if (!middle) middle = CONFLICT_MIDDLE.test(line);
+    else if (!middle) { if (CONFLICT_OPEN.test(line)) open = i + 1; else middle = CONFLICT_MIDDLE.test(line); }
     else if (CONFLICT_CLOSE.test(line)) { out.push(open); open = null; middle = false; }
   });
   return out;
