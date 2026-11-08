@@ -1,11 +1,11 @@
 // The commands that write the record: init, new, body, set, field, merged and the rest, and the cleanup a
 // recorded merge makes redundant.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, openSync, closeSync, writeSync, unlinkSync, linkSync } from 'node:fs';
-import { basename, join, resolve, relative, isAbsolute } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, openSync, closeSync, writeSync, unlinkSync, linkSync, realpathSync } from 'node:fs';
+import { basename, dirname, join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { CI_STATES, LEASE_FIELDS, PRIORITIES, Refusal, TIERS, WAIT_KIND, afterView, echoWord, fieldText, hole, jarlLine, need, noSeparators, refuse, shellWord, slugify, splitList } from './base.mjs';
 import { needNoNewOwnersWords, needNoOwnersWords } from './owner.mjs';
-import { git, gitBytes, gitRun } from './git.mjs';
+import { git, gitBytes, gitHere, gitRun } from './git.mjs';
 import { canonical, issuesDir, jarlDir, normalPath, portablePath, stamp, today } from './where.mjs';
 import { readText, renameRetry, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, branchNameProblem, cmpId, expandIds, idKey, idRe, isBulk, itemNaming, needsRaisedFormat, newIssueKey, newNumber } from './ids.mjs';
@@ -798,6 +798,7 @@ function doneReady(cause, issue, lines = false) {
   if (cause === 'model') return ['jarl.mjs', 'review', hole('<ids>'), hole('<verdict>'), hole('<what-was-read-and-found>'), '--by', hole('<a-fresh-reviewer>'), '--model', hole('<model-id>')];
   if (cause === 'merge') return ['jarl.mjs', 'merged', hole('<ids>'), '--sha', hole('<sha>')];
   if (cause === 'commit') return ['jarl.mjs', 'evidence', hole('<id>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>')];
+  if (cause === 'files') return ['jarl.mjs', 'field', hole('<ids>'), 'Files', hole('<paths>')];
   if (cause === 'slots') return ['jarl.mjs', 'evidence', hole('<id>'), '--file', hole('<path>'), '--slot', hole('<slot>')];
   if (cause === 'owner') return ['jarl.mjs', 'ask', hole('<question-for-the-owner>'), '--issue', hole('<id>')];
   if (cause === 'owner-rewrite') return ['jarl.mjs', 'field', hole('<ids>'), 'Acceptance', hole('<the-whole-section>')];
@@ -1682,7 +1683,7 @@ function doneGateIn(root, loop, issue, base, withoutRows, status) {
   if (unmerged) return { cause: 'merge', text: unmerged };
   // An issue worked in place has no merge: it closes on the commit of its files, which a row of its proof names.
   const uncommitted = inPlaceRefusal(root, loop, issue, g);
-  if (uncommitted) return { cause: 'commit', text: uncommitted };
+  if (uncommitted) return uncommitted;
   // Last, an acceptance line no row names, in a loop that names them, and an acceptance line only the owner ticks: his
   // look comes on top of the proof and the review, never instead.
   return lines() || owner();
@@ -1695,8 +1696,9 @@ function unprovedRefusal(profile, issue, left, status) {
 }
 // Whether the loop names the acceptance lines a row proves and the issue has lines to name.
 const namesLines = (loop, issue) => loop.linesFrom !== null && acceptanceLineCount(issue) > 0;
-// Why an issue worked in place may not close yet, or null. Each file it declares is placed in its repository as fileAt
-// places it (the loop's own, or the one its Repo names for that path). The issue closes when every such repository is a
+// Why an issue worked in place may not close yet, as { cause, text }, or null. Each file it declares is placed in its
+// repository as fileAt places it (the loop's own, or the one its Repo names for that path) and compared, whole, with the
+// paths git names from the top of that repository (see repositoryPaths). The issue closes when every such repository is a
 // git repository here, none of its declared files has a change its checkout has not committed (staged, unstaged or
 // untracked), and a row of its proof inside the gate's window names a commit that a repository holds on the branch it
 // has checked out, that changes a declared file of that repository, and that was committed at or after the minute of the
@@ -1709,26 +1711,55 @@ function inPlaceRefusal(root, loop, issue, g) {
   const logged = alignRows(issue.id, rows, g.rowLog);
   const counted = rows.filter((r, k) => !r.retracted && r.saw !== '' && (!g.tracked || (logged[k] && logged[k].inWindow && !logged[k].retracted)));
   const shas = [...new Set(counted.flatMap((r) => `${r.ran} ${r.saw}`.match(/\b[0-9a-f]{7,40}\b/g) || []))];
-  // The declared files by the top of the repository they are in.
+  // The declared files by the top of the repository they are in, each as the paths git names there. Git is asked without
+  // the variables a hook sets, which would point it at the repository the hook runs for.
   const byTop = new Map();
   for (const f of issue.files) {
     const at = fileAt(root, issue, f);
-    const top = isGitRepo(at.repo) ? git(at.repo, ['rev-parse', '--show-toplevel']) : null;
-    if (top === null) return `${issue.id} is worked in place, and ${f} is in ${repoLabel(at.repo)}, which is no git repository here, so the commit of its files cannot be checked — ${inPlaceStep(issue)}`;
-    byTop.set(top, [...(byTop.get(top) || []), at.path.replace(/\/+$/, '')]);
+    const found = gitHere(at.repo, ['rev-parse', '--show-toplevel']);
+    if (found === null) return { cause: 'commit', text: `${issue.id} is worked in place, and ${f} is in ${repoLabel(at.repo)}, which is no git repository here, so the commit of its files cannot be checked — ${inPlaceStep(issue)}` };
+    const top = canonical(found);
+    const placed = repositoryPaths(top, at);
+    if (placed.outside) return { cause: 'files', text: `${issue.id} is worked in place, and ${f} ${placed.outside} — an issue worked in place declares the files it writes inside their repository: ${jarlLine('field', issue.id, 'Files', '<paths>')}` };
+    byTop.set(top, [...(byTop.get(top) || []), ...placed.paths]);
   }
-  const touches = (paths) => (f) => paths.some((d) => f === d || f.startsWith(`${d}/`) || f.endsWith(`/${d}`));
+  // A declared directory covers what is under it; a path is compared whole, so a file of the same name elsewhere is not it.
+  const touches = (paths) => (f) => paths.some((d) => d === '' || f === d || f.startsWith(`${d}/`));
+  const names = (top, args) => (gitHere(top, args) || '').split('\0').filter(Boolean);
   for (const [top, paths] of byTop) {
-    const changed = [...(git(top, ['diff', '--name-only', '-z', '--no-renames', 'HEAD']) || '').split('\0'), ...(git(top, ['ls-files', '--others', '--exclude-standard', '-z']) || '').split('\0')].filter(Boolean);
+    const changed = [...names(top, ['diff', '--name-only', '-z', '--no-renames', 'HEAD']), ...names(top, ['ls-files', '--others', '--exclude-standard', '-z'])];
     const dirty = changed.filter(touches(paths));
-    if (dirty.length) return `${issue.id} is worked in place, and its checkout holds changes not committed to ${dirty.join(', ')} — ${inPlaceStep(issue)}`;
+    if (dirty.length) return { cause: 'commit', text: `${issue.id} is worked in place, and its checkout holds changes not committed to ${dirty.join(', ')} — ${inPlaceStep(issue)}` };
   }
   const from = g.tracked ? parseStamp(g.anchor.at) : null;
-  const committed = (top, paths, sha) => git(top, ['merge-base', '--is-ancestor', sha, 'HEAD']) !== null
-    && (from === null || Number(git(top, ['show', '-s', '--format=%ct', sha])) * 1000 >= from)
-    && (git(top, ['diff-tree', '--root', '--no-commit-id', '--name-only', '-r', '--no-renames', sha]) || '').split('\n').some(touches(paths));
+  const committed = (top, paths, sha) => gitHere(top, ['merge-base', '--is-ancestor', sha, 'HEAD']) !== null
+    && (from === null || Number(gitHere(top, ['show', '-s', '--format=%ct', sha])) * 1000 >= from)
+    && names(top, ['diff-tree', '--root', '--no-commit-id', '--name-only', '-r', '-z', '--no-renames', sha]).some(touches(paths));
   if (shas.some((sha) => [...byTop].some(([top, paths]) => committed(top, paths, sha)))) return null;
-  return `${issue.id} is worked in place, and no row of its proof${g.tracked ? ` since ${sinceText(g.anchor)}` : ''} names a commit made after it, on the branch checked out, that changes ${issue.files.join(', ')} — ${inPlaceStep(issue)}`;
+  return { cause: 'commit', text: `${issue.id} is worked in place, and no row of its proof${g.tracked ? ` since ${sinceText(g.anchor)}` : ''} names a commit made after it, on the branch checked out, that changes ${issue.files.join(', ')} — ${inPlaceStep(issue)}` };
+}
+// A declared file as the paths git names it by in its repository, whose top is `top`: the path read from the place the
+// issue declares it in (the loop's root, or the checkout its Repo names), relative to the top. A symbolic link on the way
+// is followed, so the file an edit through it changes is checked, and the link's own path with it. { paths } or, for a
+// path that leaves the repository as written or once a link is followed, { outside } with why.
+function repositoryPaths(top, at) {
+  const written = resolve(canonical(at.repo), at.path);
+  const inside = (p) => { const r = relative(top, p); return r === '..' || r.startsWith(`..${sep}`) || isAbsolute(r) ? null : portablePath(r); };
+  const own = inside(written);
+  if (own === null) return { outside: 'lies outside its repository, so no commit of that repository changes it' };
+  const target = inside(realPlace(written));
+  if (target === null) return { outside: 'is a symbolic link to a place outside its repository, so no commit of that repository changes the file it points to' };
+  return { paths: [...new Set([own, target])] };
+}
+// A path with every symbolic link on it followed, as far as it exists: a file not written yet, or deleted, keeps its name
+// under the real place of its nearest directory that exists.
+function realPlace(path) {
+  const rest = [];
+  for (let at = path; ; at = dirname(at)) {
+    try { return join(realpathSync.native(at), ...rest); } catch { /* not there: its directory is read */ }
+    if (dirname(at) === at) return path;
+    rest.unshift(basename(at));
+  }
 }
 const inPlaceStep = (issue) => `once the approve stands, its files are committed in the checkout of their repository (by the merger where one runs, else the coordinator), and the commit is recorded as a row: ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>')}`;
 // Why a code issue's code as it is now is not merged (see unmergedCode), as done says it, or null.

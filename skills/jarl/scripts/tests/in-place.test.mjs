@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileAsBefore, formatTwoJarl } from './old-jarl.mjs';
 import { SPAWN_TIMEOUT, gitRepo, jarl, refuses, run } from './helpers.mjs';
@@ -111,6 +111,103 @@ test('a file the issue places in another repository is checked there: its change
   const sha = other.g('rev-parse', '--short', 'HEAD').trim();
   jarl(root, 'evidence', '1', '--ran', 'git commit docs/guide.md', '--saw', `${sha} the guide`, '--by', 'jarl');
   const r = run(root, ['set', '1', 'done', 'written and committed', '--by', 'jarl']);
+  assert.equal(r.status, 0, r.stderr);
+});
+
+// A loop that sits in a subdirectory of its repository, as a loop of plans beside other work does: a declared path is
+// read from the loop's root, and git names it from the top of the repository.
+function subdirectoryLoop() {
+  const { dir, g } = gitRepo({ prefix: 'jarl-in-place-sub-', branch: 'main' });
+  const root = join(dir, 'loop');
+  mkdirSync(join(root, 'docs'), { recursive: true });
+  mkdirSync(join(dir, 'docs'));
+  mkdirSync(join(dir, 'other', 'docs'), { recursive: true });
+  jarl(root, 'init', 'write the guides');
+  jarl(root, 'new', 'write the guide', '--tags', 'in-place', '--files', 'docs/a.md', '--acceptance', 'it reads well');
+  jarl(root, 'set', '1', 'in-progress', '--worker', 'w1', '--by', 'jarl');
+  return { top: dir, root, g };
+}
+const shortHead = (g) => g('rev-parse', '--short', 'HEAD').trim();
+
+test('in a loop in a subdirectory of its repository, a commit of a file with the same tail elsewhere in the repository closes nothing', () => {
+  const { top, root, g } = subdirectoryLoop();
+  writeFileSync(join(top, 'other', 'docs', 'a.md'), 'another file\n');
+  writeFileSync(join(top, 'docs', 'a.md'), 'a file at the top\n');
+  g('add', '-A'); g('commit', '-qm', 'files of the same name elsewhere');
+  jarl(root, 'evidence', '1', '--ran', 'git commit', '--saw', `${shortHead(g)} files of the same name`, '--by', 'w1');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev-1', FINDINGS);
+  assert.match(refuses(root, 'set', '1', 'done', 'written', '--by', 'jarl'), /^1 is worked in place, and no row of its proof since it was moved → in-progress names a commit made after it, on the branch checked out, that changes docs\/a\.md/);
+  writeFileSync(join(root, 'docs', 'a.md'), '# Guide\n');
+  g('add', '-A'); g('commit', '-qm', 'the guide');
+  jarl(root, 'evidence', '1', '--ran', 'git commit', '--saw', `${shortHead(g)} the guide`, '--by', 'jarl');
+  const r = run(root, ['set', '1', 'done', 'written and committed', '--by', 'jarl']);
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test('in a loop in a subdirectory of its repository, an uncommitted file with the same tail elsewhere holds nothing back, and its own file does, named from the top', () => {
+  const { top, root, g } = subdirectoryLoop();
+  writeFileSync(join(root, 'docs', 'a.md'), '# Guide\n');
+  jarl(root, 'evidence', '1', '--ran', 'proofread docs/a.md', '--saw', 'reads well', '--by', 'w1');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev-1', FINDINGS);
+  assert.match(refuses(root, 'set', '1', 'done', 'written', '--by', 'jarl'), /^1 is worked in place, and its checkout holds changes not committed to loop\/docs\/a\.md — /);
+  g('add', join('loop', 'docs', 'a.md')); g('commit', '-qm', 'the guide');
+  jarl(root, 'evidence', '1', '--ran', 'git commit', '--saw', `${shortHead(g)} the guide`, '--by', 'jarl');
+  writeFileSync(join(top, 'other', 'docs', 'a.md'), 'another file, not committed\n');
+  writeFileSync(join(top, 'docs', 'a.md'), 'a file at the top, not committed\n');
+  const r = run(root, ['set', '1', 'done', 'written and committed', '--by', 'jarl']);
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test('a declared path with letters beyond ASCII closes on the commit that changes it, which git names unquoted', () => {
+  const { root, g } = placeLoop();
+  jarl(root, 'new', 'write the guide', '--tags', 'in-place', '--files', 'docs/żółw.md', '--acceptance', 'it reads well');
+  jarl(root, 'set', '1', 'in-progress', '--worker', 'w1', '--by', 'jarl');
+  writeFileSync(join(root, 'docs', 'żółw.md'), '# Guide\n');
+  g('add', '-A'); g('commit', '-qm', 'the guide');
+  jarl(root, 'evidence', '1', '--ran', 'git commit', '--saw', `${shortHead(g)} the guide`, '--by', 'w1');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev-1', FINDINGS);
+  const r = run(root, ['set', '1', 'done', 'written and committed', '--by', 'jarl']);
+  assert.equal(r.status, 0, r.stderr);
+});
+
+const LINKS = { skip: process.platform === 'win32' && 'a symbolic link needs a privilege or developer mode on Windows, and git there checks one out as a plain file unless core.symlinks is set' };
+test('a declared file that is a symbolic link is checked as the file it points to, and one that points out of its repository is refused with the form of Files', LINKS, () => {
+  const { root, g } = placeLoop();
+  writeFileSync(join(root, 'docs', 'real.md'), '# Guide, as it was\n');
+  symlinkSync('real.md', join(root, 'docs', 'guide.md'));
+  const outside = gitRepo({ prefix: 'jarl-in-place-out-', branch: 'main' });
+  writeFileSync(join(outside.dir, 'out.md'), 'elsewhere\n');
+  symlinkSync(join(outside.dir, 'out.md'), join(root, 'docs', 'out.md'));
+  g('add', 'docs'); g('commit', '-qm', 'the guide and its links');
+  jarl(root, 'new', 'rewrite the guide', '--tags', 'in-place', '--files', 'docs/guide.md', '--acceptance', 'it reads well');
+  jarl(root, 'new', 'rewrite the other guide', '--tags', 'in-place', '--files', 'docs/out.md', '--acceptance', 'it reads well');
+  for (const id of ['1', '2']) {
+    jarl(root, 'set', id, 'in-progress', '--worker', `w${id}`, '--by', 'jarl');
+    jarl(root, 'evidence', id, '--ran', 'proofread', '--saw', 'reads well', '--by', `w${id}`);
+    jarl(root, 'review', id, 'approve', '--by', 'rev-1', FINDINGS);
+  }
+  writeFileSync(join(root, 'docs', 'guide.md'), '# Guide, rewritten through its link\n');
+  assert.match(refuses(root, 'set', '1', 'done', 'written', '--by', 'jarl'), /^1 is worked in place, and its checkout holds changes not committed to docs\/real\.md — /);
+  g('add', 'docs/real.md'); g('commit', '-qm', 'the guide');
+  jarl(root, 'evidence', '1', '--ran', 'git commit', '--saw', `${shortHead(g)} the guide`, '--by', 'jarl');
+  const r = run(root, ['set', '1', 'done', 'written and committed', '--by', 'jarl']);
+  assert.equal(r.status, 0, r.stderr);
+  const said = refuses(root, 'set', '2', 'done', 'written', '--by', 'jarl');
+  assert.match(said, /^2 is worked in place, and docs\/out\.md is a symbolic link to a place outside its repository, so no commit of that repository changes the file it points to — /);
+  assert.equal(lastLine(said), 'jarl.mjs field "<ids>" Files "<paths>"');
+});
+
+test('the gate reads the repository its files are in when a hook has pointed git at another one', () => {
+  const { root, g } = placeLoop();
+  const hook = gitRepo({ prefix: 'jarl-in-place-hook-', branch: 'main' });
+  jarl(root, 'new', 'write the guide', '--tags', 'in-place', '--files', 'docs/guide.md', '--acceptance', 'it reads well');
+  jarl(root, 'set', '1', 'in-progress', '--worker', 'w1', '--by', 'jarl');
+  writeFileSync(join(root, 'docs', 'guide.md'), '# Guide\n');
+  g('add', 'docs/guide.md'); g('commit', '-qm', 'the guide');
+  jarl(root, 'evidence', '1', '--ran', 'git commit', '--saw', `${shortHead(g)} the guide`, '--by', 'w1');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev-1', FINDINGS);
+  const env = { GIT_DIR: join(hook.dir, '.git'), GIT_INDEX_FILE: join(hook.dir, '.git', 'index'), GIT_PREFIX: '' };
+  const r = run(root, ['set', '1', 'done', 'written and committed', '--by', 'jarl'], { env });
   assert.equal(r.status, 0, r.stderr);
 });
 

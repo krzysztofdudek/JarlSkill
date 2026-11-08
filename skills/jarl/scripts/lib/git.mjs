@@ -27,7 +27,7 @@ const REPOSITORY_OVERRIDES = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT
 function gitHere(dir, args) {
   const env = { ...process.env };
   for (const name of REPOSITORY_OVERRIDES) delete env[name];
-  try { return exec('git', args, { cwd: dir, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; }
+  try { return exec('git', args, { cwd: dir, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: GIT_OUTPUT }).trim(); } catch { return null; }
 }
 const runGh = exec;
 // What git prints in `root` for `input` on its standard input, as bytes; null when it fails. A batch command reads many
