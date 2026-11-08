@@ -56,6 +56,8 @@ function makeLoop({ dir, root, profile, issues, events }) {
     coordinators: once(() => coordinatorsIn(root, loop.goalLines)),
     bots: once(() => botNames(profile)),
     branchWorkers: once(() => branchWorkersOf(loop)),
+    // The log line from which the loop names the acceptance lines a row proves: its first row that names one, or null.
+    linesFrom: once(() => events.find((e) => e.type === 'row' && e.lines)?.n ?? null),
   };
   for (const [key, read] of Object.entries(reads)) Object.defineProperty(loop, key, { enumerable: true, get: read });
   return loop;

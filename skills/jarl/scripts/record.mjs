@@ -86,9 +86,9 @@ export function loadAsks(root) { return read(() => L.loadAsks(root)); }
 export function parseIssue(text, file) { return L.parseIssue(text, file); }
 export function renderIssue(spec) { return L.renderIssue(spec); }
 export function mergedOf(issue) { return L.mergedOf(issue); }
-// The checkable --ran/--saw rows of an issue's Evidence, as { ran, saw }; a retracted row (struck through by
-// addEvidence with opts { retract }) is not one. The rows of the whole section are read, under ### Proof, under
-// ### Notes or in a section with no sub-heading.
+// The checkable --ran/--saw rows of an issue's Evidence, as { ran, saw }, and lines, the numbers of the acceptance lines
+// it names, on a row that names any; a retracted row (struck through by addEvidence with opts { retract }) is not one.
+// The rows of the whole section are read, under ### Proof, under ### Notes or in a section with no sub-heading.
 export function evidenceRows(issue) { return L.evidenceRows(issue); }
 
 // ---- the profile ----------------------------------------------------------------------------------
@@ -163,7 +163,9 @@ export function setFiles(root, id, files) { return write(root, () => L.cmdFiles(
 export function setRepo(root, id, path, opts = {}) { return write(root, () => L.cmdRepo(root, id, path, { clear: opts.clear === true, by: opts.by })); }
 export function setAfter(root, id, ids, opts = {}) { return write(root, () => L.cmdAfter(root, id, ids, { clear: opts.clear === true, by: opts.by })); }
 export function setSource(root, id, refs) { return write(root, () => L.cmdSource(root, id, refs)); }
-// Free text, or opts { ran, saw } (one row per pair; text then undefined), or opts { retract: n, by } (n a row number, or note-<n> for a free-text note) with the reason as
+// Free text, or opts { ran, saw } (one row per pair; text then undefined) with the optional key line (the numbers of the
+// acceptance lines every row of the call proves, as the command line's --line takes them; the first such row raises the
+// record format), or opts { retract: n, by } (n a row number, or note-<n> for a free-text note) with the reason as
 // text: the n-th row of the whole Evidence section (retracted rows counted) is struck through and an entry saying who
 // retracted it and why is appended; the done gate stops counting it. The first retraction raises the loop's record
 // format, so a Jarl that cannot read a retraction refuses the loop. Rows are written under ### Proof, after the last
@@ -222,5 +224,5 @@ export function resumeData(root, opts = {}) { return read(() => L.cmdResume(root
 // reference ({ file, section }, inside the skill's directory), the commands that record the result ({ what, command },
 // each with a placeholder for every value) and notes; an issue's brief also the issue as show prints it (show, without
 // the lines that name where things are on this machine), its rounds, the findings of the reviews that sent it back and its
-// proof rows ({ n, ran, saw }), and a slice's its issues in play. Every part is whole: nothing is cut.
+// proof rows ({ n, ran, saw }, and lines on a row that names acceptance lines), and a slice's its issues in play. Every part is whole: nothing is cut.
 export function briefData(root, id, opts = {}) { return read(() => L.cmdBrief(root, id, opts)); }

@@ -50,6 +50,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A loop's profile can name the strongest model the loop may use and the models it may not use, to keep its cost down. Jarl's advice then stays within that: the model it suggests for a task, the step up after failed rounds, and, when a review would need a model above the limit, the lighter worker that makes the review possible.
 - A review can name the screenshot, render or file it judged, so each look at a picture is its own verdict on record. The task shows it with the verdict and the report counts such reviews. It never holds back a merge, and the first one moves the loop to format 3.
 - A session can name the loop it works on once, with `use`, instead of on every call; `use` alone lists the loops kept in a repository. On the command line `use` prints the setting to export, and the command line now reads `JARL_ROOT`. When a repository has no loop at its top but has some further down, a call that names none is refused with their list instead of guessing.
+- The note of which code a test result, a review or a merge was made on carries a mark that only this Jarl writes, so a line written by an older Jarl never keeps a task's results alive across a pause. The first such note moves the loop to format 3; a loop with no branch to note stays as it is.
+- A piece of proof can name the checkable lines of the task it proves (`evidence --line 2`). Once a loop does that, closing a task lists each of its lines that no proof names, and the task closes only with a reason, which is kept beside those lines and shown in the report. A loop that never names a line closes tasks as before. The first such proof moves the loop to format 3.
 
 ### Changed
 

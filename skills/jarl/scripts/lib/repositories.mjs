@@ -9,7 +9,7 @@ import { canonical, issuesDir, jarlDir, normalPath, portablePath } from './where
 import { readText, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, branchNameProblem } from './ids.mjs';
 import { FORMAT_LINES, PROFILE_VERSION, RECORD_FORMATS, RECORD_FORMAT_RAISED, forgetProfile, formatState, loadProfile, profilePath } from './profile.mjs';
-import { appendLog, appendLogLines, logPath } from './journal.mjs';
+import { appendLog, appendLogLines, logPath, tipLine } from './journal.mjs';
 import { withLock } from './lock.mjs';
 import { mapMergeRepos } from './log.mjs';
 
@@ -94,10 +94,16 @@ export function branchTip(root, issue) {
   const shas = repos.map((r) => (isGitRepo(r) ? refsIn(r).get(branch)?.sha : undefined));
   return shas.every((s) => s && /^[0-9a-f]{7,64}$/.test(s)) ? shas.join(',') : null;
 }
-// The line written after a row, a verdict or a merge of `issue`: the tip of its branch now, or none (see branchTip).
-function tipLines(root, issue) {
-  const tip = branchTip(root, issue);
-  return tip ? [`${issue.id} tip ${tip}`] : [];
+// The tip lines of one write about `issues`, as a function of the issue that gives the line written after its row, verdict,
+// merge or close: the tip `tipOf` gives (the tip of its branch now, see branchTip), or none. Every tip is read before
+// anything is written; then, when one is there, the loop is raised once to the format that holds the tip mark. A loop
+// whose composer keeps its format below that one gets no tip line: the tip is off there, and the write goes on without it.
+function tipLinesOf(root, issues, tipOf = (issue) => branchTip(root, issue)) {
+  const tips = new Map(issues.map((issue) => [issue, tipOf(issue)]));
+  const profile = [...tips.values()].some(Boolean) ? loadProfile(root) : null;
+  const held = profile !== null && (profile.format >= FORMAT_LINES['tip-mark'].format || formatState(profile).raises);
+  if (held) needFormat(root, 'tip-mark');
+  return (issue) => (held && tips.get(issue) ? [tipLine(issue.id, tips.get(issue))] : []);
 }
 // The checkouts an issue's Repo field gives, as repoOf resolves them, or the loop's own repository where it names none.
 // `names` stands in for the Repo field where something else names the repository (a recorded merge). A value that does
@@ -661,4 +667,4 @@ export function reposWhereLines(where) {
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { FETCHED, HOMES, IS_REPO, REFS, REPO_OF, RESOLVED, TOP_OF, commitRepoNames, defaultBase, isGitRepo, issuePlaces, issueRepoPaths, issueRepoSlots, issueRepos, repoLabel, repoList, repoNames, tipLines, topOf, worktreesOf };
+export { FETCHED, HOMES, IS_REPO, REFS, REPO_OF, RESOLVED, TOP_OF, commitRepoNames, defaultBase, isGitRepo, issuePlaces, issueRepoPaths, issueRepoSlots, issueRepos, repoLabel, repoList, repoNames, tipLinesOf, topOf, worktreesOf };

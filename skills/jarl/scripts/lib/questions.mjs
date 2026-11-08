@@ -11,7 +11,7 @@ import { FORMAT_LINES, formatState, loadProfile, numberWidth } from './profile.m
 import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, goalLines, loadDecisions, markDecision, needNewRuling, parseStamp, readGoal } from './journal.mjs';
 import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteShown, rulingAuthor } from './owner.mjs';
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
-import { needFormat, tipLines } from './repositories.mjs';
+import { needFormat, tipLinesOf } from './repositories.mjs';
 import { readLoop, sliceNamed } from './loop.mjs';
 import { issuesFor } from './commands.mjs';
 import { appliesToLine, loopRules, parseScope, parseUntil, underText, withUnder } from './rules.mjs';
@@ -372,7 +372,7 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   // a new commit after it spends it.
   if (waives.length) {
     const shown = quoteShown(quote);
-    carryingOwnersWords([shown], () => appendRuling(root, waives, `Ruling ${slug} (by owner) waives the review: ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)} · ${shown}`, (issue) => tipLines(root, issue)));
+    carryingOwnersWords([shown], () => appendRuling(root, waives, `Ruling ${slug} (by owner) waives the review: ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)} · ${shown}`, tipLinesOf(root, waives)));
   }
   return { slug, by, ...(waives.length ? { waives: waives.map((i) => i.id) } : {}), ...(quote ? { quote } : {}), ...(under ? { under } : {}), ...(appliesTo ? { appliesTo } : {}), supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
 }

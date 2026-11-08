@@ -102,7 +102,8 @@ test('a superseded waiver, or a ruling whose words are not the owner\'s, waives 
 });
 
 // A loop whose issue is filed with three digits and no key (fileAsBefore) and written with no writer, so it stays in
-// record format 1 until the waiver: one code issue on a branch, with its proof row and its merge recorded.
+// record format 1 until the waiver: one code issue on a branch, with its proof row and its merge recorded by the pinned
+// frozen reader, which writes no tip line (the first tip line raises a loop to format 3).
 function formatOneLoop() {
   const { dir: root, g } = gitRepo({ prefix: 'jarl-waiver-format-', branch: 'main' });
   jarl(root, 'init', 'goal');
@@ -111,8 +112,8 @@ function formatOneLoop() {
   writeFileSync(join(root, 'a.txt'), 'moved\n'); g('add', 'a.txt'); g('commit', '-qm', 'move');
   g('checkout', '-q', 'main');
   jarl(root, 'set', id, 'in-progress', '--worker', 'w1', '--branch', 'jarl/move');
-  jarl(root, 'evidence', id, '--ran', 'npm test', '--saw', 'pass 4, fail 0');
-  jarl(root, 'merged', id, '--sha', g('rev-parse', 'jarl/move').trim(), '--ci', 'none', '--keep');
+  assert.equal(oldJarl(root, 'evidence', {}, [id, null, { ran: 'npm test', saw: 'pass 4, fail 0' }]).ok, true);
+  assert.equal(oldJarl(root, 'merged', {}, [id, { sha: g('rev-parse', 'jarl/move').trim(), ci: 'none' }]).ok, true);
   return { root, id };
 }
 const format = (root) => json(root, 'profile').format;
