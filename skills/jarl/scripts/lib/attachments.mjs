@@ -6,7 +6,7 @@ import { join, relative, sep } from 'node:path';
 import { plainRelative } from './where.mjs';
 import { jarlLine } from './base.mjs';
 import { ATTACH_MAX_BYTES, loadProfile } from './profile.mjs';
-import { gateOf, gateState } from './loop.mjs';
+import { gateOf, gateState } from './gate.mjs';
 
 // ---- attachments: a file as a proof row --------------------------------------------------------------------------
 //

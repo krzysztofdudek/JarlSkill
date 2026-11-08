@@ -8,7 +8,9 @@ import { branchNameProblem } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
 import { acceptanceLineCount, loadIssues } from './issues.mjs';
 import { fileKeysOf, isGitRepo, issueRepoPaths, repoLabel, worktreesOf } from './repositories.mjs';
-import { activeSlices, leaseConflictOf, readLoop, sliceOf } from './loop.mjs';
+import { activeSlices, sliceOf } from './slices.mjs';
+import { leaseConflictOf } from './gate.mjs';
+import { readLoop } from './loop.mjs';
 import { LINE_FORM } from './lines.mjs';
 import { declaredInCall, sameDir } from './shared.mjs';
 

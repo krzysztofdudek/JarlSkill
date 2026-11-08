@@ -11,7 +11,8 @@ import { acceptanceLines, alignRows, evidenceTable, findIssue } from './issues.m
 import { jarlDir } from './where.mjs';
 import { carriesDeclared, declaredFor } from './metrics.mjs';
 import { repoNames } from './repositories.mjs';
-import { gateOf, readLoop } from './loop.mjs';
+import { gateOf } from './gate.mjs';
+import { readLoop } from './loop.mjs';
 import { needOwnerLine, ownerLineStates } from './owner-lines.mjs';
 
 export const METHODS = Object.freeze(['test', 'check', 'compare', 'read', 'owner']);

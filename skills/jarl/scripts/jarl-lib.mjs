@@ -21,7 +21,10 @@ export { leaseOfMove, attachmentOf, parseEvent, appendNote, mapMergeRepos, loopE
 export { parseIssue, loadIssues, parentCycle, waitCycle, fieldValue, findIssue, sharedNumbers, sharedNumberText, bodyText, needNoFieldTags, describeNew, renderNewReply, acceptanceText, CHANGELOG_SECTIONS, changelogText, changelogEntries, renderIssue, mergedOf, alignRows, evidenceTable, evidenceRows, isUnsplit, placeEvidence, PROPOSED, acceptanceLineCount, acceptanceLines, reviewEntries } from './lib/issues.mjs';
 export { raiseFormat, needFormat, mainCheckoutOf, worktreeState, fileAt, reposNamed, refsIn, REPOS_FILE, repoValueKind, repoPlace, repoOf, branchTip, originSpelling, repoFromInput, REPOS_HEADER, REPOS_DECLARED_IN, declaredNames, declaredRepos, cmdRepoBase, repoIdentity, needRightCheckouts, whyNotDeletable, whereOf, whereLines, reposWhere, reposWhereLines } from './lib/repositories.mjs';
 export { RULE_ROLES, RULE_MOMENTS, RULE_SELECTORS, BUILTIN_RULES, parseScope, parseUntil, readAppliesTo, ruleMatches, rulesFor } from './lib/rules.mjs';
-export { needLoop, readLoop, recordDisagreements, disagreementText, BASE_COORDINATORS, reviewerKind, coordinatorNames, carriesCode, inFlightMark, gateState, gateWindow, gateOf, wholeOf, sliceOf, coordinatorOf, reviewSplit } from './lib/loop.mjs';
+export { needLoop, readLoop } from './lib/loop.mjs';
+export { recordDisagreements, disagreementText } from './lib/disagreements.mjs';
+export { BASE_COORDINATORS, reviewerKind, coordinatorNames, sliceOf, coordinatorOf } from './lib/slices.mjs';
+export { carriesCode, inFlightMark, gateState, gateWindow, gateOf, wholeOf, reviewSplit } from './lib/gate.mjs';
 export { declaredChecksByRepo, declaredChecks, checkState, checkLines, mergeCheckLines, FOLLOW_UP_DAYS, loopMetrics, metricsOf, renderMetrics } from './lib/metrics.mjs';
 export { MODEL_MIN_N, modelLines, cmdModels, renderModels, modelMarks, needKnownModels } from './lib/models.mjs';
 export { roundsOf, cmdRound, renderCheckNotes, cmdCheck, cmdBranches, renderBranches, ago, leaseProblems } from './lib/rounds.mjs';

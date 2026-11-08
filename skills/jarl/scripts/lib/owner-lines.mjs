@@ -19,7 +19,8 @@ import { appendLogLines } from './journal.mjs';
 import { formatState } from './profile.mjs';
 import { acceptanceLines, evidenceRows, findIssue } from './issues.mjs';
 import { issueRepoPaths, needFormat, worktreeState } from './repositories.mjs';
-import { gateOf, gateWindow, readLoop, wholeOf } from './loop.mjs';
+import { gateOf, gateWindow, wholeOf } from './gate.mjs';
+import { readLoop } from './loop.mjs';
 
 const MARK = /^\[owner\]\s*/i;
 const PART = (key) => new RegExp(`^${key}:\\s*(.*)$`, 'i');

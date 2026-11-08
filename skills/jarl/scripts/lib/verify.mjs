@@ -11,7 +11,9 @@ import { ASKS_FILE, DECISIONS_FILE, GOAL_FILE, LOG_FILE, goalLineOf, goalLines, 
 import { loopEvents } from './log.mjs';
 import { issueKeyOf, parentCycle, parseIssue, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { REPOS_DECLARED_IN, declaredNames, issueRepos, repoIdentity, repoValueKind, reposNamed, worktreesOf } from './repositories.mjs';
-import { IN_PLACE_TAG, headerReadNotes, readLoop, recordDisagreements, unorderedNamings, unorderedText } from './loop.mjs';
+import { IN_PLACE_TAG } from './gate.mjs';
+import { headerReadNotes, recordDisagreements } from './disagreements.mjs';
+import { readLoop, unorderedNamings, unorderedText } from './loop.mjs';
 import { attachmentFindings } from './attachments.mjs';
 import { modelLines, unknownModels } from './models.mjs';
 import { hasLiveLoop } from './shared.mjs';

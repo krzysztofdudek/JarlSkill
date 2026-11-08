@@ -14,7 +14,7 @@ import { LEFT_THE_FAMILY } from './left-the-family.mjs';
 const { COMMAND_FLAGS, INTERNAL_COMMANDS, MUTATING, USAGE } = await import('../jarl.mjs');
 const mcp = await import('../jarl-mcp.mjs');
 const { RECORD_API, RECORD_APIS } = await import('../record.mjs');
-const { renderSplit } = await import('../lib/loop.mjs');
+const { renderSplit } = await import('../lib/gate.mjs');
 
 const PLUGIN = resolve(SKILL_DIR, '..', '..');
 const readRoot = (path) => readFileSync(join(PLUGIN, path), 'utf8');

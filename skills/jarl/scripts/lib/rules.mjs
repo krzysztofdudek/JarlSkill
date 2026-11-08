@@ -10,7 +10,7 @@
 import { fieldText, hole, need } from './base.mjs';
 import { idKey } from './ids.mjs';
 import { answeredLines } from './journal.mjs';
-import { sameSlice, sliceOf } from './loop.mjs';
+import { sameSlice, sliceOf } from './slices.mjs';
 import { repoNames } from './repositories.mjs';
 
 export const RULE_ROLES = Object.freeze(['jarl', 'coordinator', 'worker', 'reviewer', 'merger', 'takeover']);

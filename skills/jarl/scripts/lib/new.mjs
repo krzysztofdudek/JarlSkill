@@ -11,7 +11,8 @@ import { FORMAT_LINES, formatState, loadProfile, numberWidth } from './profile.m
 import { appendLogLines } from './journal.mjs';
 import { acceptanceHeading, acceptanceText, bodyText, changelogText, fieldValue, loadIssues, namedPairs, needNoFieldTags, parseIssue, renderIssue } from './issues.mjs';
 import { commitRepoNames, mainCheckoutOf, needFormat, needFormatHeld, repoList, reposNamed } from './repositories.mjs';
-import { IN_PLACE_TAG, needOneSlice } from './loop.mjs';
+import { IN_PLACE_TAG } from './gate.mjs';
+import { needOneSlice } from './slices.mjs';
 import { needMarkedLines } from './lines.mjs';
 import { listAll, needLiveLoop } from './shared.mjs';
 import { claimFile, readTemplate } from './init.mjs';
