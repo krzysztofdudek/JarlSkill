@@ -9,7 +9,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { sh } from './portable.mjs';
 import { fileURLToPath } from 'node:url';
 import { FINDINGS } from './findings.mjs';
-import { run, jarl, refuses } from './helpers.mjs';
+import { SPAWN_TIMEOUT, run, jarl, refuses } from './helpers.mjs';
 import * as R from '../record.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
@@ -69,7 +69,7 @@ test('the merge queue lists an approved branch the base already holds, marked re
   branchWith(root, 'jarl/1-first', 'src/a.mjs');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
-  jarl(root, 'merged', '1', '--sha', execFileSync('git', ['rev-parse', 'jarl/1-first'], { cwd: root, encoding: 'utf8' }).trim(), '--keep');
+  jarl(root, 'merged', '1', '--sha', execFileSync('git', ['rev-parse', 'jarl/1-first'], { cwd: root, encoding: 'utf8', timeout: SPAWN_TIMEOUT }).trim(), '--keep');
   jarl(root, 'round', '1', 'the check went red on the merge');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);

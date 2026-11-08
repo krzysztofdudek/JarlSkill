@@ -65,7 +65,7 @@ export function cmdQueue(root, flags = {}) {
       const mb = git(repo, ['merge-base', base, branch]);
       const ahead = mb ? Number(git(repo, ['rev-list', '--count', `${mb}..${branch}`]) || 0) : null;
       // A branch the base holds whole has nothing to land: its approved issue is listed only when the merge recorded on it
-      // no longer counts (mergeAgainWhy says why), and then the row is record only.
+      // does not count now (mergeAgainWhy says why), and then the row is record only.
       const recordWhy = ahead === 0 ? on.map((i) => mergeAgainWhy(loop, i)).find(Boolean) : null;
       if (!ahead && !recordWhy) continue;   // nothing its base lacks: merged already, or never worked on
       const others = issuesOnBranch(root, unsettled, real, branch).filter((i) => !on.includes(i));
