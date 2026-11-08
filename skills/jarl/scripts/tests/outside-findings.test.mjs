@@ -228,10 +228,11 @@ test('on a loop that stays at its record format, the second finding outside the 
   assert.match(jarl(hub, 'review', '001', 'approve', 'read the diff and the test, it works', '--by', 'rev-a', '--outside', 'Minor: the first thing seen'), /filed outside the issue: 999/);
 });
 
-test('on a loop that stays at its record format, a second finding outside the issue that a declared range moves onto a number the format cannot hold refuses the review before the first is filed', () => {
+test('on a composer\'s loop whose goal holds a range, a second finding outside the issue that the range moves onto a number the format cannot hold refuses the review before the first is filed', () => {
+  // A composer's goal command refuses a range, so the range line is written into the goal file as it stands.
   const hub = composed();
   writeFileSync(join(hub, '.jarl', 'issues', '997-old-997.md'), L.renderIssue({ id: '997', title: 'old 997', kind: 'bug', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
-  jarl(hub, 'goal', '--set', 'Range (film): 999-1001');
+  writeFileSync(join(hub, '.jarl', 'goal.md'), `${readFileSync(join(hub, '.jarl', 'goal.md'), 'utf8')}Range (film): 999-1001\n`);
   jarl(hub, 'set', '001', 'in-progress', 'start', '--worker', 'w1');
   jarl(hub, 'evidence', '001', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
   const before = snapshot(hub);

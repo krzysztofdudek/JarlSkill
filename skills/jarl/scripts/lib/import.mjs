@@ -13,7 +13,7 @@ import { PROPOSED, bodyText, findIssue, loadIssues, sharedMark } from './issues.
 import { repoList, reposWhereLines } from './repositories.mjs';
 import { closedGateLine, disagreementText, gateLine, needOneSlice } from './loop.mjs';
 import { checkLines, checkWaitingText, closedNoCheckText, mergeCheckLines } from './metrics.mjs';
-import { cmdNew, cmdSource, editorOf, givenFields, needLiveLoop, nextIssueNumber, parentToFile, putUnder } from './commands.mjs';
+import { cmdNew, cmdSource, editorOf, givenFields, needLiveLoop, nextIssueNumbers, parentToFile, putUnder } from './commands.mjs';
 import { leasedByText, schedulerNote, subsText } from './evidence.mjs';
 
 // ---- research findings into issues ----------------------------------------------------------------
@@ -292,17 +292,18 @@ export function cmdImport(root, file, flags) {
     kind: flags.kind || f.kind, prio: flags.prio || f.priority, tier: flags.tier, tags: flags.tags, repo: flags.repo,
     field: flags.field, 'found-by': foundBy, where: f.where, what: f.what, why: f.why, acceptance: f.acceptance || undefined, source: key,
   });
-  // The findings are filed in the order of the file, each taking the next number, so each is checked with the number it
-  // would take: a number the loop's record format cannot hold refuses the file before the first finding is filed, and the
-  // way out is the findings ahead of it, chosen with --only (or the format its profile says).
-  const first = toFile.length ? nextIssueNumber(root) : 0;
+  // The findings are filed in the order of the file, each taking the next number (stepped past a range the goal declares,
+  // as new steps), so each is checked with the number it would take: a number the loop's record format cannot hold
+  // refuses the file before the first finding is filed, and the way out is the findings ahead of it, chosen with --only
+  // (or the format its profile says).
+  const numbers = nextIssueNumbers(root, toFile.length);
   const holdsAny = formatState(profile).raises || profile.format >= FORMAT_LINES['plain-number'].format;
   const width = numberWidth(profile);
   toFile.forEach(({ f, key }, k) => {
-    try { cmdNew(root, f.title, filing(f, key), { dry: true, number: first + k }); } catch (e) {
+    try { cmdNew(root, f.title, filing(f, key), { dry: true, number: numbers[k] }); } catch (e) {
       if (!(e instanceof Refusal)) throw e;
-      const edge = !holdsAny && needsRaisedFormat(newNumber(first + k, width));
-      const fits = edge && !needsRaisedFormat(newNumber(first, width));
+      const edge = !holdsAny && needsRaisedFormat(newNumber(numbers[k], width));
+      const fits = edge && !needsRaisedFormat(newNumber(numbers[0], width));
       refuse(`finding "${f.id}" cannot be filed: ${e.reason}${/nothing was (written|filed)/.test(e.reason) ? '' : ' — nothing was filed'}${fits ? '; the findings that take a number below it can be filed with --only' : ''}`,
         fits ? { flag: '--only', value: hole('<finding-ids>') } : edge ? [{ first: ['jarl.mjs', 'profile'] }, { retry: true }] : formOf(e.ready));
     }

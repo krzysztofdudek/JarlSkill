@@ -85,6 +85,30 @@ test('extend refuses a part that is not a section or a field, a name the profile
   assert.deepEqual(snapshot(root), held, 'nothing was written');
 });
 
+test('a field takes no name of a part Jarl writes itself, and a field and a section never share a name: extend and profile <file> refuse both, naming the reserved names', () => {
+  const root = makeLoop({ prefix: 'jarl-extend-names-', via: 'cli' });
+  jarl(root, 'extend', 'section', 'Risks');
+  jarl(root, 'extend', 'field', 'Area');
+  const held = snapshot(root);
+  for (const name of ['Title', 'model', 'Notes']) {
+    const said = refuses(root, 'extend', 'field', name);
+    assert.match(said, new RegExp(`^the field ${name} is not added: it declares the field ${name}, which is the name of a part Jarl writes itself — the names a field may not take are Status, .*, Title, Model, What, .*, Proof, Key, Parent, Person, Check when; rename it in the profile`));
+    assert.equal(lastLine(said), 'jarl.mjs extend "<section-or-field>" "<name>"');
+  }
+  assert.match(refuses(root, 'extend', 'field', 'risks'), /^the profile already declares Risks as a section, and a field and a section never share a name/);
+  assert.match(refuses(root, 'extend', 'section', 'AREA'), /^the profile already declares Area as a field, and a field and a section never share a name/);
+  assert.deepEqual(snapshot(root), held, 'nothing was written');
+  const dir = mkdtempSync(join(tmpdir(), 'jarl-extend-names-file-'));
+  const file = (name, json) => { const path = join(dir, name); writeFileSync(path, JSON.stringify({ 'jarl-profile': 1, name: 'own', statuses: BUILTIN_STATUSES, ...json })); return path; };
+  let r = run(root, ['profile', file('title.json', { fields: { Title: {} } })]);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /is not a valid profile: it declares the field Title, which is the name of a part Jarl writes itself — the names a field may not take are /);
+  r = run(root, ['profile', file('both.json', { fields: { Plan: {} }, sections: ['plan'] })]);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /is not a valid profile: it declares Plan as a field and as a section, so the field command could not tell which one it writes/);
+  assert.equal(run(root, ['profile', file('fine.json', { fields: { Plan: {} }, sections: ['Steps'] })]).status, 0);
+});
+
 test('extend refuses the profile of a loop a composer runs, naming the composer\'s command, and writes nothing', () => {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-extend-composed-'));
   mkdirSync(join(dir, '.git'));
