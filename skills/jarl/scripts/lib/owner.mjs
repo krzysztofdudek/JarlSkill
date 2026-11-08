@@ -1,7 +1,7 @@
 // The owner in the record: the one name `owner`, and his own words, which only a ruling of his carries. His words are
 // kept as the last line of that ruling, `The owner's words: "<words>"`, and this module is where that line is told from
 // text anyone else wrote: every text the record takes is read here in one normal form, and a text that reads as the
-// marker in any spelling is refused, so no note, row, question, answer or ruling of anyone else can look like his words.
+// marker in a spelling it reads is refused, so a note, row, question, answer or ruling of anyone else cannot carry it in a form the check reads. A form it does not read (a look-alike letter outside the table, the marker broken up by other words) is free text.
 
 import { fieldText, need } from './base.mjs';
 
@@ -19,30 +19,66 @@ const LOOKALIKES = {
   'ο': 'o', 'ω': 'w', 'η': 'n', 'ε': 'e', 'ρ': 'p', 'ν': 'v', 'σ': 'o',
   'օ': 'o', 'ո': 'n', 'ա': 'w', 'ս': 'u', 'ᴏ': 'o', 'ᴡ': 'w', 'ɴ': 'n', 'ᴇ': 'e',
   'ʀ': 'r', 'ꜱ': 's', 'ɯ': 'w', 'ɑ': 'a', 'ɡ': 'g', '0': 'o',
+  // Letters with a stroke, which no decomposition takes apart, the small capital d, and the o and d of other alphabets
+  // and of the phonetic ones: Coptic, barred, sideways, with a long stroke, and d with a hook or a tail; and the Cherokee w.
+  'ø': 'o', 'đ': 'd', 'ᴅ': 'd', 'ⲟ': 'o', 'ɵ': 'o', 'ᴑ': 'o', 'ᴓ': 'o', 'ꝋ': 'o', 'ɗ': 'd', 'ɖ': 'd', 'Ꮃ': 'w', 'ꮃ': 'w',
 };
 const LOOKALIKE_RE = new RegExp(`[${Object.keys(LOOKALIKES).join('')}]`, 'gu');
 // What is read as nothing: invisible format characters (zero-width spaces and joiners, the word joiner, a byte-order
 // mark, a soft hyphen, the direction marks), combining marks, and the fillers that print as blank.
 const NOTHING = /[\p{Cf}\p{M}ᅟᅠㅤﾠ]/gu;
-// An apostrophe in any of its forms is read as nothing too, so "owner's" and "owners" are one word.
+// An apostrophe in any of its forms is read as the plain one, kept where it stands: "owner's" and "owners" are one word
+// and an apostrophe is a single quotation mark too, so the marker is looked for with it between any two letters.
 const APOSTROPHES = /['‘’‚‛′‵ʹʻʼʽˈ`´Ꞌꞌ՚׳]/g;
 // A colon and a double quote in any of their forms, and every space.
 const COLONS = /[꞉∶ː˸։፡׃܃܄⁚⸬︰]/g;
-const QUOTES = /[“”„‟«»‹›〝〞〟″˝]/g;
+const QUOTES = /[“”„‟«»‹›〝〞〟″˝「」『』﹁﹂﹃﹄]/g;
 const SPACES = /[\s\p{Z}]+/gu;
+// What a renderer takes away of markup: an HTML comment, an HTML tag, the address of a Markdown link (its text stays), the
+// brackets, the asterisk, the tilde and the backslash, and an underscore that does not join two letters or digits (an
+// underscore inside an identifier such as owners_words is part of it).
+const HTML_COMMENT = /<!--[\s\S]*?-->/g;
+const HTML_TAG = /<\/?[a-zA-Z][^>]*>/g;
+const MARKDOWN_LINK = /\[([^\]]*)\]\([^)]*\)/g;
+const MARKDOWN = /[[\]*~\\]/g;
+const EMPHASIS_UNDERSCORE = /(?<![\p{L}\p{N}])_+|_+(?![\p{L}\p{N}])/gu;
+// The named HTML entities that stand for a character the marker is made of or is spread over: quotation marks, the colon,
+// the blank and invisible ones. A letter with an accent or a stroke (&ocirc;, &oslash;) stands for its base letter. A
+// numeric entity (decimal or hexadecimal, with or without its semicolon) stands for any character.
+const ENTITY_NAMES = {
+  apos: "'", rsquo: '’', lsquo: '‘', sbquo: '‚', prime: '′', quot: '"', ldquo: '“', rdquo: '”', bdquo: '„',
+  laquo: '«', raquo: '»', lsaquo: '‹', rsaquo: '›', colon: ':', dstrok: 'd', nbsp: ' ', ensp: ' ', emsp: ' ', thinsp: ' ',
+  hairsp: ' ', Tab: ' ', NewLine: ' ', ZeroWidthSpace: '​', zwj: '‍', zwnj: '‌', shy: '­',
+};
+const ACCENTED_ENTITY = /^([a-zA-Z])(?:acute|grave|circ|uml|tilde|ring|cedil|caron|slash)$/;
+const ENTITY = /&(?:#(\d{1,7})|#[xX]([0-9a-fA-F]{1,6})|([a-zA-Z][a-zA-Z0-9]{1,15}));?/g;
+function decodeEntities(text) {
+  return text.replace(ENTITY, (whole, dec, hex, name) => {
+    if (name !== undefined) return Object.hasOwn(ENTITY_NAMES, name) ? ENTITY_NAMES[name] : (ACCENTED_ENTITY.exec(name)?.[1] ?? whole);
+    const code = dec !== undefined ? Number(dec) : parseInt(hex, 16);
+    return code > 0 && code <= 0x10FFFF ? String.fromCodePoint(code) : whole;
+  });
+}
 
-// A text in the one form the marker is looked for in: every Unicode form of a letter taken apart, case folded, invisible characters,
-// accents, apostrophes and spaces dropped, lookalike letters, colons and quotes read as the plain ones.
+// A text in the one form the marker is looked for in: HTML entities read as the characters they stand for, HTML tags and
+// comments and Markdown marks taken away, every Unicode form of a letter taken apart, case folded, invisible characters,
+// accents and spaces dropped, lookalike letters, apostrophes, colons and quotes read as the plain ones.
 function normalForm(text) {
-  return String(text ?? '').normalize('NFKD').toLowerCase().normalize('NFKD').replace(NOTHING, '').replace(APOSTROPHES, '')
+  return decodeEntities(String(text ?? '')).replace(HTML_COMMENT, '').replace(HTML_TAG, '').replace(MARKDOWN_LINK, '$1').replace(MARKDOWN, '')
+    .replace(EMPHASIS_UNDERSCORE, '').normalize('NFKD').toLowerCase().normalize('NFKD').replace(NOTHING, '').replace(APOSTROPHES, "'")
     .replace(SPACES, '').replace(LOOKALIKE_RE, (c) => LOOKALIKES[c]).replace(COLONS, ':').replace(QUOTES, '"');
 }
 
-// "owner's words" (or "owner's own words", or "owner's word") with a colon or an opening quote after it, perhaps behind
-// other punctuation: what reads as the marker. "The owner's words matter" does not.
-const MARKER_FORM = /owners(?:own)?words?[\p{P}\p{S}]*?[:"]/u;
+// A word with an apostrophe allowed between any two of its letters: the apostrophe is the possessive's, and a single
+// quotation mark too.
+const spelled = (word) => [...word].join("'*");
+// "owner's words" (or "owner's own words") with a colon or a quotation mark after it, perhaps behind other punctuation:
+// what reads as the marker. "owner's word" or "owner's own word" in the singular reads as it only with a quotation mark
+// after it (the colon alone does not): "the owner's word: needed" is an honest phrase, as is "the owner's words matter".
+const OWNERS = `${spelled('owners')}'*(?:${spelled('own')}'*)?`;
+const MARKER_FORM = new RegExp(`${OWNERS}${spelled('words')}[\\p{P}\\p{S}]*?[:"']|${OWNERS}${spelled('word')}[\\p{P}\\p{S}]*?["']`, 'u');
 
-// Whether a text holds the marker in any spelling: the one test every writer of the record goes through.
+// Whether a text holds the marker in the spellings above: the one test every writer of the record goes through.
 export function holdsOwnersWords(text) { return MARKER_FORM.test(normalForm(text)); }
 
 const REFUSAL = (what) => `${what} holds "${QUOTE_MARKER}" (in some spelling), which the record keeps only as the owner's quote, written by decide --by owner --quote "<his-own-words>": give his words with --quote and leave that line out of the text`;

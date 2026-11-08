@@ -86,6 +86,19 @@ test('a round, a reopen or a new commit after the waiver spends it, as it spends
   assert.match(refuses(committed.root, 'set', '1', 'done', 'x', '--by', 'jarl'), /no approving review/, 'the code the owner waived is not the code there now');
 });
 
+test('a waiver whose note is retracted waives nothing, in the done gate and the merge queue, and one whose note stands still waives', () => {
+  const { root, g } = codeLoop();
+  waive(root);
+  assert.deepEqual(json(root, 'resume').queue.repos.flatMap((r) => r.rows).map((r) => r.issues), [['1']], 'the note stands: the waived issue waits for its merge');
+  assert.match(jarl(root, 'retract', '1', 'note-1', '--by', 'owner', 'the issue is reviewed after all'), /retracted/);
+  assert.deepEqual(json(root, 'resume').queue.repos.flatMap((r) => r.rows), [], 'the retracted waiver puts the issue back out of the queue');
+  jarl(root, 'merged', '1', '--sha', g('rev-parse', 'jarl/1-move').trim(), '--ci', 'none', '--keep', '--by', 'jarl');
+  assert.match(refuses(root, 'set', '1', 'done', 'x', '--by', 'jarl'), /no approving review/, 'the retracted waiver no longer stands in for the review');
+  assert.match(jarl(root, 'show', '1', '--full'), /~~Ruling no-review-for-1 \(by owner\) waives the review/);
+  jarl(root, 'review', '1', 'approve', '--by', 'rev-a', 'read the diff, nothing found');
+  assert.match(jarl(root, 'set', '1', 'done', 'reviewed and merged', '--by', 'jarl'), /1 → done/);
+});
+
 test('a superseded waiver, or a ruling whose words are not the owner\'s, waives nothing', () => {
   const { root, g } = codeLoop();
   jarl(root, 'merged', '1', '--sha', g('rev-parse', 'jarl/1-move').trim(), '--ci', 'none', '--keep', '--by', 'jarl');

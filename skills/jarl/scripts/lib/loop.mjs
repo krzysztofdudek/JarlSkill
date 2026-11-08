@@ -9,7 +9,7 @@ import { idKey, idRe, idsCited, keyedIds } from './ids.mjs';
 import { BOT_PREFIX, FORMAT_LINES, botNames, clearsOf, clearsWords, profileAt, reviewerRule } from './profile.mjs';
 import { asksAt, decisionsAt, goalLines, readGoal } from './journal.mjs';
 import { eventsById, isParentLine, leaseOfMove, loopEvents } from './log.mjs';
-import { alignRows, evidenceRows, evidenceTable, headerReadText, issuesAt, mergedOf, sharedNumberText, sharedNumbers } from './issues.mjs';
+import { alignRows, evidenceNotes, evidenceRows, evidenceTable, headerReadText, issuesAt, mergedOf, sharedNumberText, sharedNumbers } from './issues.mjs';
 import { branchTip } from './repositories.mjs';
 import { OWNER } from './owner.mjs';
 
@@ -352,7 +352,18 @@ function waiverVoid(loop, slug, id) {
   if (!(d.waives || []).some((w) => idKey(w) === idKey(id))) return `the ruling does not name ${id} under Waives review`;
   const held = FORMAT_LINES['review-waiver'].format;
   if (loop.profile.format < held) return `the loop is not in record format ${held}`;
+  if (waiverNoteRetracted(loop, slug, id)) return 'its note in the issue was retracted';
   return null;
+}
+// Whether the notes of the issue that carry the ruling's waiver are all retracted: a note taken back is no waiver, as the
+// views leave it out. An issue whose notes hold none (a waiver whose note was never written there) is not judged by it.
+function waiverNoteRetracted(loop, slug, id) {
+  const issue = (loop.issues || []).find((i) => i.id !== null && idKey(i.id) === idKey(id));
+  if (!issue) return false;
+  const { lines, notes } = evidenceNotes(issue.sections.evidence || '');
+  const own = new RegExp(`^(?:- )?(?:~~)?Ruling ${slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(by owner\\) waives the review\\b`);
+  const mine = notes.filter((m) => own.test(lines[m.start]));
+  return mine.length > 0 && mine.every((m) => m.retracted);
 }
 // An issue carries code when it records a branch or a merge. Only then does done (and the merge queue) need a
 // fresh approve; an issue with neither — a ruling, a note, a hub document — is still cleared by the coordinator.
