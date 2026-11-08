@@ -177,6 +177,8 @@ export function review(root, ids, verdict, findings, opts = {}) { return write(r
 // go to the merge record (the Merge check field and the merge line) and are never written as a Proof row, so a merge never
 // stands in for the worker's proof; a composer that closes on rows writes its own with addEvidence.
 export function recordMerged(root, ids, opts = {}) { return write(root, () => L.cmdMerged(root, ids, opts)); }
+// One red round, with no count of findings: the contract keeps its arguments, and the count is the command line's
+// round --findings.
 export function addRound(root, id, what) { return write(root, () => L.cmdRound(root, id, what)); }
 // opts { by, supersedes, settles, area, reach, rule }.
 export function decide(root, slug, ruling, opts = {}) { return write(root, () => L.cmdDecide(root, slug, ruling, opts)); }

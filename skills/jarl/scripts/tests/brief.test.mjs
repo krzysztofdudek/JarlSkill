@@ -10,6 +10,7 @@ import { gitRepo, jarl, posixForms, refuses, spawnJarl, loop as makeLoop } from 
 import { shellWord } from '../jarl-lib.mjs';
 import * as R from '../record.mjs';
 import { FINDINGS } from './findings.mjs';
+import { fileAsBefore, fileAsFormatTwo, formatTwoJarl, oldJarl } from './old-jarl.mjs';
 
 const loop = () => makeLoop({ prefix: 'jarl-brief-', via: 'cli', dotGit: false });
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
@@ -81,12 +82,12 @@ test('brief <id> --role reviewer carries the rules of the reviewer, of the round
   assert.deepEqual(slugs(o), ['loop-rule', 'reviewers', 'jarl:reviewer-every-round', 'jarl:reviewer-light-tier', 'jarl:reviewer-tier-above', 'jarl:reviewer-identical-output', 'jarl:reviewer-judges-the-issue']);
   for (const absent of ['ui-workers', 'odin-only', 'coordinators', 'jarl:worker-only-the-issue']) assert.ok(!slugs(o).includes(absent), absent);
   assert.equal(o.rounds.length, 1);
-  assert.match(o.rounds[0].text, /^round 1 · count 1 of 3 · findings 2 · the count is off by one$/);
+  assert.match(o.rounds[0].text, /^round 1 \(count 1 of 3\) · findings 2 · the count is off by one$/);
   assert.deepEqual(o.findings.map((f) => [f.by, f.kind, f.text]), [['rev1', 'fresh', finding]], 'the finding is whole');
   assert.deepEqual(o.proof, [{ n: 1, ran: 'npm test', saw: 'tests 4, pass 3, fail 1' }, { n: 2, ran: 'npm test', saw: 'tests 4, pass 4, fail 0' }]);
   const text = jarl(root, 'brief', '3', '--role', 'reviewer');
   assert.match(text, /^The reviewer's brief for issue 3/);
-  assert.match(text, /\n## Rounds so far \(1\)\n- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · round 1 · count 1 of 3 · findings 2 · the count is off by one\n/);
+  assert.match(text, /\n## Rounds so far \(1\)\n- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · round 1 \(count 1 of 3\) · findings 2 · the count is off by one\n/);
   assert.match(text, /\n## Findings of the reviews that sent it back \(1\)\n- \d{4}-\d{2}-\d{2} · by rev1 \(fresh\) — Important: the count is off by one on the last page\.\n {2}Minor: the name/);
   assert.ok(text.includes('end of the finding.'));
   assert.match(text, /\n## Proof rows \(2\)\n- \[1\] ran: npm test · saw: tests 4, pass 3, fail 1\n- \[2\] ran: npm test · saw: tests 4, pass 4, fail 0\n/);
@@ -201,8 +202,461 @@ test('a finding of many lines, one of them like a merge marker and one like a he
   jarl(root, 'review', '1', 'changes', '--by', 'rev1', 'Important: the text holds a marker.\n<<<<<<< HEAD\n# like a heading\nthe last line.');
   const o = findingsListed(root, '1');
   assert.equal(o.findings.length, 1);
-  assert.match(o.findings[0].text, /^Important: the text holds a marker\.\n\\?<<<<<<< HEAD\n\\?# like a heading\nthe last line\.$/);
+  assert.equal(o.findings[0].text, 'Important: the text holds a marker.\n<<<<<<< HEAD\n# like a heading\nthe last line.', 'given as the reviewer wrote it, without the escapes the file keeps');
+  assert.match(readFileSync(issueFile(root), 'utf8'), /\n {2}\\<<<<<<< HEAD\n {2}\\# like a heading\n/, 'the file keeps them escaped');
   assert.equal(o.findings[0].fileOnly, undefined);
+});
+
+test('a finding whose own text opens with the lead-in the log sets before a mark is listed once, matched and whole', () => {
+  const root = loop();
+  jarl(root, 'new', 'the work');
+  const texts = ['findings: model big-model was asked.\nImportant: the count is off.', 'findings: relayed · the count was read twice.\nImportant: the count is off.', 'model big-model is named first.\nImportant: the count is off.', 'findings: model big-model is one line. Important: the count is off.'];
+  texts.forEach((t, k) => jarl(root, 'review', '1', 'changes', '--by', `rev${k + 1}`, t));
+  const o = findingsListed(root, '1');
+  assert.deepEqual(o.findings.map((f) => [f.by, f.text, f.fileOnly === true]), texts.map((t, k) => [`rev${k + 1}`, t, false]));
+  assert.doesNotMatch(o.notes.join('\n'), fileOnlyNote);
+  for (const t of texts) assert.equal(o.findings.filter((f) => f.text === t).length, 1);
+});
+
+// Verdicts of one reviewer whose findings share the first line and the line count, so their log lines read the same.
+const alike = (which) => `Important: the count is off.\nMinor: the ${which} second line.`;
+const OLDER = alike('older');
+const NEWER = alike('newer');
+const POINTER = "Important: the count is off. (+1 more lines, whole text in the issue's Reviews section)";
+const alikeNote = /^1 review\(s\) of the Reviews section of 1 fit a verdict line of its log that another line or entry of the same reviewer fits as well, and nothing the two record tells which is whose: those verdicts are given as the log's lines, and the entries are listed after them, marked in the issue file only$/m;
+const reviewNotes = (o) => o.notes.filter((n) => /Reviews section/.test(n));
+// Takes the entry of `by` whose second line names `which` out of the file, as a hand edit or a lost merge would.
+const loseEntry = (root, by, which) => {
+  writeFileSync(issueFile(root), readFileSync(issueFile(root), 'utf8').replace(new RegExp(`\\n- \\*\\*changes\\*\\* · by ${by} [^\\n]*\\n {2}Important: the count is off\\.\\n {2}Minor: the ${which} second line\\.`), ''));
+  assert.doesNotMatch(readFileSync(issueFile(root), 'utf8'), new RegExp(`${which} second line`));
+};
+// Moves the first verdict of rev1 to an earlier day, its log line and its entry alike, as a verdict given days before.
+const earlierDay = (root) => {
+  const log = join(root, '.jarl', 'log.md');
+  writeFileSync(log, readFileSync(log, 'utf8').replace(/^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}((?: key \S+)? · 1 review changes · by rev1 )/m, '- 2026-11-01 10:00$1'));
+  writeFileSync(issueFile(root), readFileSync(issueFile(root), 'utf8').replace(/^- \*\*changes\*\* · by rev1 \(fresh\) · \d{4}-\d{2}-\d{2}/m, '- **changes** · by rev1 (fresh) · 2026-11-01'));
+};
+const alikeLoop = (...verdicts) => {
+  const root = loop();
+  jarl(root, 'new', 'the work');
+  for (const [by, text, ...flags] of verdicts) jarl(root, 'review', '1', 'changes', '--by', by, text, ...flags);
+  return root;
+};
+const listed = (root) => findingsListed(root, '1').findings.map((f) => [f.by, f.text, f.fileOnly === true]);
+
+test('two verdicts of one reviewer with the same first line and line count, both entries kept: each keeps its own text', () => {
+  const root = alikeLoop(['rev1', OLDER], ['rev1', NEWER]);
+  assert.deepEqual(listed(root), [['rev1', OLDER, false], ['rev1', NEWER, false]]);
+  assert.deepEqual(reviewNotes(findingsListed(root, '1')), []);
+});
+
+test('two alike verdicts of one reviewer, the file keeping only the second, told apart by the model: each keeps its own text', () => {
+  const root = alikeLoop(['rev1', OLDER, '--model', 'model-a'], ['rev1', NEWER, '--model', 'model-b']);
+  loseEntry(root, 'rev1', 'older');
+  const o = findingsListed(root, '1');
+  assert.deepEqual(o.findings.map((f) => [f.by, f.text]), [['rev1', POINTER], ['rev1', NEWER]]);
+  assert.deepEqual(o.notes.filter((n) => fileOnlyNote.test(n)), []);
+  assert.deepEqual(reviewNotes(o), []);
+});
+
+test('two alike verdicts of one reviewer, the file keeping only the first, told apart by the model or the day: the first keeps its own text and the second gives its log line', () => {
+  const byModel = alikeLoop(['rev1', OLDER, '--model', 'model-a'], ['rev1', NEWER, '--model', 'model-b']);
+  loseEntry(byModel, 'rev1', 'newer');
+  assert.deepEqual(listed(byModel), [['rev1', OLDER, false], ['rev1', POINTER, false]]);
+  assert.deepEqual(reviewNotes(findingsListed(byModel, '1')), []);
+  const byDay = alikeLoop(['rev1', OLDER], ['rev1', NEWER]);
+  earlierDay(byDay);
+  loseEntry(byDay, 'rev1', 'newer');
+  assert.deepEqual(listed(byDay), [['rev1', OLDER, false], ['rev1', POINTER, false]]);
+  assert.deepEqual(reviewNotes(findingsListed(byDay, '1')), []);
+});
+
+test('two alike verdicts of one reviewer that nothing tells apart, the file keeping one entry: neither verdict takes it, both give the log line, and the entry follows, marked, with a note', () => {
+  for (const [lost, kept] of [['newer', OLDER], ['older', NEWER]]) {
+    const root = alikeLoop(['rev1', OLDER], ['rev1', NEWER]);
+    loseEntry(root, 'rev1', lost);
+    const o = findingsListed(root, '1');
+    assert.deepEqual(o.findings.map((f) => [f.by, f.text, f.fileOnly === true]), [['rev1', POINTER, false], ['rev1', POINTER, false], ['rev1', kept, true]], lost);
+    assert.match(o.notes.join('\n'), alikeNote, lost);
+    assert.doesNotMatch(o.notes.join('\n'), fileOnlyNote, lost);
+    assert.match(jarl(root, 'brief', '1', '--role', 'reviewer'), new RegExp(`\\n- \\d{4}-\\d{2}-\\d{2} · by rev1 \\(fresh\\) · in the issue file only — Important: the count is off\\.\\n {2}Minor: the ${lost === 'newer' ? 'older' : 'newer'} second line\\.\\n`), lost);
+  }
+});
+
+test('three alike verdicts of one reviewer: all kept, each keeps its own; one lost, the others told apart by the model keep their own and the lost one gives its log line', () => {
+  const three = [['rev1', alike('first'), '--model', 'model-a'], ['rev1', alike('middle'), '--model', 'model-b'], ['rev1', alike('last'), '--model', 'model-a']];
+  assert.deepEqual(listed(alikeLoop(...three)), three.map(([by, text]) => [by, text, false]));
+  const bare = three.map(([by, text]) => [by, text]);
+  assert.deepEqual(listed(alikeLoop(...bare)), three.map(([by, text]) => [by, text, false]), 'with no mark at all, every entry kept');
+  const middle = alikeLoop(...three);
+  loseEntry(middle, 'rev1', 'middle');
+  assert.deepEqual(listed(middle), [['rev1', alike('first'), false], ['rev1', POINTER, false], ['rev1', alike('last'), false]]);
+  const first = alikeLoop(...three);
+  loseEntry(first, 'rev1', 'first');
+  assert.deepEqual(listed(first), [['rev1', POINTER, false], ['rev1', alike('middle'), false], ['rev1', alike('last'), false]]);
+  for (const root of [middle, first]) assert.deepEqual(reviewNotes(findingsListed(root, '1')), []);
+});
+
+test('alike verdicts of two reviewers: each reviewer keeps its own text, and the entry of another reviewer between them tells one reviewer\'s two apart by its place', () => {
+  const verdicts = [['rev1', OLDER], ['rev2', alike('other')], ['rev1', NEWER]];
+  assert.deepEqual(listed(alikeLoop(...verdicts)), verdicts.map(([by, text]) => [by, text, false]));
+  const newerLost = alikeLoop(...verdicts);
+  loseEntry(newerLost, 'rev1', 'newer');
+  assert.deepEqual(listed(newerLost), [['rev1', OLDER, false], ['rev2', alike('other'), false], ['rev1', POINTER, false]]);
+  const olderLost = alikeLoop(...verdicts);
+  loseEntry(olderLost, 'rev1', 'older');
+  assert.deepEqual(listed(olderLost), [['rev1', POINTER, false], ['rev2', alike('other'), false], ['rev1', NEWER, false]]);
+  const otherLost = alikeLoop(...verdicts);
+  loseEntry(otherLost, 'rev2', 'other');
+  assert.deepEqual(listed(otherLost), [['rev1', OLDER, false], ['rev2', POINTER, false], ['rev1', NEWER, false]]);
+  for (const root of [newerLost, olderLost, otherLost]) assert.deepEqual(reviewNotes(findingsListed(root, '1')), []);
+});
+
+// A writer that keeps a Reviews entry writes the model and the batch into the entry and into the log line alike, or into
+// neither: a mark only one of the two records tells verdicts apart as two different marks do.
+test('two alike verdicts of one reviewer, only one of them with a model, either entry lost: each keeps its own text or its log line, no note', () => {
+  for (const [olderFlags, newerFlags] of [[['--model', 'model-a'], []], [[], ['--model', 'model-a']]]) {
+    const olderLost = alikeLoop(['rev1', OLDER, ...olderFlags], ['rev1', NEWER, ...newerFlags]);
+    loseEntry(olderLost, 'rev1', 'older');
+    assert.deepEqual(listed(olderLost), [['rev1', POINTER, false], ['rev1', NEWER, false]], olderFlags.join(' '));
+    const newerLost = alikeLoop(['rev1', OLDER, ...olderFlags], ['rev1', NEWER, ...newerFlags]);
+    loseEntry(newerLost, 'rev1', 'newer');
+    assert.deepEqual(listed(newerLost), [['rev1', OLDER, false], ['rev1', POINTER, false]], olderFlags.join(' '));
+    for (const root of [olderLost, newerLost]) assert.deepEqual(reviewNotes(findingsListed(root, '1')), [], olderFlags.join(' '));
+  }
+});
+
+test('three alike verdicts of one reviewer with a model, none and the same model again: the middle or the first lost, the others keep their own and the lost one gives its log line', () => {
+  const three = [['rev1', alike('first'), '--model', 'model-a'], ['rev1', alike('middle')], ['rev1', alike('last'), '--model', 'model-a']];
+  const middle = alikeLoop(...three);
+  loseEntry(middle, 'rev1', 'middle');
+  assert.deepEqual(listed(middle), [['rev1', alike('first'), false], ['rev1', POINTER, false], ['rev1', alike('last'), false]]);
+  const first = alikeLoop(...three);
+  loseEntry(first, 'rev1', 'first');
+  assert.deepEqual(listed(first), [['rev1', POINTER, false], ['rev1', alike('middle'), false], ['rev1', alike('last'), false]]);
+  for (const root of [middle, first]) assert.deepEqual(reviewNotes(findingsListed(root, '1')), []);
+});
+
+test('two alike verdicts of one reviewer, a batch over two issues and then one of its own, either entry lost: each keeps its own text or its log line, no note', () => {
+  for (const which of ['older', 'newer']) {
+    const root = loop();
+    jarl(root, 'new', 'the work');
+    jarl(root, 'new', 'the other work');
+    jarl(root, 'review', '1,2', 'changes', '--by', 'rev1', OLDER);
+    jarl(root, 'review', '1', 'changes', '--by', 'rev1', NEWER);
+    assert.match(readFileSync(issueFile(root), 'utf8'), /\n- \*\*changes\*\* · by rev1 \(fresh\) · \d{4}-\d{2}-\d{2} · batch \S+\n {2}Important: the count is off\.\n {2}Minor: the older second line\./, 'the batch is marked on the first entry');
+    loseEntry(root, 'rev1', which);
+    assert.deepEqual(listed(root), which === 'older' ? [['rev1', POINTER, false], ['rev1', NEWER, false]] : [['rev1', OLDER, false], ['rev1', POINTER, false]], which);
+    assert.deepEqual(reviewNotes(findingsListed(root, '1')), [], which);
+  }
+});
+
+// Either entry of one reviewer's two alike verdicts lost: the first verdict keeps its own text and the second gives its
+// log line, or the other way round, with no note.
+const eachKeepsItsOwn = (root, which, name) => {
+  assert.deepEqual(listed(root), which === 'older' ? [['rev1', POINTER, false], ['rev1', NEWER, false]] : [['rev1', OLDER, false], ['rev1', POINTER, false]], `${name}, the ${which} lost`);
+  assert.deepEqual(reviewNotes(findingsListed(root, '1')), [], `${name}, the ${which} lost`);
+};
+const entryKinds = (root) => [...readFileSync(issueFile(root), 'utf8').matchAll(/^- \*\*changes\*\* · by rev1 \((\w+)\)/gm)].map((m) => m[1]);
+
+test('two alike verdicts of one reviewer of two kinds, fresh then coordinator, fresh then self, or a bot\'s then fresh, either entry lost: the kind each line records tells them apart, each keeps its own text or its log line, no note', () => {
+  const histories = [
+    ['fresh then coordinator', ['fresh', 'coordinator'], (root) => jarl(root, 'goal', '--set', 'Coordinators: rev1'), []],
+    ['fresh then self', ['fresh', 'self'], (root) => jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'rev1', '--branch', 'jarl/1-work'), []],
+    ['a bot\'s then fresh', ['bot', 'fresh'], () => {}, ['--bot']],
+  ];
+  for (const [name, kinds, between, olderFlags] of histories) {
+    for (const which of ['older', 'newer']) {
+      const root = loop();
+      jarl(root, 'new', 'the work');
+      jarl(root, 'review', '1', 'changes', '--by', 'rev1', ...olderFlags, OLDER);
+      between(root);
+      jarl(root, 'review', '1', 'changes', '--by', 'rev1', NEWER);
+      assert.deepEqual(entryKinds(root), kinds, `${name}: the two entries record two kinds`);
+      loseEntry(root, 'rev1', which);
+      eachKeepsItsOwn(root, which, name);
+    }
+  }
+});
+
+test('an approve between two alike verdicts of one reviewer, by another reviewer or by the same one, tells the two apart by its place: either entry lost, each keeps its own text or its log line, no note', () => {
+  for (const approver of ['rev2', 'rev1']) {
+    for (const which of ['older', 'newer']) {
+      const root = alikeLoop(['rev1', OLDER]);
+      jarl(root, 'review', '1', 'approve', '--by', approver, 'The count reads right on every page.');
+      jarl(root, 'review', '1', 'changes', '--by', 'rev1', NEWER);
+      loseEntry(root, 'rev1', which);
+      eachKeepsItsOwn(root, which, `an approve by ${approver} between`);
+    }
+  }
+});
+
+test('a retraction between two alike verdicts of one reviewer tells the two apart by its place, as an approve does: either entry lost, each keeps its own text or its log line, no note', () => {
+  for (const which of ['older', 'newer']) {
+    const root = loop();
+    jarl(root, 'new', 'the work');
+    jarl(root, 'review', '1', 'approve', '--by', 'rev2', 'The count reads right on every page.');
+    jarl(root, 'review', '1', 'changes', '--by', 'rev1', OLDER);
+    jarl(root, 'retract', '1', 'review', 'the approve was given before the count was read', '--by', 'rev2');
+    jarl(root, 'review', '1', 'changes', '--by', 'rev1', NEWER);
+    assert.match(readFileSync(issueFile(root), 'utf8'), /\n- ~~\*\*approve\*\* · by rev2 \(fresh\) · \d{4}-\d{2}-\d{2}~~\n[\s\S]*\n- \*\*retract\*\* · by rev2 \(fresh\) · /, 'the approve is struck and the retraction has an entry');
+    loseEntry(root, 'rev1', which);
+    eachKeepsItsOwn(root, which, 'a retraction between');
+  }
+});
+
+// The notes of entries no line takes: those that fit nothing, those two lines or entries nothing tells apart share, and a
+// file whose entries no pairing in the log's order places.
+const aloneNoteOf = (count, id) => `${count} review(s) of the Reviews section of ${id} match no verdict line of its log, which is the record: listed after the log's, marked in the issue file only`;
+const alikeNoteOf = (count, id) => `${count} review(s) of the Reviews section of ${id} fit a verdict line of its log that another line or entry of the same reviewer fits as well, and nothing the two record tells which is whose: those verdicts are given as the log's lines, and the entries are listed after them, marked in the issue file only`;
+const outOfOrderNote = (id) => `no pairing in the log's order places every entry of the Reviews section of ${id} that fits a verdict line of its log (the section holds them in another order, or more of them than the lines they fit): each entry is paired by what it records alone, its place telling nothing`;
+// Swaps two entries of the file, as a merge resolved by hand can leave them.
+const swapEntries = (root, first, second) => {
+  const text = readFileSync(issueFile(root), 'utf8');
+  const entry = (w) => new RegExp(`- \\*\\*changes\\*\\* · by [^\\n]*\\n {2}[^\\n]*\\n {2}Minor: the ${w} second line\\.`).exec(text)[0];
+  const [a, b] = [entry(first), entry(second)];
+  writeFileSync(issueFile(root), text.replace(`${a}\n${b}`, `${b}\n${a}`));
+};
+
+test('entries the file holds in another order than the log\'s, as a merge resolved by hand can leave them: each is paired by what it records alone, and a note says the place told nothing', () => {
+  const verdicts = [['rev1', alike('first')], ['rev2', alike('second')]];
+  const root = alikeLoop(...verdicts);
+  swapEntries(root, 'first', 'second');
+  const o = findingsListed(root, '1');
+  assert.deepEqual(listed(root), verdicts.map(([by, text]) => [by, text, false]));
+  assert.deepEqual(reviewNotes(o), [outOfOrderNote('1')]);
+  // Out of order, the place tells nothing, so one reviewer's two alike verdicts are not told apart: the kept one goes to neither.
+  const other = (which) => `Important: the ${which} count is off.\nMinor: the ${which} second line.`;
+  const four = alikeLoop(['rev1', alike('first')], ['rev2', other('second')], ['rev1', alike('third')], ['rev2', other('fourth')]);
+  loseEntry(four, 'rev1', 'first');
+  swapEntries(four, 'third', 'fourth');
+  assert.deepEqual(listed(four), [['rev1', POINTER, false], ['rev2', other('second'), false], ['rev1', POINTER, false], ['rev2', other('fourth'), false], ['rev1', alike('third'), true]]);
+  assert.deepEqual(reviewNotes(findingsListed(four, '1')), [alikeNoteOf(1, '1'), outOfOrderNote('1')]);
+});
+
+// ---- the pairing against every pairing the record allows ---------------------------------------------------------------
+//
+// Histories of reviews are written straight into a loop's files, in the shapes the review command writes (the first test
+// below holds the two to each other), and each brief is checked against all pairings of its log's review lines with its
+// Reviews entries, enumerated one by one. A pairing pairs only a line and an entry that agree on every field both record,
+// and keeps the log's order and the file's while one that keeps them places every entry a line fits; an entry is a
+// verdict's when every pairing with the most pairs pairs the two. The histories are every sequence of up to three reviews
+// over the letters below, and of four over a few of them, each with every subset of its entries lost; those with two
+// entries swapped in the file stand for a file whose order a hand edit changed.
+const WHERE_WHOLE = "the issue's Reviews section";
+const logged = (t) => { const ls = t.split('\n'); return ls.length > 1 ? `${ls[0]} (+${ls.length - 1} more lines, whole text in ${WHERE_WHOLE})` : ls[0]; };
+const marksOf = (r) => `${r.model ? `model ${r.model} · ` : ''}${r.relayed ? 'relayed · ' : ''}${r.batch ? `batch ${r.batch} · ` : ''}`;
+const takenAway = (a) => `retracts the approve by ${a.by} (${a.kind}) of ${a.day}`;
+// A review's log line and its Reviews entry, as the review and retract commands write them; `at` is the line's time.
+const reviewLine = (id, key, r, at) => `- ${r.day} ${at} key ${key} · ${id} review ${r.verdict} · by ${r.by} (${r.kind}) · ${r.verdict === 'retract' ? `${takenAway(r.retracts)} · ` : marksOf(r)}${logged(r.text)}`;
+const reviewEntry = (r) => {
+  const heading = `- **${r.verdict}** · by ${r.by} (${r.kind}) · ${r.day}${r.model ? ` · model ${r.model}` : ''}${r.relayed ? ' · relayed' : ''}${r.batch ? ` · batch ${r.batch}` : ''}`;
+  const body = r.verdict === 'retract' ? `${takenAway(r.retracts)}\n${r.text}` : r.text;
+  return `${r.struck ? `${heading.replace(/^- /, '- ~~')}~~` : heading}\n${body.split('\n').map((l) => `  ${l}`).join('\n')}`;
+};
+// The reviews of a sequence of letters, in order: each letter changes the reviewer, the kind, the verdict, a mark, the day
+// or the text of one changes verdict of rev1, and every finding shares its first line and line count with the others, so
+// only what the letter changes tells two apart. A retraction takes away the newest approve not yet taken away and strikes
+// its entry. Null for a sequence no writer writes: a retraction with no approve to take away, a day before another.
+const DAYS = ['2026-11-01', '2026-11-02'];
+const LETTERS = {
+  same: {}, other: { by: 'rev2' }, coordinator: { kind: 'coordinator' }, self: { kind: 'self' }, bot: { kind: 'bot' },
+  model: { model: 'model-a' }, model2: { model: 'model-b' }, relayed: { relayed: true }, batch: { batch: true },
+  marks: { model: 'model-a', relayed: true, batch: true }, early: { day: DAYS[0] }, worded: { first: 'Important: another count is off.' },
+  approve: { verdict: 'approve', by: 'rev2' }, approve1: { verdict: 'approve' }, retract: { verdict: 'retract', by: 'rev2' },
+};
+function reviewsOf(letters) {
+  const reviews = [];
+  let late = false;
+  for (const [k, letter] of letters.entries()) {
+    const l = LETTERS[letter];
+    const r = { verdict: 'changes', by: 'rev1', kind: 'fresh', model: null, relayed: false, batch: null, day: DAYS[1], ...l };
+    if (r.day === DAYS[0] && late) return null;
+    late = late || r.day === DAYS[1];
+    if (r.batch) r.batch = `20261101T1000-${'abcd'[k]}aaa`;
+    delete r.first;
+    r.text = r.verdict === 'retract' ? `the approve was given early ${k}.` : `${l.first ?? (r.verdict === 'approve' ? 'The count reads right.' : 'Important: the count is off.')}\nMinor: the second line of review ${k}.`;
+    if (r.verdict === 'retract') {
+      const a = [...reviews].reverse().find((x) => x.verdict === 'approve' && !x.struck);
+      if (!a) return null;
+      a.struck = true;
+      r.retracts = a;
+    }
+    reviews.push(r);
+  }
+  return reviews;
+}
+// Every pairing with the most pairs of the lines `L` and the entries `E` (each a review), as one line index or null per
+// entry, enumerated one by one, keeping both orders or in any order; `agree` is what the two record alike.
+const agree = (l, e) => ['verdict', 'by', 'kind', 'model', 'relayed', 'batch', 'day'].every((f) => l[f] === e[f]) && logged(l.text) === logged(e.text)
+  && (l.verdict !== 'retract' || takenAway(l.retracts) === takenAway(e.retracts));
+const size = (p) => p.filter((i) => i !== null).length;
+function mostPairings(L, E, inOrder) {
+  const all = [];
+  const walk = (j, chosen) => {
+    if (j === E.length) { all.push(chosen); return; }
+    walk(j + 1, [...chosen, null]);
+    const from = inOrder ? Math.max(-1, ...chosen.filter((i) => i !== null)) + 1 : 0;
+    for (let i = from; i < L.length; i += 1) if (!chosen.includes(i) && agree(L[i], E[j])) walk(j + 1, [...chosen, i]);
+  };
+  walk(0, []);
+  const most = Math.max(...all.map(size));
+  return all.filter((p) => size(p) === most);
+}
+// What the brief must say of a history: each changes line's finding, then the changes entries no line takes, and the notes.
+function expected(id, L, E) {
+  const fitting = (j) => L.some((l) => agree(l, E[j]));
+  const inOrder = mostPairings(L, E, true);
+  const ordered = size(inOrder[0]) === E.filter((_, j) => fitting(j)).length;
+  const pairings = ordered ? inOrder : mostPairings(L, E, false);
+  const owner = E.map((_, j) => (new Set(pairings.map((p) => p[j])).size === 1 ? pairings[0][j] : null));
+  const findings = L.flatMap((l, i) => (l.verdict !== 'changes' ? [] : [[l.by, l.kind, l.day, owner.includes(i) ? E[owner.indexOf(i)].text : logged(l.text), false]]));
+  const left = E.map((e, j) => ({ e, j })).filter(({ e, j }) => e.verdict === 'changes' && owner[j] === null);
+  // The note that two lines or two entries of one reviewer fit alike is true of every entry it counts.
+  for (const { j } of left.filter(({ j }) => fitting(j))) {
+    const lines = L.flatMap((l, i) => (agree(l, E[j]) ? [i] : []));
+    assert.ok(lines.length > 1 || lines.some((i) => E.some((e, x) => x !== j && agree(L[i], e))), `entry ${j} is left with a line of its own`);
+  }
+  const alone = left.filter(({ j }) => !fitting(j)).length;
+  const notes = [];
+  if (alone) notes.push(aloneNoteOf(alone, id));
+  if (left.length - alone) notes.push(alikeNoteOf(left.length - alone, id));
+  if (!ordered) notes.push(outOfOrderNote(id));
+  return { findings: [...findings, ...left.map(({ e }) => [e.by, e.kind, e.day, e.text, true])], notes, pairings, owner, ordered };
+}
+
+test('the review lines and Reviews entries the oracle writes are the ones the review and retract commands write, for every kind, verdict and mark', () => {
+  const root = loop();
+  jarl(root, 'goal', '--set', 'Coordinators: boss');
+  jarl(root, 'new', 'the work');
+  jarl(root, 'new', 'the other work');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1-work');
+  jarl(root, 'review', '1', 'changes', '--by', 'rev1', '--model', 'model-a', '--relayed', 'Important: the count is off.\nMinor: the second line.');
+  jarl(root, 'review', '1,2', 'approve', '--by', 'rev2', 'The count reads right.\nMinor: the second line.');
+  jarl(root, 'review', '1', 'approve', '--by', 'boss', 'The director read the count.');
+  jarl(root, 'retract', '1', 'review', 'the approve was given early.', '--by', 'rev3');
+  jarl(root, 'review', '1', 'changes', '--by', 'w1', 'Important: the worker found it.');
+  jarl(root, 'review', '1', 'changes', '--by', 'botty', '--bot', 'Important: the bot found it.');
+  jarl(root, 'review', '1,2', 'changes', '--by', 'rev1', '--model', 'model-b', '--relayed', 'Important: the count is off again.\nMinor: the second line.');
+  const lines = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').filter((l) => / · 1 review /.test(l));
+  const day = lines[0].slice(2, 12);
+  const key = / key (\S+) · /.exec(lines[0])[1];
+  const batches = lines.map((l) => / · batch (\S+) · /.exec(l)?.[1] ?? null);
+  const at = (l) => l.slice(13, 18);
+  const boss = { verdict: 'approve', by: 'boss', kind: 'coordinator', day, text: 'The director read the count.', struck: true };
+  const reviews = [
+    { verdict: 'changes', by: 'rev1', kind: 'fresh', model: 'model-a', relayed: true, text: 'Important: the count is off.\nMinor: the second line.' },
+    { verdict: 'approve', by: 'rev2', kind: 'fresh', batch: batches[1], text: 'The count reads right.\nMinor: the second line.' },
+    boss,
+    { verdict: 'retract', by: 'rev3', kind: 'fresh', retracts: boss, text: 'the approve was given early.' },
+    { verdict: 'changes', by: 'w1', kind: 'self', text: 'Important: the worker found it.' },
+    { verdict: 'changes', by: 'botty', kind: 'bot', text: 'Important: the bot found it.' },
+    { verdict: 'changes', by: 'rev1', kind: 'fresh', model: 'model-b', relayed: true, batch: batches[6], text: 'Important: the count is off again.\nMinor: the second line.' },
+  ].map((r) => ({ day, ...r }));
+  assert.ok(batches[1] && batches[6], 'both verdicts on two issues carry a batch');
+  assert.deepEqual(lines, reviews.map((r, k) => reviewLine('1', key, r, at(lines[k]))));
+  const section = /\n## Reviews\n([\s\S]*?)\n\n## /.exec(readFileSync(issueFile(root), 'utf8'))[1];
+  assert.equal(section, reviews.map(reviewEntry).join('\n'));
+});
+
+test('every history of up to three reviews of one issue, and of four over approves, retractions and a model, with every subset of its entries lost or two of them swapped: an entry is a verdict\'s exactly when every pairing with the most pairs says so, and the notes say why the others are not', () => {
+  const root = loop();
+  jarl(root, 'new', 'the work');
+  const id = '1';
+  const log = join(root, '.jarl', 'log.md');
+  const [baseLog, baseFile] = [readFileSync(log, 'utf8'), readFileSync(issueFile(root), 'utf8')];
+  const key = / key (\S+) · filed /.exec(baseLog)[1];
+  const words = (alphabet, n) => (n === 0 ? [[]] : words(alphabet, n - 1).flatMap((w) => alphabet.map((a) => [...w, a])));
+  const sequences = [1, 2, 3].flatMap((n) => words(Object.keys(LETTERS), n)).concat(words(['same', 'approve', 'retract', 'model'], 4));
+  let histories = 0;
+  let ambiguous = 0;
+  let outOfOrder = 0;
+  for (const letters of sequences) {
+    const L = reviewsOf(letters);
+    if (!L) continue;
+    writeFileSync(log, `${baseLog.replace(/\n*$/, '\n')}${L.map((r, k) => `${reviewLine(id, key, r, `10:0${k}`)}\n`).join('')}`);
+    // Every subset of the entries kept, in the log's order; with two or more kept, each pair of neighbours swapped too.
+    for (let mask = 0; mask < 2 ** L.length; mask += 1) {
+      const kept = L.filter((_, k) => mask & (2 ** k));
+      const orders = [kept, ...(letters.length < 4 ? kept.slice(1).map((_, k) => [...kept.slice(0, k), kept[k + 1], kept[k], ...kept.slice(k + 2)]) : [])];
+      for (const [o, E] of orders.entries()) {
+        const section = E.length ? `## Reviews\n${E.map(reviewEntry).join('\n')}\n\n` : '';
+        writeFileSync(issueFile(root), baseFile.replace('\n## Evidence', `\n${section}## Evidence`));
+        const want = expected(id, L, E);
+        const got = R.briefData(root, id, { role: 'reviewer' });
+        const what = `${letters.join(' ')}; kept ${mask.toString(2).padStart(L.length, '0')}${o ? `, swapped at ${o}` : ''}`;
+        assert.deepEqual(got.findings.map((f) => [f.by, f.kind, f.day, f.text, f.fileOnly === true]), want.findings, what);
+        assert.deepEqual(got.notes.filter((n) => /Reviews section/.test(n)), want.notes, what);
+        if (o === 0) {
+          // A file whose entries the writers wrote, some of them lost: a pairing in both orders places every entry, each
+          // one that is paired is with its own verdict, and the only note is that nothing tells two apart.
+          assert.ok(want.ordered, what);
+          assert.equal(size(want.pairings[0]), E.length, what);
+          want.owner.forEach((i, j) => { if (i !== null) assert.equal(L[i], E[j], what); });
+          assert.ok(want.notes.every((n) => /nothing the two record tells/.test(n)), what);
+        }
+        histories += 1;
+        if (want.notes.some((n) => /nothing the two record tells/.test(n))) ambiguous += 1;
+        if (!want.ordered) outOfOrder += 1;
+      }
+    }
+  }
+  // The enumeration is fixed, so are its counts: every history, those where two lines or entries nothing tells apart
+  // leave an entry to no line, and those whose swapped entries no pairing in the log's order places.
+  assert.deepEqual({ histories, ambiguous, outOfOrder }, { histories: 34897, ambiguous: 2746, outOfOrder: 11411 });
+});
+
+// Findings that open with the lead-in a writer sets before a mark, or with a mark itself.
+const LEAD_IN_FINDINGS = ['findings: model big-model was asked.\nImportant: the count is off.', 'findings: relayed · the count was read twice.\nImportant: the count is off.', 'model big-model is named first.\nImportant: the count is off.', 'findings: model big-model is one line. Important: the count is off.'];
+
+test('a verdict whose writer sets the lead-in only before a mark, its finding opening with the lead-in before a mark, is listed once, matched and whole', () => {
+  const root = loop();
+  const id = fileAsFormatTwo(root, 'the work');
+  LEAD_IN_FINDINGS.forEach((t, k) => {
+    const r = formatTwoJarl(root, 'review', {}, [id, 'changes', t, { by: `rev${k + 1}` }]);
+    assert.equal(r.ok, true, r.error);
+  });
+  const o = findingsListed(root, id);
+  assert.deepEqual(o.findings.map((f) => [f.by, f.text, f.fileOnly === true]), LEAD_IN_FINDINGS.map((t, k) => [`rev${k + 1}`, t, false]));
+  assert.deepEqual(reviewNotes(o), []);
+});
+
+test('a verdict whose writer keeps only the log and sets no lead-in, its finding opening with the lead-in before a mark, is listed once, as the log holds it', () => {
+  const root = loop();
+  const id = fileAsBefore(root, 'the work');
+  LEAD_IN_FINDINGS.forEach((t, k) => {
+    const r = oldJarl(root, 'review', {}, [id, 'changes', t, { by: `rev${k + 1}` }]);
+    assert.equal(r.ok, true, r.error);
+  });
+  assert.doesNotMatch(readFileSync(issueFile(root), 'utf8'), /## Reviews/, 'this writer keeps no Reviews section');
+  const o = findingsListed(root, id);
+  assert.deepEqual(o.findings.map((f) => [f.by, f.text, f.fileOnly === true]), LEAD_IN_FINDINGS.map((t, k) => [`rev${k + 1}`, t.split('\n')[0], false]));
+  assert.deepEqual(reviewNotes(o), []);
+});
+
+// One reviewer's same one-line finding twice: first from a writer that keeps only the log, then from this Jarl.
+const logOnlyThenThis = (...flags) => {
+  const root = loop();
+  const id = fileAsBefore(root, 'the work');
+  const r = oldJarl(root, 'review', {}, [id, 'changes', 'Important: the same text.', { by: 'rev1' }]);
+  assert.equal(r.ok, true, r.error);
+  jarl(root, 'review', id, 'changes', '--by', 'rev1', 'Important: the same text.', ...flags);
+  assert.equal((readFileSync(issueFile(root), 'utf8').match(/\*\*changes\*\*/g) || []).length, 1, 'only this Jarl keeps an entry');
+  return { root, id };
+};
+
+test('the same finding of one reviewer from a writer that keeps only the log and then from this Jarl with a model: each verdict once, the entry the second\'s, no note', () => {
+  const { root, id } = logOnlyThenThis('--model', 'model-a');
+  const o = findingsListed(root, id);
+  assert.deepEqual(o.findings.map((f) => [f.by, f.text, f.fileOnly === true]), [['rev1', 'Important: the same text.', false], ['rev1', 'Important: the same text.', false]]);
+  assert.deepEqual(reviewNotes(o), []);
+});
+
+test('the same finding of one reviewer twice with no mark at all, from a writer that keeps only the log and then from this Jarl: both give the log line and the entry follows, marked, with the note that nothing tells them apart', () => {
+  const { root, id } = logOnlyThenThis();
+  const o = findingsListed(root, id);
+  assert.deepEqual(o.findings.map((f) => [f.by, f.text, f.fileOnly === true]), [['rev1', 'Important: the same text.', false], ['rev1', 'Important: the same text.', false], ['rev1', 'Important: the same text.', true]]);
+  assert.deepEqual(reviewNotes(o), [`1 review(s) of the Reviews section of ${id} fit a verdict line of its log that another line or entry of the same reviewer fits as well, and nothing the two record tells which is whose: those verdicts are given as the log's lines, and the entries are listed after them, marked in the issue file only`]);
 });
 
 test('a Worktree field a lease wrote into the header is left out of the brief, as every line that names a place on this machine is', () => {
@@ -215,25 +669,41 @@ test('a Worktree field a lease wrote into the header is left out of the brief, a
   assert.match(text, /\n# 1 · the work\n\n\*\*Status:\*\* open\n\*\*Kind:\*\* /);
 });
 
-test('a worker after a takeover a journal-only writer recorded, three rounds with no mark, is given the rules of the takeover; after two it is not', () => {
+test('three rounds with no mark that end with the same worker and no lease handed on give no takeover role', () => {
   const root = rulesLoop();
-  journalOnly(root, '2 round 1 · a', '2 round 2 · b');
-  assert.deepEqual(json(root, 'brief', '2').roles, ['worker']);
-  journalOnly(root, '2 round 3 · c');
+  journalOnly(root, '2 → in-progress · go · branch jarl/2-work · worker w-one', '2 round 1 · a', '2 round 2 · b', '2 round 3 · c', '2 round 4 · d');
   const o = json(root, 'brief', '2');
+  assert.deepEqual(o.roles, ['worker']);
+  assert.ok(!slugs(o).includes('takeovers'));
+});
+
+test('a lease handed to a new worker with a reason that names a takeover gives the takeover role, with no round line at all', () => {
+  const root = rulesLoop();
+  journalOnly(root, '2 → in-progress · go · branch jarl/2-work · worker w-one');
+  assert.deepEqual(json(root, 'brief', '2').roles, ['worker']);
+  journalOnly(root, '2 → in-progress · takeover after three rounds: a fresh strong worker · branch jarl/2-work · worker w-two');
+  const o = json(root, 'brief', '2');
+  assert.equal(o.rounds.length, 0);
   assert.deepEqual(o.roles, ['takeover', 'worker']);
   assert.ok(slugs(o).includes('takeovers'));
 });
 
-test('a worker on an issue a round took over is given the rules of the takeover and of the round', () => {
+test('a round that printed the takeover block gives the takeover role once the lease is handed over for it, and a handover for another reason gives none', () => {
   const root = rulesLoop();
   jarl(root, 'goal', '--set', 'Takeover: 1');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w-one', '--branch', 'jarl/1-ui');
+  jarl(root, 'set', '3', 'in-progress', 'go', '--worker', 'w-three', '--branch', 'jarl/3-ui');
   jarl(root, 'round', '1', 'the screen is blank');
+  const before = json(root, 'brief', '1');
+  assert.deepEqual(before.roles, ['worker'], 'the block is advice: the same worker still holds the lease');
+  assert.deepEqual(before.moments, ['round', 'start']);
+  assert.match(before.rounds[0].text, /^round 1 \(takeover 1 of 1\) · the screen is blank$/);
+  jarl(root, 'set', '1', 'in-progress', 'Takeover after one round', '--worker', 'w-two', '--branch', 'jarl/1-ui', '--handover');
   const o = json(root, 'brief', '1');
   assert.deepEqual(o.roles, ['takeover', 'worker']);
-  assert.deepEqual(o.moments, ['round', 'start']);
   assert.ok(slugs(o).includes('takeovers'));
-  assert.match(o.rounds[0].text, /^round 1 · takeover 1 of 1 · the screen is blank$/);
+  jarl(root, 'set', '3', 'in-progress', 'the host restarted, a fresh session goes on', '--worker', 'w-four', '--branch', 'jarl/3-ui', '--handover');
+  assert.deepEqual(json(root, 'brief', '3').roles, ['worker']);
 });
 
 test('brief --slice <coordinator> is the coordinator\'s: its issues in play, its rules and none of another slice or role, its reference and its commands', () => {

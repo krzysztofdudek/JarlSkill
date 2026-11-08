@@ -26,10 +26,12 @@ import { STAMP_SRC, appendLog, headerKey, logPath, oneLine } from './journal.mjs
 //                  for a move into a status that holds the claim and names a worker, else null — and model, the model a
 //                  lease line names (null without one); a move that hands the lease over adds handover (true) and branch,
 //                  the branch it names (null without one)
-//   round          one red round; a round this Jarl writes carries its standing right after its number, as standing
-//                  { takeover, count, limit }: `<id> round <n> · count <k> of <limit> · …`, or `takeover <k> of <limit>`
-//                  on the round that reached the limit and printed the takeover block. A round line without a standing
-//                  is counted at the fixed limit of three (see takeoverStanding)
+//   round          one red round: number, the round's number as its line writes it (null when it writes none), and on a
+//                  round this Jarl writes its standing, in brackets right after the number, as standing { takeover, count,
+//                  limit }: `<id> round <n> (count <k> of <limit>) · …`, or `(takeover <k> of <limit>)` on the round that
+//                  reached the limit and printed the takeover block. A writer that records no standing puts the separator
+//                  right after the number, so no text of its line can stand in the bracket. A round line without a standing
+//                  is read as the takeover its writer printed (see takeoverStanding)
 //   row            one --ran/--saw evidence row
 //   verdict        a review: verdict (approve|changes), by, kind (as recorded), model, relayed, and batch, the id one verdict
 //                  given on several issues writes on each of its lines (null on a verdict on one issue)
@@ -63,8 +65,9 @@ const RETRACT_NOTE_LINE = idRe('^{id} evidence retract · note (\\d+)\\b');
 const TIP_LINE = idRe('^{id} tip ([0-9a-f]{7,64}(?:,[0-9a-f]{7,64})*)$');
 // The owner's tick: the number the acceptance line had, who ticked it, then the line itself as it was written.
 const TICK_LINE = idRe('^{id} tick · line (\\d+) · by (.+?) · (\\[[^\\]]*\\].*)$');
-// The standing of a round, right after its number and before its findings and its text: its count and the limit then.
-const ROUND_STANDING_LINE = /^\S+ round \d+ · (count|takeover) (\d+) of (\d+) · /;
+// A round's number and its standing, in brackets right after the number and before its findings and its text: its count
+// and the limit then.
+const ROUND_LINE = /^\S+ round (\d+)(?: \((count|takeover) (\d+) of (\d+)\))? · /;
 // A move into a status that holds the claim is read by position, never by searching: after the arrow and the status come
 // the free reason (at most one segment, never searched for fields) and then the lease fields in the order set writes them
 // (branch, model, worker, worktree), each at most once; the worktree path is the rest of the line.
@@ -160,8 +163,8 @@ function eventParser(profile) {
       return { type: 'move', from, to, lease: found.worker ? { worker: found.worker, model, branch: found.branch || null } : null, model, ...(found.handover ? { handover: true, branch: found.branch || null } : {}) };
     }
     if (text.startsWith(`${id} round `)) {
-      const st = ROUND_STANDING_LINE.exec(text);
-      return st ? { type: 'round', standing: { takeover: st[1] === 'takeover', count: Number(st[2]), limit: Number(st[3]) } } : { type: 'round' };
+      const st = ROUND_LINE.exec(text);
+      return { type: 'round', number: st ? Number(st[1]) : null, ...(st && st[2] ? { standing: { takeover: st[2] === 'takeover', count: Number(st[3]), limit: Number(st[4]) } } : {}) };
     }
     const r = REVIEW_LINE.exec(text);
     if (r) {

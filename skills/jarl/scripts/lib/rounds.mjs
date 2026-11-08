@@ -21,21 +21,25 @@ export function roundsOf(root, id) {
 // The findings a round line records after its number and its standing, in the order of the rounds.
 const FINDINGS_MAX = 10000;
 function findingsOfRounds(entries) {
-  return entries.filter((e) => e.type === 'round').map((e) => /^\S+ round \d+ · (?:(?:count|takeover) \d+ of \d+ · )?findings (\d+) · /.exec(e.text)).map((m) => (m ? Number(m[1]) : null));
+  return entries.filter((e) => e.type === 'round').map((e) => /^\S+ round \d+ \((?:count|takeover) \d+ of \d+\) · findings (\d+) · /.exec(e.text)).map((m) => (m ? Number(m[1]) : null));
 }
 
 // What to change for the fresh worker, from the tier the issue carries: a tier up while one exists, and from the top
 // tier a different model or a changed approach. Every step is a choice, so a loop that bars a model can take another.
-// The tiers and their order are the loop's profile's. After the first takeover the tier was already offered, so later
-// advice leaves it out: the issue's Tier stays as filed, and a model other than the ones that held the issue is the step.
-function takeoverAdvice(tiers, tier, failed, n, takeovers) {
-  const model = failed || 'the one that failed';
-  const unknown = failed ? '' : ' (its lease did not record one)';
-  const above = tiers[tiers.indexOf(tier) + 1];
+// The tiers and their order are the loop's profile's; a Tier the profile does not have has no tier above it, so the step
+// is another model or approach. After the first takeover the tier was already offered, so later advice leaves it out: the
+// issue's Tier stays as filed, and a model other than the ones that held the issue is the step. `held` is every model
+// the issue's leases recorded, in the order they first held it.
+function takeoverAdvice(tiers, tier, held, n, takeovers) {
+  const model = held.length ? held.join(', ') : 'the one that failed';
+  const unknown = held.length ? '' : ' (its lease did not record one)';
+  const at = tiers.findIndex((t) => t.toLowerCase() === String(tier).toLowerCase());
+  const above = at === -1 ? undefined : tiers[at + 1];
   const top = tiers[tiers.length - 1];
-  const tried = `the same model at the same tier has failed this ${times(n)}`;
+  const tried = held.length > 1 ? `it has failed ${times(n)} on the models that held it` : `the same model at the same tier has failed this ${times(n)}`;
   const lead = 'For whoever raises the fresh worker: ';
-  if (takeovers > 1) return `${lead}put it on a model that has not held this issue (the last was ${model}${unknown}), or change the approach — ${tried}, and an earlier takeover has not settled it.`;
+  if (takeovers > 1) return `${lead}put it on a model that has not held this issue (${held.length ? `it was held on ${model}` : 'its leases recorded no model'}), or change the approach — it has failed ${times(n)} since the last takeover, and an earlier takeover has not settled it.`;
+  if (at === -1) return `${lead}${tier} is not a tier of this loop's profile (${tiers.join(', ')}), so put it on a model other than ${model}${unknown}, or change the approach — ${tried}.`;
   if (above) return `${lead}raise it one tier up from ${tier} (to ${above}), or put it on a model other than ${model}${unknown}, or change the approach — ${tried}.`;
   return `${lead}${tier} is the top tier (${top}), so put it on a model other than ${model}${unknown}, or change the approach — ${tried}.`;
 }
@@ -43,22 +47,44 @@ function takeoverAdvice(tiers, tier, failed, n, takeovers) {
 // Where an issue stands in the count to its next takeover, before the round being recorded. The limit is read from the
 // goal each time, as it reads now: its `Takeover (<kind>): <rounds>` line for the kind, else its bare `Takeover: <rounds>`
 // line, else three. The count is of the red rounds after the last takeover, or from the first round. Each round line
-// cmdRound writes carries its standing (`count <k> of <limit>`, or `takeover <k> of <limit>` on the round that took over),
-// and a round line without one is counted at the fixed limit of three, every third such round after the last takeover
-// being one. So a changed limit takes effect at the next round, whether goal --set or a hand edit changed it: a limit
-// lowered to the count or below gives the takeover at the next round, and a raised one waits for the count to reach it.
-// Returns { limit, since (the rounds after the last takeover), takeovers (the takeovers so far) }.
+// cmdRound writes carries its standing (`(count <k> of <limit>)`, or `(takeover <k> of <limit>)` on the round that took
+// over). A round line without one was written by a writer that knows no limit and printed the takeover block at every
+// round from the third (ROUNDS_BEFORE_TAKEOVER) on, so such a line is read as the takeover it printed, and the count after
+// it agrees with that block. So a changed limit takes effect at the next round, whether goal --set or a hand edit changed
+// it: a limit lowered to the count or below gives the takeover at the next round, and a raised one waits for the count to
+// reach it. Returns { limit, since (the rounds after the last takeover), takeovers (the takeovers so far) }.
 function takeoverStanding(root, issue, entries) {
   const lines = goalLines(readGoal(jarlDir(root))).takeovers;
   const limit = lines.kinds[String(issue.kind).toLowerCase()] ?? lines.bare ?? ROUNDS_BEFORE_TAKEOVER;
   let since = 0;
   let takeovers = 0;
+  let rounds = 0;
   for (const e of entries) {
     if (e.type !== 'round') continue;
-    const tookOver = e.standing ? e.standing.takeover : since + 1 >= ROUNDS_BEFORE_TAKEOVER;
+    rounds += 1;
+    const tookOver = e.standing ? e.standing.takeover : (e.number ?? rounds) >= ROUNDS_BEFORE_TAKEOVER;
     if (tookOver) { takeovers += 1; since = 0; } else since += 1;
   }
   return { limit, since, takeovers };
+}
+
+// A reason that names a takeover: takeover, take over, taken over, take-over, taking over, in any case.
+const TAKEOVER_REASON = /\btak(?:e|es|en|ing)[- ]?overs?\b/i;
+// Whether the issue was taken over, read from its moves alone: a move into a status that holds the claim, naming a worker
+// other than the one the lease before it named, with a reason that names a takeover. A round's count or its standing is
+// never one: the block a round prints is advice, and the takeover is the lease that changes hands on it, which an issue
+// with no round line can have too. `events` are the issue's events.
+function takenOver(profile, events) {
+  let leased = false;
+  let worker = null;
+  for (const e of events) {
+    if (e.type !== 'move' || !profile.is(e.to, 'holds-claim')) continue;
+    const next = e.lease ? e.lease.worker : null;
+    if (leased && next && next !== worker && TAKEOVER_REASON.test(leaseOfMove(e.text, e.written ?? e.id, e.to).reason)) return true;
+    leased = true;
+    if (next) worker = next;
+  }
+  return false;
 }
 
 const times = (k) => `${k} time${k === 1 ? '' : 's'}`;
@@ -79,15 +105,19 @@ export function cmdRound(root, rawId, what, dry = false, opts = {}) {
   const since = standing.since + 1;
   const takeover = since >= limit;
   const takeovers = standing.takeovers + (takeover ? 1 : 0);
-  // The standing always comes first, so the text cannot pose as one; text that opens like a findings count is set behind
-  // an empty count, so it is never read as one.
+  // The standing is in brackets before the first separator, where a writer that records none writes nothing, so neither
+  // the text nor a line of such a writer can pose as one; text that opens like a findings count is set behind an empty
+  // count, so it is never read as one.
   const typed = found === undefined ? (/^findings \d+ · /.test(what) ? 'findings - · ' : '') : `findings ${Number(found)} · `;
-  appendLog(root, `${issue.id} round ${n} · ${takeover ? 'takeover' : 'count'} ${since} of ${limit} · ${typed}${what}`);
+  appendLog(root, `${issue.id} round ${n} (${takeover ? 'takeover' : 'count'} ${since} of ${limit}) · ${typed}${what}`);
   const entries = journalById(root).get(issue.id) || [];
-  const findings = findingsOfRounds(entries).filter((x) => x !== null);
-  const trend = findings.length ? `Findings per round: ${findings.join(', ')}.\n\n` : '';
+  // One place per round, in the order of the rounds, so the n-th number is the n-th round's.
+  const findings = findingsOfRounds(entries);
+  const gaps = findings.includes(null) ? ' (a dash: the round recorded no count)' : '';
+  const trend = findings.some((x) => x !== null) ? `Findings per round: ${findings.map((x) => (x === null ? '-' : x)).join(', ')}${gaps}.\n\n` : '';
   const log = entries.filter((e) => e.type !== 'filed').map((e) => `- ${e.at} · ${e.text}`).join('\n');
-  const advice = takeoverAdvice(loadProfile(root).tiers, issue.tier, fieldText(issue.fields.model), since, takeovers);
+  const held = [...new Set([...entries.filter((e) => e.type === 'move' && e.model).map((e) => e.model), ...(fieldText(issue.fields.model) ? [fieldText(issue.fields.model)] : [])])];
+  const advice = takeoverAdvice(loadProfile(root).tiers, issue.tier, held, since, takeovers);
   const block = takeover ? `## Takeover\n\n${advice}\n\n${trend}A prior worker attempted issue ${issue.id} ${times(since)} (${n} round${n === 1 ? "" : "s"} in all); the issue is yours now. Its rounds so far:\n\n\`\`\`\n${log}\n\`\`\`\n` : null;
   return { id: issue.id, round: n, since, limit, takeover, block, ...(found === undefined ? {} : { findings: Number(found) }) };
 }
@@ -507,4 +537,4 @@ function branchesIn(root, repo, flags, issues, minutes = LIVENESS_MINUTES, appro
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { issuesOnBranch, livenessOf, loopRepos, takeoverStanding, thresholdText };
+export { issuesOnBranch, livenessOf, loopRepos, takenOver, thresholdText };
