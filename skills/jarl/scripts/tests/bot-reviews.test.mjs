@@ -170,9 +170,41 @@ test('status flags an issue closed on a bot\'s approve alone by a move written i
   for (const id of ['1', '4']) {
     const f = flags.find((x) => x.id === id);
     assert.ok(f, `${id} is flagged`);
-    assert.match(f.reason, /holds no approve that clears it under the loop's done gate \(the live one is by coderabbit, bot\)/);
+    assert.match(f.reason, /its live approve is a bot's, which clears an issue only where the loop's done gate names that bot \(the approves it holds are by coderabbit \(bot\)\)/);
     assert.match(f.repair, new RegExp(`review ${id} approve --by "<a-fresh-reviewer>"`));
   }
+});
+
+test('the closed gate names the cause of an approve that does not clear, and every approve that stands', () => {
+  const close = (root, id) => {
+    const last = log(root).trim().split('\n').filter((l) => new RegExp(` · ${id} `).test(l)).pop();
+    appendFileSync(join(root, '.jarl', 'log.md'), `${last.split(' · ')[0]} · ${id} → done\n`);
+  };
+  const root = botLoop();
+  review(root, '1', 'jarl');
+  review(root, '1', 'coderabbit', '--bot');
+  review(root, '2', 'coderabbit', '--bot');
+  for (const id of ['1', '2']) close(root, id);
+  const flags = Object.fromEntries(json(root, 'status').closedGate.map((f) => [f.id, f.reason]));
+  assert.match(flags['1'], /it carries code and holds no fresh approve \(the approves it holds are by jarl \(coordinator\), coderabbit \(bot\)\)/);
+  assert.match(flags['2'], /its live approve is a bot's, which clears an issue only where the loop's done gate names that bot \(the approves it holds are by coderabbit \(bot\)\)/);
+  const defined = botLoop({ clears: [['fresh', 'bot:coderabbit'], 'owner'] });
+  review(defined, '1', 'rev-a');
+  close(defined, '1');
+  assert.match(json(defined, 'status').closedGate.find((f) => f.id === '1').reason, /it holds no approve that clears it under the loop's done gate \(done-gate "clears": an approve by a fresh agent and the bot coderabbit together, or by the owner; the approves it holds are by rev-a \(fresh\)\)/);
+});
+
+test('a bot\'s verdict refused in a composer\'s loop ends with the profile view and the form of the call, with no value after --bot', () => {
+  const composed = makeLoop({ prefix: 'jarl-bot-composed-form-', via: 'cli', initFlags: ['--profile', (() => {
+    const file = join(mkdtempSync(join(tmpdir(), 'jarl-bot-profile-')), 'profile.json');
+    writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }));
+    return file;
+  })()] });
+  const id = fileAsBefore(composed, 'a change', { acceptance: 'it works' });
+  const said = refuses(composed, 'review', id, 'approve', '--by', 'coderabbit', '--bot', FINDINGS);
+  const [view, form] = said.trim().split('\n').slice(-2);
+  assert.equal(view, 'jarl.mjs profile');
+  assert.match(form, /^jarl\.mjs review .* --bot$/);
 });
 
 test('--bot names a bot, never the loop\'s director or the issue\'s worker', () => {

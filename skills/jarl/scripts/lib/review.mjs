@@ -99,7 +99,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   // once every check has passed; a loop whose format a composer keeps records the verdict without it.
   // A bot's verdict is a line of record format 3 too: a reader of the formats below would read it as an approve with no
   // reviewer recorded. Where a composer keeps the loop's format it is refused, with nothing written.
-  const botRaised = kinds.includes('bot') ? needFormat(root, 'bot-verdict') : false;
+  const botRaised = kinds.includes('bot') ? needBotFormat(root) : false;
   const batch = issues.length > 1 && holdsBatches(root) ? newIssueKey(stamp()) : null;
   const raised = (batch ? needFormat(root, 'batch') : false) || botRaised;
   const filed = outside.map((o) => fileOutside(root, issues, by, o, flags, withModel, false));
@@ -154,6 +154,16 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
     return text ? { text, cause: g.uncleared.cause } : null;
   };
   return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, verdict, ...(by ? { by, kind: kinds[n] } : {}), ...(model !== undefined ? { model } : {}), ...(relayed ? { relayed } : {}), ...(batch ? { batch } : {}), severities, ...(filed.length ? { filed: filed.map((f) => f.id) } : {}), acceptance: (issue.sections.acceptance || '').trim(), ...(flags.caller === 'cli' ? { next: nextAfterVerdict(issue, verdict, kinds[n], loop && verdict === 'approve' ? ownerLineWait(root, loop, issue) : null, modelOf(issue), unclearedOf(issue)) } : {}), ...noteOf(issue, n) })));
+}
+
+// The record format a bot's verdict needs, raised before the verdict is written. Where a composer keeps the loop's format,
+// the refusal ends with the profile view, which shows the format the profile says, and then the call's own form: --bot
+// takes no value, so no placeholder follows it.
+function needBotFormat(root) {
+  try { return needFormat(root, 'bot-verdict'); } catch (e) {
+    if (!(e instanceof Refusal) || formatState(loadProfile(root)).raises) throw e;
+    return refuse(e.reason, [{ first: ['jarl.mjs', 'profile'] }, { retry: true }]);
+  }
 }
 
 // Whether the loop holds a batch id: it is in the format that holds one, or Jarl may raise it there.

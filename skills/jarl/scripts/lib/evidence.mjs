@@ -8,7 +8,7 @@ import { git } from './git.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { cmpId, isBulk } from './ids.mjs';
-import { PARENT_FIELD, SLOT_NAME_RE, formatState, loadProfile } from './profile.mjs';
+import { PARENT_FIELD, SLOT_NAME_RE, clearsOf, clearsWords, formatState, loadProfile } from './profile.mjs';
 import { appendLog, appendLogLines, firstLine, goalLines, readGoal } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById } from './log.mjs';
@@ -695,11 +695,13 @@ export function closedGateFlags(loop) {
         if (g.selfApproved) flag('its live approve is by a worker of this issue or its branch', fresh);
         else if (!g.approved) flag(kind === 'retracted' ? 'its approve was retracted' : g.trail.some((r) => r.verdict === 'approve') ? 'its approve is spent by a later round, restart, reopen or changes verdict' : 'it holds no approve', fresh);
         // The reading done, the merge queue and the line after a verdict take: the approves clear the issue as it is, with
-        // code or without; the fresh-review rule on code is named as such, any other cause as the loop's done gate.
+        // code or without. The cause is named (the fresh-review rule on code, a bot the done gate does not name, or the loop's
+        // own definition), with every approve that stands and does not clear it.
         else if (!g.cleared) {
-          const live = `the live one is by ${g.live.by || 'a reviewer not recorded'}, ${g.live.kind || 'unrecorded'}`;
-          if (code && g.uncleared.cause === 'coordinator') flag(`it carries code and holds no fresh approve (${live})`, fresh);
-          else flag(`it holds no approve that clears it under the loop's done gate (${live})`, g.uncleared.cause === 'bot' ? fresh : jarlLine('review', id, 'approve', '--by', '<reviewer>', '<text>'));
+          const held = `the approves it holds are by ${g.uncleared.standing.join(', ')}`;
+          if (code && g.uncleared.cause === 'coordinator') flag(`it carries code and holds no fresh approve (${held})`, fresh);
+          else if (g.uncleared.cause === 'bot') flag(`its live approve is a bot's, which clears an issue only where the loop's done gate names that bot (${held})`, fresh);
+          else flag(`it holds no approve that clears it under the loop's done gate (done-gate "clears": ${clearsWords(clearsOf(profile))}; ${held})`, jarlLine('review', id, 'approve', '--by', '<reviewer>', '<text>'));
         }
       }
       const doneAt = Math.max(-1, ...events.filter((e) => e.type === 'move' && profile.is(e.to, 'closes-record')).map((e) => e.n));
