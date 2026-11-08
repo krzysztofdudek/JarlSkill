@@ -10,7 +10,7 @@
 // the one surface over them that jarl.mjs, record.mjs and the tests import.
 
 export { STATUSES, KINDS, PRIORITIES, TIERS, TIER_DEFAULT, ASK_KINDS, CI_STATES, ROUNDS_BEFORE_TAKEOVER, LIVENESS_MINUTES, HANDOFF_STALE_MS, slugify, need, noSeparators, refuse, Refusal, isFix, isExternal, isPlaceholder, PLACEHOLDERS, hole, HOLE, commandOf, printedLine, afterView, commandLine, commandWords, readyText, breaksLine, escapedEchoes, echoWord, shellOf, printable, printCommand, printingFor, jarlLine, globalWords, rootPrintable } from './lib/base.mjs';
-export { findRoot, jarlDir, issuesDir, portablePath, canonical } from './lib/where.mjs';
+export { findRoot, LOOP_WALK_DEPTH, LOOP_WALK_DIRS, loopsUnder, discoverLoop, cmdUse, renderUse, jarlDir, issuesDir, portablePath, canonical } from './lib/where.mjs';
 export { readText, RENAME_RETRY_MS, renameRetry, writeAtomic } from './lib/files.mjs';
 export { ID_SRC, idKey, cmpId, needsRaisedFormat, writtenForms, writtenId, newNumber, expandIds, idsNamed } from './lib/ids.mjs';
 export { STATUS_FLAGS, flagWord, BUILTIN_STATUSES, PROFILE_VERSION, PARENT_FIELD, PROFILE_KEYS, PROFILE_FIELD_KEYS, PROFILE_STATUS_KEYS, SET_BY, LIFECYCLE_KEYS, LIFECYCLE_OPS, DEFAULT_LIFECYCLE, RECORD_FORMAT, RECORD_FORMATS, RECORD_FORMAT_RAISED, FORMAT_LINES, formatState, DONE_GATE_KEYS, SLOT_KEYS, ATTACH_MAX_BYTES, DONE_GATE_APPROVE, DEFAULT_DONE_GATE, TOOL_FIELDS, BUILTIN_SECTIONS, PROFILE_FIELD_RE, PROFILE_STATUS_RE, RESERVED_STATUS_NAMES, profilePath, validateProfile, DEFAULT_PROFILE, loadProfile, profileAt, readProfileFile, describeProfile, renderProfile, cmdProfile } from './lib/profile.mjs';

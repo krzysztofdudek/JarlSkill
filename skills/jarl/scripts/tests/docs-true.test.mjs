@@ -206,7 +206,7 @@ test('a loop is found at the root of a checkout and never in a subdirectory, whi
   assert.doesNotMatch(status(sub).stdout, /^goal:/, 'not found from inside the subdirectory that holds it');
   assert.doesNotMatch(status(dir).stdout, /^goal:/, 'not found from the checkout root above it');
   assert.match(status(dir, ['--root', sub]).stdout, /^goal: a loop in a subdirectory/);
-  assert.doesNotMatch(status(dir, [], { JARL_ROOT: sub }).stdout, /^goal:/, 'the command line does not read JARL_ROOT');
+  assert.match(status(dir, [], { JARL_ROOT: sub }).stdout, /^goal: a loop in a subdirectory/, 'the command line reads JARL_ROOT');
   assert.match(mcp.callTool('jarl_status', {}, { JARL_ROOT: sub }, dir).content[0].text, /^goal: a loop in a subdirectory/, 'a tool call reaches it through the server\'s JARL_ROOT');
   assert.doesNotMatch(mcp.callTool('jarl_status', {}, {}, sub).content[0].text, /^goal:/, 'a tool call finds nothing from inside the subdirectory');
   jarl(dir, 'init', 'a loop at the root');
@@ -278,7 +278,7 @@ test('the README names the branch the merger merges into, who reads JARL_ROOT, t
   const readme = readRoot('README.md');
   assert.doesNotMatch(readme, /merges into the branch/, 'the merger merges into the feature branch, not into the approved branch');
   assert.match(readme, /the server's `JARL_ROOT`/);
-  assert.doesNotMatch(readme, /`--root`, `JARL_ROOT` or/, 'the command line does not read JARL_ROOT');
+  assert.match(readme, /`--root` or an exported `JARL_ROOT` on the command line/, 'the command line reads JARL_ROOT');
   assert.match(readme, /a profile whose done gate asks no approve closes on recorded evidence and a merge in the base, which it must require/);
   assert.match(readme, /a profile can also require attached files before a kind of issue closes/);
   const parts = renderSplit({ fresh: 1, waived: 1, coordinator: 1, self: 1, relayed: 1, bot: 1, retracted: 1, unrecorded: 1, botVerdicts: 1, relayedVerdicts: 1 }).split(' · ');

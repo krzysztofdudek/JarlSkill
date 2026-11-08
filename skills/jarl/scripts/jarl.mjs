@@ -12,7 +12,7 @@
 // record.mjs (RECORD_API) is.
 
 import { readFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
@@ -23,7 +23,7 @@ import {
   renderProfile, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, workerEvidence, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
   needLoop, cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, cmdRetractTick, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES, cmdRenumber, cmdSplit,
-  needKnownModels,
+  needKnownModels, cmdUse, renderUse, discoverLoop,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 
@@ -475,6 +475,13 @@ commands:
                                                  no usage or budget from the host; next, the takeover and the notes of the
                                                  fresh-review rule keep under it, and profile refuses a model no Model
                                                  line of the goal places
+  use [<path>]                                   read-only: with no path, the loops under this checkout, found by a walk
+                                                 at most 4 levels down that enters no hidden directory, no node_modules
+                                                 or vendor, and no other checkout (a worktree, a submodule); with a path
+                                                 (as the list prints it, or absolute), the loop the calls that follow
+                                                 reach when they name none: a tool session keeps it until use names
+                                                 another, and the command line, which keeps nothing between runs, prints
+                                                 the JARL_ROOT setting to export for each shell
   verify                                         read-only, with no lock and no network: the record read strictly. Each
                                                  reader lists the lines it does not place (the log, the goal, the issue
                                                  headers, the questions and the rulings), the profile is checked, a
@@ -505,8 +512,10 @@ commands:
                                                  naming a rule also ratifies it (yg log add --aspect --ratify);
                                                  refused under a profile whose "lifecycle" keeps close to the record
 
-options: --json  --help  --root <loop-root>   (the directory holding .jarl/; without it the loop at the root of the
-         current checkout, or of its main checkout from a worktree: never one in a subdirectory)
+options: --json  --help  --root <loop-root>   (the directory holding .jarl/; without it JARL_ROOT, an absolute path,
+         else the loop at the root of the current checkout, or of its main checkout from a worktree: never one in a
+         subdirectory; a note names the loops below it, and where the root holds none and loops are below, a call
+         that names none is refused with their list, init and use excepted)
 
 The list of what only the command line does, next to the record library, is in the skill: references/composers.md, section "What only the command line does".
 
@@ -603,6 +612,7 @@ views, one purpose each (read-only; resume, the boot, prints the parts of severa
   models      what the record says of each model as worker and reviewer
   profile     the loop's profile, or a profile file checked
   verify      the record read strictly, for what its readers do not place
+  use         the loops under this checkout, or the one the calls that follow reach
 
 Parallel workers in worktrees:
   - Default mode: the loop is out of git and lives in the loop root (the directory that holds .jarl/), so every call, a worker's and the coordinator's, passes --root <loop-root>.
@@ -650,7 +660,7 @@ export const COMMAND_FLAGS = {
   goal: { set: 'value', by: 'value' },
   status: { 'stale-hours': 'value', group: 'value', tag: 'value', as: 'value', slice: 'value' }, archive: { by: 'value' }, report: { found: 'bool', metrics: 'bool' }, mode: { by: 'value' },
   changelog: { repo: 'value' },
-  close: { force: 'bool', batch: 'bool', by: 'value' }, profile: {}, verify: {},
+  close: { force: 'bool', batch: 'bool', by: 'value' }, profile: {}, verify: {}, use: {},
 };
 
 // The commands the command line runs and the tool list leaves out: no tool, and no block in the usage text.
@@ -1043,7 +1053,7 @@ export const COMMAND_ARGS = {
   next: [], review: ['ids', 'verdict', 'text'], round: ['id', 'text'], tick: ['id', 'line'], models: [], scope: ['id?'], branches: [],
   ask: ['text'], answer: ['id', 'text?'], resume: [], handoff: ['action?'], log: ['text'],
   decide: ['slug', 'text'], decisions: [], goal: [], status: [], archive: ['slug'], report: [],
-  changelog: ['ids'], mode: ['mode'], close: [], profile: ['file?'], verify: [],
+  changelog: ['ids'], mode: ['mode'], close: [], profile: ['file?'], verify: [], use: ['path?'],
 };
 // One sentence per command: what it does, the MCP tool's whole description after "WRITES the loop." or "Read-only.".
 // The rest of what a command takes and does is its block of USAGE, which the jarl_help tool and --help print.
@@ -1095,6 +1105,7 @@ export const COMMAND_SUMMARY = {
   profile: 'The loop\'s profile (statuses, fields, sections), or a profile file checked against the schema.',
   verify: 'Check the record strictly, without a lock: the lines each reader does not place, the headers that disagree with the log, the repositories, leases and superseded rulings the issues name; exit 2 on a finding.',
   close: 'Close the loop, filing the ratification batch first; it refuses while issues are open or in progress, or deferred where it removes the loop, unless force is set.',
+  use: 'List the loops under this checkout, or name the loop the calls that follow reach: a tool session keeps it until use names another, and the command line prints the JARL_ROOT setting to export.',
 };
 // The fields that hold a list, per command: an argument (named as in COMMAND_ARGS) or a flag, and what one item is.
 // A name (an issue or question id, a tag, a finding's reference or id) never holds a bracket or a quote; a path (Files,
@@ -1315,6 +1326,26 @@ export function pluginVersionNote(env = process.env, script = installVersion()) 
   } catch { return null; }
 }
 
+// The command that reads the checkout rather than a loop in it, whatever loop a call would reach: use reads its path from
+// it. And the one discovery does not refuse where the checkout's root holds no loop: init, which opens one there.
+export const CHECKOUT_COMMANDS = Object.freeze(['use']);
+export const OPENING_COMMANDS = Object.freeze(['init']);
+// The loop a command-line call reaches, and the note it gets: its --root; for use, the checkout of the working directory;
+// else JARL_ROOT, an absolute path (a relative one would reach another loop from the next directory); else the loop found
+// from the working directory (discoverLoop), which refuses a call where the checkout holds no loop at its root and holds
+// some below it, init excepted. The command line keeps nothing between runs: use prints the JARL_ROOT setting instead.
+export function cliRoot(cmd, flags, env = process.env, cwd = process.cwd()) {
+  if (flags.root) return { root: R.resolveRoot(flags.root, cwd), note: null };
+  if (CHECKOUT_COMMANDS.includes(cmd)) return { root: R.resolveRoot(undefined, cwd), note: null };
+  const raw = String(env.JARL_ROOT ?? '').trim();
+  if (raw) {
+    need(isAbsolute(raw), `JARL_ROOT must be an absolute path (got ${escapedEchoes(JSON.stringify(raw), [raw])}) — a relative one would reach another loop from another directory; nothing was read or written`, { flag: '--root', value: hole('<loop-root>') });
+    return { root: resolve(raw), note: null };
+  }
+  if (OPENING_COMMANDS.includes(cmd)) return { root: R.resolveRoot(undefined, cwd), note: null };
+  return discoverLoop(cwd);
+}
+
 function main() {
   if (process.argv[2] === 'merge-driver') mergeDriverMain(process.argv.slice(3));
   if (process.argv.length === 3 && process.argv[2] === '--version') { console.log(installVersion()); process.exit(0); }
@@ -1323,13 +1354,16 @@ function main() {
   const { positional, flags } = parsed;
   const [cmd, ...rest] = positional;
   if (!cmd || flags.help) { console.log(USAGE); process.exit(flags.help ? 0 : 1); }
-  const root = R.resolveRoot(flags.root);
+  let located;
+  try { located = cliRoot(cmd, flags); } catch (e) { console.error(e.message); process.exit(1); }
+  const { root } = located;
   let r;
   try { r = dispatch(root, cmd, rest, flags); } catch (e) {
     console.error(e.message);
     process.exit(1);
   }
   const { out, text, warn } = r;
+  if (located.note) warn.push(`note: ${located.note}`);
   // Said on the command line only, after the note is written whole: a long free-text note is hard to read back and
   // cannot be retracted by number; nothing is refused or cut.
   if (cmd === 'evidence' && flags.ran === undefined && typeof rest[1] === 'string' && (rest[1].length > LONG_NOTE_CHARS || rest[1].trim().split('\n').length > LONG_NOTE_LINES)) {
@@ -1511,6 +1545,8 @@ function dispatchCall(root, commandName, rest, flags) {
       // The profile check: a model the profile names is one a Model line of the loop's goal places.
       case 'profile': out = cmdProfile(root, rest[0]); needKnownModels(root, rest[0] === undefined ? R.loadProfile(root) : readProfileFile(rest[0], { argument: true }).profile, rest[0] ?? 'the profile'); text = renderProfile(out); break;
       case 'verify': out = cmdVerify(root); text = renderVerify(out); break;
+      // The root of use is the checkout its path is read from: the call's --root, else the checkout of the working directory.
+      case 'use': out = cmdUse(root, rest[0]); text = renderUse(out); break;
       case 'close': out = cmdClose(root, { ...flags, caller: 'cli' }); text = out.closed ? (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}${out.archiveKept ? ' (the live loop; .jarl/archive/ is left in place)' : out.archiveRemoved ? ` (with .jarl/archive/: ${out.archiveRemoved.join(', ')})` : ''}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred ${out.kept ? 'still waiting' : 'removed with the loop'}: ${out.deferred.join(', ')}` : '') + (out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed${out.kept ? ' — commit .jarl/' : ' before the removal'}` : '') + renderBatch(out.batch, out.kept ? 'kept' : 'removed') + renderPromotion(out.promotion, out.kept ? 'kept' : 'removed') : (renderBatch(out.batch, 'open') + renderPromotion(out.promotion, 'open')).trimStart(); break;
       default: refuse(`unknown command: ${cmd}`, { command: hole('<a-jarl-command>') });
     }

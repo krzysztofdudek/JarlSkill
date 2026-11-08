@@ -33,7 +33,7 @@
 // No dependencies beyond the vendored copy, Node 22+.
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AUTHOR_REQUIRED, COMMAND_ARGS, COMMAND_FLAGS, GONE_TEXT_NAMES, INTERNAL_COMMANDS, LIST_FIELDS, REMOVED_FLAGS, REPLACED_COMMANDS, replacedMessage, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, findRoot, isEntry as isEntryOf, installVersion } from './jarl.mjs';
+import { AUTHOR_REQUIRED, CHECKOUT_COMMANDS, OPENING_COMMANDS, COMMAND_ARGS, COMMAND_FLAGS, GONE_TEXT_NAMES, INTERNAL_COMMANDS, LIST_FIELDS, REMOVED_FLAGS, REPLACED_COMMANDS, Refusal, replacedMessage, flagsOf, COMMAND_SUMMARY, GLOBAL_FLAGS, MUTATING, USAGE, parseArgs, dispatch, discoverLoop, findRoot, isEntry as isEntryOf, installVersion } from './jarl.mjs';
 import { defineTable } from './vendor/runes/dist/cli/index.mjs';
 import {
   buildTools as generateTools, argvFor as generateArgv, commandForTool, serveStdio, InvalidParams,
@@ -259,20 +259,32 @@ export function argvFor(cmd, input = {}) {
 // control and mostly does not see; failing every call that would use it, rather than only refusing at server
 // start, keeps working the common case where every call already passes its own absolute "root" (SKILL.md has
 // every worker in a worktree do exactly that) and never silently misresolves the one that doesn't.
-export function rootOf(input = {}, env = process.env, cwd = process.cwd()) {
+// A session names its loop once with jarl_use: the server holds that choice for its session, in this process alone,
+// never in the record and never in a file, since one server serves one session; a call's root field still wins, and
+// the choice ranks above JARL_ROOT, which is the server's configuration rather than the session's. jarl_use itself reads
+// the checkout: the root field, else the checkout of the server's working directory. Without any of them, the loop found
+// from the working directory (discoverLoop): a note names the loops below the root's, and where the root holds none and
+// loops are below, the call is refused with their list (a Refusal, which the call answers as the command line's refusal),
+// jarl_init excepted, which opens a loop there.
+export const SESSION = { root: null };
+export function rootOf(input = {}, env = process.env, cwd = process.cwd(), session = SESSION, cmd = null) {
   if (typeof input.root === 'string' && input.root.trim()) return { root: resolve(input.root.trim()), from: 'root' };
+  if (CHECKOUT_COMMANDS.includes(cmd)) return { root: findRoot(cwd), from: 'checkout' };
+  if (session && session.root) return { root: session.root, from: 'use' };
   if (env.JARL_ROOT && env.JARL_ROOT.trim()) {
     const raw = env.JARL_ROOT.trim();
     need(isAbsolute(raw), `JARL_ROOT must be an absolute path (got ${JSON.stringify(raw)}) — a relative one would resolve against the server's own working directory, not the caller's; pass "root" on the call instead, or fix the server's environment`);
     return { root: resolve(raw), from: 'JARL_ROOT' };
   }
-  return { root: findRoot(cwd), from: 'cwd' };
+  if (OPENING_COMMANDS.includes(cmd)) return { root: findRoot(cwd), from: 'cwd' };
+  const found = discoverLoop(cwd);
+  return { root: found.root, from: 'cwd', note: found.note };
 }
-export function rootFor(input = {}, env = process.env, cwd = process.cwd()) { return rootOf(input, env, cwd).root; }
+export function rootFor(input = {}, env = process.env, cwd = process.cwd(), session = { root: null }) { return rootOf(input, env, cwd, session).root; }
 
 // One tool call: { content, isError } as MCP returns it. Invalid fields throw InvalidParams (a JSON-RPC error);
 // everything the CLI would print — its answer, its notes, its refusal — comes back as the result.
-export function callTool(name, input = {}, env = process.env, cwd = process.cwd()) {
+export function callTool(name, input = {}, env = process.env, cwd = process.cwd(), session = SESSION) {
   if (name === toolName('help')) {
     if (input === null || typeof input !== 'object' || Array.isArray(input)) throw invalid(`${name}: arguments must be an object\n${toolName('help')} {}`, true);
     const shared = Object.keys(GLOBAL_FLAGS).filter((f) => f !== 'help');
@@ -290,22 +302,32 @@ export function callTool(name, input = {}, env = process.env, cwd = process.cwd(
   let located;
   let words;
   try {
-    located = rootOf(input, env, cwd);
+    located = rootOf(input, env, cwd, session, cmd);
     // The root the call named goes into the words the command line reads, before a bare --, as --root=, so a refusal's
     // form carries it as the command line's does, and a form filled elsewhere reaches the same loop.
     words = argvFor(cmd, input);
-  } catch (e) { throw withForm(e, cmd, input); }
+  } catch (e) {
+    // A call that names no loop where the choice is not obvious is refused as the command line refuses it, with the form
+    // of the tool's call, its root a placeholder.
+    if (e instanceof Refusal) return { content: [{ type: 'text', text: `${e.reason}\n${formOf(cmd, input, true)}` }], isError: true };
+    throw withForm(e, cmd, input);
+  }
   const { root, from } = located;
   const end = words.indexOf('--') === -1 ? words.length : words.indexOf('--');
   const argv = from === 'root' ? [...words.slice(0, end), `--root=${root}`, ...words.slice(end)] : words;
   // A call that named no root is told which loop it reached, so a write never lands somewhere unseen. With
   // json: true this note (and the CLI's stderr notes) never become a second text block — a client that
   // concatenates the blocks to parse JSON would otherwise get invalid JSON — they go into _meta instead.
-  const loopNote = from === 'root' ? null : `loop: ${root} (no root given — ${from === 'JARL_ROOT' ? 'from JARL_ROOT' : `found from the server's working directory ${cwd}`})`;
+  const loopNote = from === 'root' || from === 'checkout' ? null : `loop: ${root} (no root given — ${from === 'JARL_ROOT' ? 'from JARL_ROOT' : from === 'use' ? 'the loop this session chose with use' : `found from the server's working directory ${cwd}`})${located.note ? `; ${located.note}` : ''}`;
   let r;
   try {
     const { positional, flags } = parseArgs(argv);
     r = dispatch(root, cmd, positional.slice(1), flags);
+    // use with a path names the loop of this session's calls that name no root, until use names another.
+    if (cmd === 'use' && r.out.root !== undefined) {
+      session.root = r.out.root;
+      r = { ...r, text: `use ${r.out.path}: this session's calls that name no root reach this loop until use names another; a call's root field still reaches its own` };
+    }
   } catch (e) {
     const text = e?.message || String(e);   // the CLI's exit 1
     if (input.json) return { content: [{ type: 'text', text }], isError: true, ...(loopNote ? { _meta: { 'jarl/loop': loopNote } } : {}) };
