@@ -4,7 +4,6 @@
 import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need } from './base.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
-import { leaseOfMove } from './log.mjs';
 import { carriesCode, coordinatorOf, holderKey, inFlightMark, leaseConflictOf, readLoop, sameHolder, sameSlice, sentBack, sliceOf, statusWith } from './loop.mjs';
 import { gatedMark, modelReviewForm } from './models.mjs';
 import { issueRepos, repoLabel } from './repositories.mjs';
