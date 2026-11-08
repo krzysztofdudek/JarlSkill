@@ -3,12 +3,12 @@
 
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
-import { afterView, echoWord, fieldText, hole, jarlLine, need, noSeparators, refuse, splitList } from './base.mjs';
+import { afterView, echoWord, fieldText, hole, jarlLine, need, noSeparators, splitList } from './base.mjs';
 import { git } from './git.mjs';
 import { canonical, issuesDir, jarlDir, normalPath, portablePath } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, branchNameProblem } from './ids.mjs';
-import { FORMAT_LINES, PROFILE_VERSION, RECORD_FORMATS, RECORD_FORMAT_RAISED, forgetProfile, formatState, loadProfile, profilePath } from './profile.mjs';
+import { FORMAT_LINES, PROFILE_VERSION, RECORD_FORMATS, RECORD_FORMAT_RAISED, forgetProfile, formatState, loadProfile, needRaisable, profilePath } from './profile.mjs';
 import { appendLog, appendLogLines, logPath, tipLine } from './journal.mjs';
 import { withLock } from './lock.mjs';
 import { mapMergeRepos } from './log.mjs';
@@ -175,12 +175,6 @@ function lineNamed(name) {
   const line = Object.hasOwn(FORMAT_LINES, name) ? FORMAT_LINES[name] : null;
   need(line, `${name} is not a line of the record format registry: its lines are ${Object.keys(FORMAT_LINES).join(', ')}`, () => afterView(['jarl.mjs', 'profile']));
   return line;
-}
-// A loop whose profile names an external scheduler is never raised: the write that needs format `to` is refused.
-function needRaisable(profile, to, what) {
-  if (formatState(profile).raises) return;
-  const line = what || `a line of record format ${to}`;
-  refuse(`${line} needs record format ${to}, and this loop stays at format ${profile.format}: its profile names an external scheduler (${profile.scheduler}), the composer that reads this record, so Jarl never raises its format; ${line} is off in this loop until its profile says "format": ${to} — nothing was written`, afterView(['jarl.mjs', 'profile']));
 }
 
 // Where a loop's directory stands among the worktrees of its git repository, read-only (git rev-parse and the

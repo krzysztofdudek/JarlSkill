@@ -36,6 +36,48 @@ function finish(root, id) {
   jarl(root, 'set', id, 'done', 'finished');
 }
 
+test('an open stuck or stop question that names a parent holds back every issue under it until it is answered, and one on a sub-issue holds only that one', () => {
+  const root = exportLoop();
+  jarl(root, 'new', 'the csv header', '--files', 'src/csv-header.mjs');
+  jarl(root, 'field', '2,3', 'Parent', '1');
+  jarl(root, 'field', '4', 'Parent', '2');
+  jarl(root, 'new', 'outside the tree', '--files', 'src/other.mjs');
+  const groups = (r) => Object.fromEntries(json(r, 'next', '--all').map((row) => [row.id, [row.group, row.questions || []]]));
+  jarl(root, 'ask', 'csv or tsv first?', '--kind', 'stop', '--issue', '1');
+  assert.deepEqual(groups(root), { 1: ['waiting-sub', []], 2: ['waiting-sub', []], 3: ['held-by-question', ['1']], 4: ['held-by-question', ['1']], 5: ['ready', []] });
+  jarl(root, 'ask', 'which header?', '--kind', 'stuck', '--issue', '4');
+  assert.deepEqual(groups(root)[4], ['held-by-question', ['1', '2']], 'each question above it is named');
+  assert.match(jarl(root, 'next', '--all'), /^4 {2}P2 {2}the csv header {2}\(question a-1, a-2\)$/m);
+  jarl(root, 'answer', '1', 'csv first', '--by', 'owner');
+  assert.deepEqual(groups(root), { 1: ['waiting-sub', []], 2: ['waiting-sub', []], 3: ['ready', []], 4: ['held-by-question', ['2']], 5: ['ready', []] });
+});
+
+test('a question on a parent holds up every issue under it on the owner\'s list, each counted', () => {
+  const root = loop();
+  for (const name of ['export', 'csv', 'json', 'docs', 'logo']) jarl(root, 'new', `the ${name}`, '--files', `src/${name}.mjs`);
+  jarl(root, 'field', '2,3,4', 'Parent', '1');
+  jarl(root, 'ask', 'which logo?', '--kind', 'stuck', '--issue', '5');
+  jarl(root, 'ask', 'csv or tsv first?', '--kind', 'stuck', '--issue', '1');
+  const said = jarl(root, 'next', '--as', 'owner');
+  assert.match(said, /^- a-2\b.* · holds up 2, 3, 4$/m);
+  assert.match(said, /^- a-1\b.* · holds up 5$/m);
+  assert.ok(said.indexOf('- a-2') < said.indexOf('- a-1'), `the question that holds up three issues comes first:\n${said}`);
+});
+
+test('list, show and report give each issue its parent in their json alike: the parent\'s id, or null for an issue with none, in a loop with no tree too', () => {
+  const root = exportLoop();
+  const parents = () => [
+    Object.fromEntries(json(root, 'list', '--all').map((r) => [r.id, r.parent])),
+    Object.fromEntries(['1', '2', '3'].map((id) => [id, json(root, 'show', id).parent])),
+    Object.fromEntries(json(root, 'report').issues.map((r) => [r.id, r.parent])),
+  ];
+  const none = { 1: null, 2: null, 3: null };
+  assert.deepEqual(parents(), [none, none, none]);
+  jarl(root, 'field', '2', 'Parent', '1');
+  const one = { 1: null, 2: '1', 3: null };
+  assert.deepEqual(parents(), [one, one, one]);
+});
+
 test('field Parent names the parent of an issue, a sub-issue has sub-issues of its own, ids stay numbers, and the first parent raises the record format so the frozen readers refuse the loop', () => {
   const root = loop();
   for (const t of ['the export', 'the csv writer', 'its header row']) fileAsBefore(root, t, { acceptance: 'it works' });

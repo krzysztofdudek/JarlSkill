@@ -214,6 +214,6 @@ test('status --group groups the counts by kind, tag, priority or repository; rep
   assert.equal(JSON.parse(jarl(root, 'status', '--json')).by, undefined);
   const rep = JSON.parse(jarl(root, 'report', '--json'));
   const one = rep.issues.find((i) => i.id === '1');
-  assert.deepEqual({ ...one, repos: undefined }, { id: '1', title: 'a', status: 'done', kind: 'bug', priority: '2', tier: 'standard', tags: ['x', 'y'], repos: undefined, branch: null, after: [], sources: [], merged: null, ci: null, review: { by: 'rev', kind: 'fresh', at: one.review.at } });
+  assert.deepEqual({ ...one, repos: undefined }, { id: '1', title: 'a', status: 'done', kind: 'bug', priority: '2', tier: 'standard', tags: ['x', 'y'], repos: undefined, branch: null, after: [], sources: [], merged: null, ci: null, review: { by: 'rev', kind: 'fresh', at: one.review.at }, parent: null });
   assert.equal(rep.issues.length, 3);
 });

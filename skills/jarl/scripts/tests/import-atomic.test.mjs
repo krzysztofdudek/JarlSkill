@@ -67,6 +67,20 @@ test('on a loop that stays at its record format, a finding that would take a num
   assert.deepEqual(out.filed.map((f) => f.id), ['999']);
 });
 
+test('on a loop that stays at its record format, each finding is checked with the number new would give it, stepped past a range the goal declares', () => {
+  const hub = composed();
+  writeFileSync(join(hub, '.jarl', 'issues', '997-old-997.md'), renderIssue({ id: '997', title: 'old 997', kind: 'bug', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
+  const goal = join(hub, '.jarl', 'goal.md');
+  writeFileSync(goal, `${readFileSync(goal, 'utf8')}Range (film): 999-1500\n`);
+  const file = findingsFile([good(2), good(3)]);
+  for (const more of [[], ['--dry-run']]) {
+    const said = refusedImport(hub, file, ...more);
+    assert.match(said, /^finding "finding-3" cannot be filed: issue number 1501 needs record format 2, and this loop stays at format 1/);
+    assert.match(said, /the findings that take a number below it can be filed with --only\n/);
+  }
+  assert.deepEqual(JSON.parse(imports(hub, file, '--only', 'finding-2', '--json')).filed.map((f) => f.id), ['998']);
+});
+
 test('on a loop that stays at its record format and holds no number for the first finding, the refusal ends with the profile view and the call\'s own form', () => {
   const hub = composed();
   writeFileSync(join(hub, '.jarl', 'issues', '999-old-999.md'), renderIssue({ id: '999', title: 'old 999', kind: 'bug', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));

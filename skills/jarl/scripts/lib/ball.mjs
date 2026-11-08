@@ -411,16 +411,18 @@ export function ballRows(root, flags = {}) {
   const liveness = (i) => { if (!ages.has(i.id)) ages.set(i.id, leaseLiveness(root, i, minutes, { events: loop.eventsById.get(i.id) || [] })); return ages.get(i.id); };
   const ctx = { root, loop, profile, merger: loop.goalLines.merger === null ? JARL_HOLDER : holderOf(loop.goalLines.merger), next: scheduled ? [] : nextRows(root, { perSlice: true }), awaiting, onOwner: new Set(heldByOwner(loop, awaiting)), ownerStates, liveness };
   const rows = ROW_SOURCES.filter((s) => !(scheduled && SCHEDULING.has(s))).flatMap((s) => s(ctx));
-  // Who each issue holds up: the issues in play whose After names it, not settled yet, and for a question the issue it holds.
+  // Who each issue holds up: the issues in play whose After names it, not settled yet, and for a question the issues it holds.
   const active = loop.issues.filter((i) => profile.active(i.status));
   const dependents = new Map();
   for (const i of active) for (const a of waitingOn(i, loop.byId, profile)) dependents.set(a, [...(dependents.get(a) || []), i.id]);
-  const heldByQuestion = new Map(ctx.next.filter((r) => r.group === 'held-by-question').flatMap((r) => r.questions.map((q) => [q, r.id])));
+  // A question holds every issue it holds back: the one it names, and on a parent each issue under it.
+  const heldByQuestion = new Map();
+  for (const r of ctx.next.filter((x) => x.group === 'held-by-question')) for (const q of r.questions) heldByQuestion.set(q, [...(heldByQuestion.get(q) || []), r.id]);
   const upOf = (ids) => [...new Set(ids.flatMap((id) => dependents.get(id) || []))];
   for (const r of rows) {
     if (r.ids) r.holdsUp = upOf(r.ids);
     else if (r.id !== undefined) r.holdsUp = dependents.get(r.id) || [];
-    else if (r.what === 'question' || r.what === 'escalation') r.holdsUp = [...new Set([...(heldByQuestion.has(r.ask) ? [heldByQuestion.get(r.ask)] : []), ...upOf(r.reviewing || [])])];
+    else if (r.what === 'question' || r.what === 'escalation') r.holdsUp = [...new Set([...(heldByQuestion.get(r.ask) || []), ...upOf(r.reviewing || [])])];
     else r.holdsUp = [];
   }
   const weight = (r) => (r.what === 'question' && r.kind === 'stop' ? Number.MAX_SAFE_INTEGER : r.holdsUp.length);
