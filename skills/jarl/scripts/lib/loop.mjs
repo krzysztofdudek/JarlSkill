@@ -462,8 +462,6 @@ export function sinceText(anchor) {
   return `it was moved → ${anchor.what}`;
 }
 
-// A commit as a tip line holds it.
-const TIP_SHA = /^[0-9a-f]{7,64}$/;
 export function gateOf(loop, id) {
   const { profile, coordinators, bots } = loop;
   const events = loop.eventsById.get(id) || [];
@@ -490,7 +488,6 @@ export function gateOf(loop, id) {
   // tip shape written by itself (a note a log command with no refusal of it took, a line added later) is the tip of nothing.
   let before = null;
   let mergeTip = null;   // the tip the newest merge was recorded on
-  let mergeSha = null;   // the commit the newest merge names
   let closeTip = null;   // the tip recorded with the newest move, when that move closed the record
   const closedBy = (e) => e.type === 'move' && profile.is(e.to, 'closes-record');
   // The owner's waivers of this issue's review: the rulings waiverVoid finds nothing against. Each stands where decide
@@ -509,7 +506,7 @@ export function gateOf(loop, id) {
     }
     before = null;
     if (e.type === 'move') { closeTip = null; if (closedBy(e)) before = e; continue; }
-    if (e.type === 'merged') { before = e; mergeTip = null; mergeSha = e.sha; continue; }
+    if (e.type === 'merged') { before = e; mergeTip = null; continue; }
     if (e.type === 'verdict') {
       // The kind is the one recorded, or the one today's names give, whichever is stricter: a name the goal
       // declares as a coordinator after its approve was logged as fresh does not stay fresh, and a name that
@@ -618,10 +615,21 @@ export function gateOf(loop, id) {
     waived: live && live.kind === 'waived' ? live.ruling : null,
     live,
     workers: self,
-    // The tip a close of the issue records, read when asked: the one the gate judges it on now, or, where neither the
-    // branch nor its merge's tip line is there, the commit the newest merge names. A closed issue's gate is read against
-    // it, so a branch of the same name made again after the close changes nothing.
-    closingTip: () => now() || (mergeSha && TIP_SHA.test(mergeSha) ? mergeSha : null),
+    // The tip a close of the issue records, read when asked, so that the closed issue's gate is read later as it was judged
+    // at the close, whatever the branch does after (a branch of the same name made again included): the tip the gate
+    // judges it on now. Where neither the branch nor its merge's tip line gives one, the gate judged it on no tip, and a
+    // tip that spends nothing it counted is recorded instead: a waiver counts only on the tip it was made on, so that one
+    // (waivers on two tips: none), else the newest tip a counted row or approve was made on. Every other row and approve
+    // inside the window counts whatever the tip, and one from ahead of a pause, which counts on no tip, can only be added.
+    // The commit a merge names is never taken: a squash or a merge commit is a tip no row or waiver was made on.
+    closingTip: () => {
+      if (now() !== null) return now();
+      const counted = [...evidence.filter((e) => e.inWindow && !e.retracted), ...approves].filter((x) => x.tip !== undefined);
+      const waivedOn = [...new Set(counted.filter((x) => x.kind === 'waived').map((x) => x.tip))];
+      if (waivedOn.length) return waivedOn.length === 1 ? waivedOn[0] : null;
+      const newest = counted.reduce((best, x) => (!best || x.n > best.n ? x : best), null);
+      return newest ? newest.tip : null;
+    },
   };
 }
 

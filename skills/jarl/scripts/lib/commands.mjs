@@ -1098,8 +1098,9 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // The line goes first: a write that stops between the two leaves the journal, the record, ahead of the files, which the
   // views report, and never a file ahead of the record.
   // A move that closes the record is followed by the tip the close was judged on: the tip of the issue's branch, or, where
-  // the branch is gone (a merge's cleanup deletes it), the tip its merge was recorded on, else the commit the merge names.
-  // The gate of the closed issue is read against it whatever the branch does after, a branch of the same name made again included.
+  // the branch is gone (a merge's cleanup deletes it), the tip its merge was recorded on, else the tip its counted waiver,
+  // row or approve was made on, and none where nothing gives one; never the commit the merge names. The gate of the
+  // closed issue is read against it whatever the branch does after, a branch of the same name made again included.
   const closes = profile.is(status, 'closes-record');
   const judged = closes ? readLoop(jarlDir(root)) : null;
   const closeTip = (issue) => { const tip = gateOf(judged, issue.id).closingTip(); return tip ? [`${issue.id} tip ${tip}`] : []; };
