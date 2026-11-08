@@ -14,7 +14,7 @@ import { appendLog, appendLogLines, decisionsPath, goalPath, logPath } from './j
 import { JARL_GITIGNORE, JARL_GITIGNORE_COMMITTED, ensureLoopMerge, outOfGit } from './loop-git.mjs';
 import { HANDOVER_SEGMENT, journalById, mergeCheckText } from './log.mjs';
 import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineCount, acceptanceLines, acceptanceText, bodyText, changelogText, evidenceNotes, evidenceParts, evidenceRows, evidenceTable, fieldValue, findIssue, issueNamed, loadIssues, mergedOf, namedPairs, needNoFieldTags, noteText, parentCycle, parseIssue, placeEvidence, removeFields, removeFirstField, renderIssue, setField, setSection, unattributedRefusal, waitCycle } from './issues.mjs';
-import { branchTip, commitRepoNames, declaredBaseOf, defaultBase, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needFormatHeld, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
+import { baseOf, branchTip, commitRepoNames, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needFormatHeld, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
 import { FIELD_NAMES, activeSlices, carriesCode, unmergedCode, gateOf, isSliceTag, needOneSlice, readLoop, sinceText, sliceOf, unclearedText, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
 import { modelLines, modelRefusalOf, modelReviewForm, modelValue, spellingNote } from './models.mjs';
@@ -1546,22 +1546,22 @@ function doneGateIn(root, loop, issue, base) {
   return owner();
 }
 
-// The done gate's requires-merged: the issue records a merge (merged --sha) and that commit is in the base — the branch
-// checked out where the merge was recorded (Merged's "in <repo>", else the issue's Repo, else the loop's own
-// repository), or the branch a library caller names as opts.base (a composer that lands into a branch nobody has
-// checked out, such as a team branch, names it). A sha the repository does not know, or one not reachable from the
-// base, is refused: a merge recorded is not a merge landed until the base holds it.
+// The done gate's requires-merged: the issue records a merge (merged --sha) and that commit is in the base of the
+// repository where the merge was recorded (Merged's "in <repo>", else the issue's Repo, else the loop's own repository):
+// the base the merge note and the cleanup read too (see baseOf), or the branch a library caller names as opts.base (a
+// composer that lands into a branch nobody has checked out, such as a team branch, names it). A sha the repository does
+// not know, or one not reachable from the base, is refused: a merge recorded is not a merge landed until the base holds it.
 function mergeRefusal(root, issue, base) {
   const m = mergedOf(issue);
   const gate = 'this loop\'s profile closes an issue only on a landed merge (done-gate "requires-merged": true)';
   if (!m) return `${issue.id} records no merge — ${gate}: ${jarlLine('merged', issue.id, '--sha', '<sha>')} once it has landed`;
   const repos = issueRepoPaths(root, issue, m.repo ? [m.repo] : undefined).filter(isGitRepo);
   if (!repos.length) return `${issue.id} records Merged ${m.sha}, but no repository it names is a git repository here — ${gate}, and the merge cannot be checked`;
-  const ref = base === undefined ? 'HEAD' : base;
+  const refOf = (r) => (base === undefined ? baseOf(root, r) : base);
   if (base !== undefined && repos.every((r) => git(r, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]) === null)) return `${issue.id}: the base ${base} is not a branch or commit in ${repos.join(' or ')} — ${gate}, and the merge cannot be checked`;
-  const landed = repos.some((r) => git(r, ['merge-base', '--is-ancestor', m.sha, ref]) !== null);
+  const landed = repos.some((r) => git(r, ['merge-base', '--is-ancestor', m.sha, refOf(r)]) !== null);
   if (landed) return null;
-  const where = repos.map((r) => `${base === undefined ? defaultBase(r) : base} in ${r}`).join(' or ');
+  const where = repos.map((r) => `${refOf(r)} in ${r}`).join(' or ');
   return `${issue.id} records Merged ${m.sha}, which is not in the base (${where}) — ${gate}; merge it, or record the sha that landed: ${jarlLine('merged', issue.id, '--sha', '<sha>')}`;
 }
 
@@ -1726,7 +1726,7 @@ function mergeContentNotes(root, issue, sha, repoPath) {
     if (holdsChangesOf(repo, tip, sha)) notes.push(`SQUASH OR REBASE MERGE — ${sha} does not contain the commits of ${branch} (tip ${tip.slice(0, 12)}), but holds every file the branch changed exactly as the branch has it, so the branch's work landed without its commits, and the cleanup keeps ${branch} because its tip is in no merge`);
     else notes.push(`MERGE WITHOUT THE BRANCH — ${sha} does not contain the tip of ${branch} (${tip.slice(0, 12)}) and does not hold the files the branch changed as the branch has them, so a check that ran on it did not run on the branch's work; the check runs on the merge result: merge the branch, check the result, and record that commit with ${record}`);
   }
-  const base = declaredBaseOf(root, repo) ?? defaultBase(repo);
+  const base = baseOf(root, repo);
   const baseTip = base !== branch ? git(repo, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]) : null;
   if (baseTip && !holds(sha, baseTip) && !holds(baseTip, sha)) notes.push(`MERGE WITHOUT THE BASE — ${sha} does not contain ${base} as it stands (${baseTip.slice(0, 12)}), so the check ran on a tree the base has moved past; the check runs on the merge result: merge the base into the result, check it again, and record that commit with ${record}`);
   return notes;
@@ -1916,7 +1916,7 @@ function cleanUpAfterMerge(root, issues, sha, repoPath, named = []) {
   const results = [];
   for (const { repo, branch, on } of groups.values()) {
     if (!isGitRepo(repo) || git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]) === null) continue;
-    const base = defaultBase(repo);
+    const base = baseOf(root, repo);
     const result = { repo: repoLabel(repo), branch };
     const keep = (reason, extra = {}) => results.push({ ...result, ...extra, kept: reason });
     const unsafe = whyNotDeletable(root, repo, [...on.flatMap((i) => splitList(i.fields.repo)), ...named]);

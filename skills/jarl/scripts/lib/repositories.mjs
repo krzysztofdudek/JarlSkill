@@ -494,6 +494,9 @@ export function declaredBaseOf(root, dir) {
   }
   return null;
 }
+// The one base a merge is judged against, by the merge note, the cleanup after it and the done gate alike: the declared
+// base (see declaredBaseOf), else the branch the checkout `dir` has open (HEAD where it has none open).
+export function baseOf(root, dir) { return declaredBaseOf(root, dir) ?? defaultBase(dir); }
 function writeDeclarations(root, entries) {
   writeAtomic(reposPath(root), `${REPOS_HEADER}${entries.map((e) => `- **${e.name}** · ${declarationText(e)}`).join('\n')}\n`);
 }

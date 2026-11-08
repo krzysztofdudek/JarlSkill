@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { jarl, refuses, run, SPAWN_TIMEOUT } from './helpers.mjs';
+import { BUILTIN_STATUSES } from '../jarl-lib.mjs';
 const said = (repo, ...args) => run(repo, args).stderr;
 
 const git = (cwd, ...args) => {
@@ -78,11 +79,11 @@ test('a merge landed in the base is not noted for the commits the base gained af
 
 // A loop in `hub` whose first issue names the repository `tool` (a name), leased on jarl/1-x with one commit of its own.
 // The tool checkout stays on main, which has not gained what the branch `release` has: the declared base is release.
-function declaredBaseFixture() {
+function declaredBaseFixture(initFlags = []) {
   const parent = mkdtempSync(join(tmpdir(), 'jarl-holds-base-'));
   const [hub, tool] = ['hub', 'tool'].map((name) => join(parent, name));
   for (const dir of [hub, tool]) { mkdirSync(dir); git(dir, 'init', '-q', '-b', 'main'); commit(dir, 'a.txt', 'a\n'); }
-  jarl(hub, 'init', 'goal');
+  jarl(hub, 'init', 'goal', ...initFlags);
   jarl(hub, 'new', 'issue one', '--repo', '../tool', '--acceptance', 'it works');
   git(tool, 'checkout', '-q', '-b', 'release');
   commit(tool, 'r.txt', 'r\n');
@@ -119,6 +120,53 @@ test('a declared base the repository does not hold falls back to the branch the 
   const { hub, sha } = declaredBaseFixture();
   jarl(hub, 'base', 'tool', 'no-such-branch');
   assert.doesNotMatch(said(hub, 'merged', '1', '--sha', sha, '--keep'), /MERGE WITHOUT/);
+});
+
+// A profile whose done gate closes an issue only on a merge that landed in the base, with the default approve.
+function landedGateProfile() {
+  const file = join(mkdtempSync(join(tmpdir(), 'jarl-holds-profile-')), 'profile.json');
+  writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, format: 1, name: 'landed-gate', statuses: BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true } }));
+  return ['--profile', file];
+}
+const readyToClose = (hub) => {
+  jarl(hub, 'evidence', '1', '--ran', 'npm test', '--saw', 'all green');
+  jarl(hub, 'review', '1', 'approve', '--by', 'rev-fresh', 'read the diff, nothing found');
+};
+
+test('the done gate\'s landed merge reads the declared base, as the merge note does, whatever branch the main checkout has open', () => {
+  const { hub, tool } = declaredBaseFixture(landedGateProfile());
+  jarl(hub, 'base', 'tool', 'release');
+  git(tool, 'checkout', '-q', 'release');
+  git(tool, 'merge', '-q', '--no-ff', '-m', 'merge 1 into release', 'jarl/1-x');
+  const sha = git(tool, 'rev-parse', 'HEAD');
+  git(tool, 'checkout', '-q', 'main');
+  assert.doesNotMatch(said(hub, 'merged', '1', '--sha', sha, '--keep'), /MERGE WITHOUT/, 'the note finds the merge in the declared base');
+  readyToClose(hub);
+  assert.equal(jarl(hub, 'set', '1', 'done', 'landed in release'), '1 → done', 'the gate finds it there too');
+});
+
+test('the done gate refuses a merge that landed only in the branch the main checkout has open, naming the declared base', () => {
+  const { hub, sha } = declaredBaseFixture(landedGateProfile());
+  jarl(hub, 'base', 'tool', 'release');
+  assert.match(said(hub, 'merged', '1', '--sha', sha, '--keep'), /MERGE WITHOUT THE BASE — [0-9a-f]+ does not contain release as it stands/);
+  readyToClose(hub);
+  const out = refuses(hub, 'set', '1', 'done', 'landed in main');
+  assert.match(out, new RegExp(`^1 records Merged ${sha}, which is not in the base \\(release in [^)]*tool\\)`), out);
+  assert.match(out, /\njarl\.mjs merged "<ids>" --sha "<sha>"\n$/, out);
+});
+
+test('the cleanup after a merge keeps the declared base when an issue is leased on it, whatever branch the main checkout has open', () => {
+  const { hub, tool } = declaredBaseFixture();
+  git(tool, 'checkout', '-q', '-b', 'integration', 'main');
+  commit(tool, 'i.txt', 'i\n');
+  git(tool, 'checkout', '-q', 'main');
+  jarl(hub, 'new', 'issue two', '--repo', '../tool', '--acceptance', 'it works');
+  jarl(hub, 'set', '2', 'in-progress', 'start', '--branch', 'integration', '--worker', 'w-two');
+  jarl(hub, 'base', 'tool', 'integration');
+  git(tool, 'merge', '-q', '--no-ff', '-m', 'merge integration', 'integration');
+  const out = JSON.parse(run(hub, ['merged', '2', '--sha', git(tool, 'rev-parse', 'HEAD'), '--json']).stdout);
+  assert.deepEqual(out.cleanup.map((c) => [c.branch, c.kept]), [['integration', 'it is the base or a release branch']]);
+  assert.equal(git(tool, 'rev-parse', '--verify', '--quiet', 'refs/heads/integration').length > 0, true, 'the declared base is still there');
 });
 
 test('a squash merge is named a squash or rebase merge, not a merge without the branch', () => {
