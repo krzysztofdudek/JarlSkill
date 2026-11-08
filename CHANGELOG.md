@@ -59,6 +59,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Every acceptance line now starts with how it will be proved: `[test]`, `[check]`, `[compare]`, `[read]` or `[owner]`. A line without one is refused when you write it. A task cannot be started until it has at least one line.
+- A task closes when each line has what its method asks. A test needs a proof row from the worker and one from someone else. A read line needs an approve and no row.
+- A proof row now names the line it proves. If the text of that line changes, the row stops counting for it.
+- A requested change now holds until the work goes back or a new commit lands. An approve from someone else no longer clears it.
+- Jarl keeps the full old text of the lines when they change, and can show them as they were when the work started.
 - Which reviews can close a task is set by the loop. By default any reviewer who is not the task's worker counts, whatever model it runs on, and the message after a review says plainly whether the task can now be closed. A loop can ask instead for a reviewer on another model than the worker's, or on one at least as strong, and then a review that does not meet it, or that does not say which model gave it, cannot close the task. The line after such a review gives the review call that names a model, instead of pointing to closing the task, and the merge queue lists such a task as waiting, with what is missing, until a review that meets the rule is given.
 - A task worked on its own branch can be closed only after its merge is recorded. Before, Jarl closed it without one and then flagged it as closed wrongly. A task without a branch closes as before.
 - A new loop cannot use the words Person and Check when for fields of its own, or promise and wait for kinds of its own, because Jarl now uses them itself. A loop that already uses them keeps working as before. Jarl's own promises and waits are off there, as they are in any loop whose profile lists its own kinds.
