@@ -90,6 +90,24 @@ test('a ruling shown as made under another is marked when the one it names is su
   assert.equal(live.find((d) => d.slug === 'pick-a').underNotInForce, 'superseded by new-mandate');
 });
 
+test('--under refuses a rule that has ended, by its date or by its issue closing, and leaves it out of the rulings it names', () => {
+  const root = loop({ via: 'cli' });
+  mandate(root);
+  jarl(root, 'new', 'the work the rule is for', '--acceptance', 'it works');
+  jarl(root, 'decide', 'issue-rule', 'Run the long check on this issue.', '--by', 'jarl', '--under', 'standing-mandate', '--applies-to', 'loop', '--until', '1');
+  jarl(root, 'decide', 'live-rule', 'Run the short check everywhere.', '--by', 'jarl', '--under', 'standing-mandate', '--applies-to', 'loop');
+  writeFileSync(join(root, '.jarl', 'decisions.md'), `${decisionsText(root)}\n## 2026-01-01 · dated-rule\nWritten by hand.\n\n**Applies to:** loop · until 2026-01-02\n**By:** jarl\n`);
+  jarl(root, 'set', '1', 'dropped', 'not needed');
+  const before = decisionsText(root);
+  for (const ended of ['issue-rule', 'dated-rule']) {
+    const said = refuses(root, 'decide', 'x-1', 'Text.', '--by', 'jarl', '--under', ended);
+    assert.match(said, new RegExp(`--under "${ended}" is not a ruling in force of this loop; the rulings in force: standing-mandate, live-rule\\n`), `${ended}: refused, and the list holds only the rulings in force`);
+    assert.match(said, /--under "<a-ruling-in-force>"/, `${ended}: the refusal ends with the form`);
+  }
+  assert.equal(decisionsText(root), before, 'nothing was written');
+  assert.match(jarl(root, 'decide', 'x-2', 'Text.', '--by', 'jarl', '--under', 'live-rule'), /under live-rule/, 'a rule that holds is taken');
+});
+
 test('--under on a loop with no ruling in force is refused and says there is none', () => {
   const root = loop({ via: 'cli' });
   assert.match(refuses(root, 'decide', 'x-1', 'Text.', '--under', 'standing-mandate', '--by', 'coordinator'), /the rulings in force: \(none\)/);

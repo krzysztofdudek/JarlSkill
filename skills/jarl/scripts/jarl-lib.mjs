@@ -34,7 +34,7 @@ export { cmdQueue, renderQueue } from './lib/queue.mjs';
 export { OWNER_HOLDER, JARL_HOLDER, BALL_SHOWN, holderOf, ROW_SOURCES, ballRows, cmdNextAs, renderNextAs, askerSection } from './lib/ball.mjs';
 export { cmdReview } from './lib/review.mjs';
 export { BRIEF_ROLES, cmdBrief, renderBrief } from './lib/brief.mjs';
-export { OWNER_LINE_SHAPE, needOwnerLines, ownerLines, ownerLineStates, ownerLineRefusal, ownerLineNotes, cmdTick } from './lib/owner-lines.mjs';
+export { OWNER_LINE_SHAPE, needOwnerLines, ownerLines, ownerLineStates, ownerLineRefusal, ownerLineNotes, cmdTick, cmdRetractTick } from './lib/owner-lines.mjs';
 export { cmdChangelog } from './lib/changelog.mjs';
 export { findingsOf, reportDirOf, cmdImport, cmdSources, renderStatus, renderImport, renderSources, renderList } from './lib/import.mjs';
 export { RESUME_LOG_LINES, RESUME_READY, cmdResume, renderResume, cmdHandoffRead, HANDOFF_TEXT, cmdHandoffWrite, cmdReport } from './lib/resume.mjs';

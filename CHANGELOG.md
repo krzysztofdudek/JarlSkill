@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - The owner can close chosen tasks without a review, by a decision of his that names them and keeps his own words. Nobody else can. The decision counts until the task is sent back, reopened or its code changes, and the status counts such tasks apart from reviewed ones. The first such decision moves the loop to format 3.
 - A note written on a task can be taken back, as an evidence row can, with who took it back and why. The issue view that a worker reads leaves a retracted note out, and the full view shows it struck through.
+- The owner can take back a sign-off he gave by mistake on one step he checks himself, and say why. The task then waits for his sign-off on that step again, and nothing else is undone.
 - Every part of an issue's description can now be corrected, including its tier, its kind and who found it, and the record keeps who changed it and what it said before. What happened to an issue, such as its test results, reviews and merges, is never edited, only taken back or replaced.
 - You can ask Jarl what is waiting on one person: the owner's open questions, or the next step of every task for whoever runs the loop, each with the command that takes it. The status and the resume of a loop can end with that list. Work on code that waits for a review shows as one line, cut into groups one reviewer may take: the tasks built together on one branch, at most four to a group and named by their branch, and every other task alone. The line comes with the question that asks the owner to start a fresh session if no reviewer can be raised; once that question is asked, the work shows on the owner's list.
 - A ruling made by the jarl or a coordinator can now name the ruling it rests on, such as the owner's mandate. The name is shown with the ruling in the list of rulings and in the resume, and a name that is not a ruling in force is refused.
@@ -103,6 +104,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A findings file, a profile or a goal saved by an editor that puts a byte order mark at the start, as Windows editors do, is now read like any other. Before, a findings file saved that way was refused as not JSON.
 - An answer to an item waiting for the owner's approval must start with a word that approves or rejects it, such as yes or reject. Any other answer is refused, so it is always clear what the owner decided.
 - Taking back a review, a test result or a note in a loop that an older Jarl wrote no longer undoes the update of that task's repository field. Before, that one task kept the old form while every other task was updated.
+- Moving a task to another status with your name given, in a loop an older Jarl wrote, no longer undoes the update of that task's repository field. Before, the moved task kept the old form.
+- A finished task whose branch was deleted after its merge stays finished when a branch with the same name is made again later. Before, the task could show as missing its test result and its review.
+- A decision can no longer be recorded as resting on a rule that has ended, and the list of rulings in force shown when it is refused leaves ended rules out. Before, such a decision was taken and then shown as resting on a ruling not in force.
+- When a coordinator's part of the backlog is in progress, the tasks that belong to no part count as one more part. Starting work on any task that names neither its files nor its resources is then refused, as it is between two coordinators' parts.
+- A tool built on Jarl's record library can now name who changed a task's tags, priority, files or source, and the log shows that name.
+- Changing a long Where of a task now keeps only its first 120 characters and its length in the log, as a changed section does. Before, the whole old text went into the log.
 
 ## [6.2.0] - 2026-10-19
 

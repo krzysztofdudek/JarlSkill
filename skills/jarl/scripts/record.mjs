@@ -143,9 +143,12 @@ export function newIssue(root, title, opts = {}) { return write(root, () => L.cm
 export function setStatus(root, ids, status, why, opts = {}) {
   return write(root, () => L.cmdSetStatus(root, ids, status, why, opts));
 }
-// A field the profile declares (Kind and Tier too, when it declares them), checked against its values. A change of the
-// description is logged with the old value, and with its writer when opts.by names one (setField, setBody, setRepo,
-// setAfter); setTags, setPriority, setFiles and setSource take no opts, so their changes are logged with no writer.
+// A field the profile declares (Kind and Tier too, when it declares them), checked against its values; and the tool's
+// own Tags, Priority, Files and Source by those names, each written as the command line's field writes it (Tags and Files
+// a whole comma list, Priority 1, 2 or 3, Source <report-dir#finding-id> refs). A change of the description is logged
+// with the old value, and with its writer when opts.by names one (setField, setBody, setRepo, setAfter); setTags,
+// setPriority, setFiles and setSource take no opts, so their changes are logged with no writer, and a caller that names
+// one writes those four fields through setField.
 export function setField(root, ids, field, value, opts = {}) {
   return write(root, () => L.cmdSetField(root, ids, field, value, opts));
 }
@@ -196,7 +199,7 @@ export function ask(root, question, opts = {}) { return write(root, () => L.cmdA
 // once the entry is in the graph's log (the **Type log:** and **Rule log:** fields a writer adds to the ruling).
 export function answer(root, id, text) { return write(root, () => L.cmdAnswer(root, id, text)); }
 // A free note for the journal. A line that reads as a filing, a move, a round, a verdict, a retraction, an evidence row, a
-// branch tip, a merge, a CI state, a body change or the owner's tick of an acceptance line is refused and names the
+// branch tip, a merge, a CI state, a body change, the owner's tick of an acceptance line or its retraction is refused and names the
 // operation that writes it.
 export function appendLog(root, event) {
   return write(root, () => { L.need(event, 'log requires "<text>"', () => (['jarl.mjs', 'log', '<text>'])); L.appendNote(root, event); return { logged: event }; });

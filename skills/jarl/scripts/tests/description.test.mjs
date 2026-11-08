@@ -83,6 +83,35 @@ test('the record library logs the writer its options name, and no author when th
   assert.equal(lastLine(root), '1 field Source · r/x#1 · was (none)');
 });
 
+test('the record library writes Tags, Priority, Files and Source through setField with the writer its options name', () => {
+  const root = profiledLoop();
+  for (const [field, value, line] of [
+    ['Tags', 'x, y', '1 field Tags · x, y · was (none) · by composer-x-architect'],
+    ['Priority', '3', '1 field Priority · 3 · was 2 · by composer-x-architect'],
+    ['Files', 'a.mjs, b.mjs', '1 field Files · a.mjs, b.mjs · was (none) · by composer-x-architect'],
+    ['Source', 'r/x#1', '1 field Source · r/x#1 · was (none) · by composer-x-architect'],
+  ]) {
+    assert.deepEqual(R.setField(root, '1', field, value, { by: 'composer-x-architect' }), { id: '1', field, value }, field);
+    assert.equal(lastLine(root), line, field);
+  }
+  R.setField(root, '1', 'Priority', '1');
+  assert.equal(lastLine(root), '1 field Priority · 1 · was 3', 'with no writer named, the line names none');
+  assert.throws(() => R.setField(root, '1', 'Priority', '7', { by: 'composer-x-architect' }), /Priority must be one of: 1, 2, 3/);
+});
+
+test('a change of Where logs at most the first 120 characters of what it held, with its length when it was longer', () => {
+  const root = profiledLoop();
+  const long = `${'a long place '.repeat(20)}end`;
+  jarl(root, 'field', '1', 'Where', long);
+  jarl(root, 'field', '1', 'Where', 'a short place', '--by', 'w-one');
+  assert.equal(lastLine(root), `1 field Where · a short place · was ${long.slice(0, 120)}… (${long.length} characters) · by w-one`);
+  jarl(root, 'field', '1', 'Where', 'another place');
+  assert.equal(lastLine(root), '1 field Where · another place · was a short place', 'a short value is kept whole');
+  jarl(root, 'field', '1', 'Where', long);
+  jarl(root, 'field', '1', 'Where', '--clear');
+  assert.equal(lastLine(root), `1 field Where · (cleared) · was ${long.slice(0, 120)}… (${long.length} characters)`, 'a cleared one too');
+});
+
 test('field logs the old value and who changed it on a list of ids, an added and a removed item, and a cleared field', () => {
   const root = profiledLoop();
   jarl(root, 'field', '1,2', 'Priority', '3', '--by', 'coord');

@@ -2,10 +2,10 @@
 // of the goal's Coordinators line. An issue is in one slice at most, and the views say which coordinator runs which slice.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { jarl, refuses, run, skillText, loop as makeLoop } from './helpers.mjs';
-import { fileAsFormatTwo, formatTwoJarl } from './old-jarl.mjs';
+import { fileAsBefore, fileAsFormatTwo, formatTwoJarl } from './old-jarl.mjs';
 
 const loop = () => makeLoop({ prefix: 'jarl-slice-', via: 'cli', dotGit: false });
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
@@ -243,7 +243,7 @@ test('with more than one slice in play, a lease on an issue that declares no Fil
   jarl(root, 'new', 'no slice, bare');                                         // 3
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   for (const id of ['1', '3']) {
-    assert.match(refuses(root, 'set', id, 'in-progress', 'go', '--worker', 'w', '--branch', `jarl/${id}`), new RegExp(`^${id} declares no Files or Resources, and 2 slices are in play \\(slice:odin, slice:thor\\): across slices only leases hold, and a lease holds only what its issue declares — declare them first, its files or its resources \\(jarl\\.mjs field ${id} Resources "<resource-name>"\\)\njarl\\.mjs field ${id} Files "<paths>"\njarl\\.mjs set "<ids>" "<status>" "<why>" --worker "<the-new-worker>" --branch "<worker-branch>"\n$`));
+    assert.match(refuses(root, 'set', id, 'in-progress', 'go', '--worker', 'w', '--branch', `jarl/${id}`), new RegExp(`^${id} declares no Files or Resources, and 3 slices are in play \\(slice:odin, slice:thor, the issues in no slice\\): across slices only leases hold, and a lease holds only what its issue declares — declare them first, its files or its resources \\(jarl\\.mjs field ${id} Resources "<resource-name>"\\)\njarl\\.mjs field ${id} Files "<paths>"\njarl\\.mjs set "<ids>" "<status>" "<why>" --worker "<the-new-worker>" --branch "<worker-branch>"\n$`));
   }
   assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), log, 'nothing was written');
   jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'w2', '--branch', 'jarl/2');
@@ -286,6 +286,42 @@ test('a refused escalation writes nothing: the format is raised only after every
   assert.equal(profile(), before, 'the profile line holds the format it held');
   assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), log);
   assert.equal(json(root, 'profile').format, 2);
+});
+
+test('a refused question in a format-1 loop writes nothing and raises nothing, whatever line its write would have raised for', () => {
+  const root = loop();
+  jarl(root, 'goal', '--set', 'Coordinators: odin');
+  const id = fileAsBefore(root, 'odin first', { tags: 'slice:odin', files: 'a.mjs' });
+  const dir = join(root, '.jarl');
+  const before = () => ({ files: readdirSync(dir).sort(), log: readFileSync(join(dir, 'log.md'), 'utf8') });
+  const was = before();
+  assert.equal(existsSync(join(dir, 'profile.json')), false, 'the loop is in format 1');
+  for (const [what, args, why] of [
+    ['an escalation with one option', ['ask', 'which first?', '--kind', 'escalation', '--slice', 'odin', '--option', 'only: one choice'], /at least two options/],
+    ['an escalation with --by and one option', ['ask', 'which first?', '--kind', 'escalation', '--issue', id, '--option', 'only: one choice', '--by', 'odin'], /at least two options/],
+    ['a rule proposal with no scope', ['ask', 'run the long check', '--kind', 'rule'], /a rule is proposed with whom it applies to/],
+    ['a rule proposal that names an issue', ['ask', 'run the long check', '--kind', 'rule', '--applies-to', 'loop', '--issue', id], /holds no issue back/],
+  ]) {
+    assert.match(refuses(root, ...args), why, what);
+    assert.deepEqual(before(), was, `${what}: no file of the record is added or changed, the profile included`);
+  }
+});
+
+test('issues in no slice count as one more slice in play: beside one coordinator\'s slice, a lease on an issue that declares nothing is refused', () => {
+  const root = loop();
+  jarl(root, 'goal', '--set', 'Coordinators: odin');
+  jarl(root, 'new', 'odin bare', '--tags', 'slice:odin');   // 1
+  jarl(root, 'new', 'the jarl\'s, bare');                    // 2
+  const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
+  for (const id of ['1', '2']) {
+    assert.match(refuses(root, 'set', id, 'in-progress', 'go', '--worker', 'w', '--branch', `jarl/${id}`), new RegExp(`^${id} declares no Files or Resources, and 2 slices are in play \\(slice:odin, the issues in no slice\\): across slices only leases hold`), `issue ${id}`);
+  }
+  assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), log, 'nothing was written');
+  // Issues in no slice alone are one slice: the lease goes through as before.
+  const alone = loop();
+  jarl(alone, 'new', 'the jarl\'s, bare');
+  jarl(alone, 'new', 'another of the jarl\'s, bare');
+  jarl(alone, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1');
 });
 
 test('the issues behind an issue an escalation holds wait on the jarl, not on the owner', () => {

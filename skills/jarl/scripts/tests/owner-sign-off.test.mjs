@@ -9,8 +9,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { FINDINGS } from './findings.mjs';
-import { formatTwoJarl } from './old-jarl.mjs';
-import { jarl, refuses, loop as makeLoop } from './helpers.mjs';
+import { formatTwoJarl, oldJarl } from './old-jarl.mjs';
+import { jarl, refuses, run, loop as makeLoop } from './helpers.mjs';
 import * as R from '../record.mjs';
 import * as L from '../jarl-lib.mjs';
 
@@ -133,6 +133,60 @@ test('tick takes the owner\'s word on an owner line whose material is there, onc
   jarl(root, 'tick', '1', '2', '--by', 'the Owner');
   assert.match(refuses(root, 'tick', '1', '2', '--by', 'owner'), /acceptance line 2 of 1 is ticked already, by owner at \d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
   assert.match(refuses(root, 'log', '1 tick · line 2 · by owner · [owner] x · material: y · check: z'), /reads as a tick line, .*jarl\.mjs tick "<id>" "<line>" --by "<the-owner-himself>"/);
+});
+
+test('retract tick-<n> takes back the owner\'s tick of one line, given by mistake, with who and why: done waits for his tick again, and every other record stands', () => {
+  const root = signOffLoop();
+  produce(root);
+  proveAndApprove(root);
+  jarl(root, 'tick', '1', '2', '--by', 'owner');
+  assert.match(refuses(root, 'tick', '1', '2', '--by', 'owner'), /is ticked already, by owner at .*; a tick given by mistake is taken back with jarl\.mjs retract 1 tick-2 "<why>" --by "<the-owner-himself>"/);
+  const before = logText(root);
+  for (const [args, why] of [
+    [['retract', '1', 'tick-2', 'a mistake'], /^retract of a tick needs --by owner.*\njarl\.mjs retract "<id>" "<review-n-or-note-n>" "<why>" --by "<the-owner-himself>"\n$/s],
+    [['retract', '1', 'tick-2', 'a mistake', '--by', 'jarl'], /^only the owner takes back his tick of an owner line \(got "jarl"\), as only he ticks it\njarl\.mjs retract "<id>" "<review-n-or-note-n>" "<why>" --by "<the-owner-himself>"\n$/],
+    [['retract', '1', 'tick-1', 'a mistake', '--by', 'owner'], /^acceptance line 1 of 1 is not marked as one only the owner ticks — the lines whose tick counts: 2\njarl\.mjs retract "<id>" "<review-n-or-note-n>" "<why>" --by "<who>"\n$/],
+    [['retract', '1', 'tick-0', 'a mistake', '--by', 'owner'], /retract takes the owner's tick of an acceptance line as tick-<n>, n its number counted from 1 \(got "tick-0"\)/],
+    [['retract', '2', 'tick-1', 'a mistake', '--by', 'owner'], /acceptance line 1 of 2 is not marked as one only the owner ticks — no owner line of 2 has a tick that counts/],
+    [['retract', '1', 'tick-x', 'a mistake', '--by', 'owner'], /retract takes review \(the newest approve\) or the number of an evidence row, note-<n> for a note, or tick-<n> for the owner's tick of acceptance line n, got "tick-x"/],
+  ]) {
+    assert.match(refuses(root, ...args), why, args.join(' '));
+    assert.equal(logText(root), before, `${args.join(' ')}: nothing was written`);
+  }
+  assert.equal(jarl(root, 'retract', '1', 'tick-2', 'I ticked the cut before I watched the end', '--by', 'owner').replace(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/g, '<at>'), "1 the owner's tick of acceptance line 2 of <at> taken back by owner at <at>");
+  assert.match(logText(root), /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)? · 1 tick retract · line 2 · by owner · I ticked the cut before I watched the end · \[owner\] the first cut reads well · material: renders\/cut\.txt · check: the pacing of the opening and the captions$/m);
+  assert.match(jarl(root, 'show', '1'), /^owner's sign-off: acceptance line 2 not ticked \(his tick of \d{4}-\d{2}-\d{2} \d{2}:\d{2} was taken back by owner \d{4}-\d{2}-\d{2} \d{2}:\d{2}: I ticked the cut before I watched the end\) — he reviews renders\/cut\.txt/m);
+  assert.match(refuses(root, 'set', '1', 'done', 'finished'), /^1 waits for the owner's sign-off on acceptance line 2, "the first cut reads well"/m);
+  L.resetCaches();
+  const g = L.gateState(root, '1');
+  assert.deepEqual([g.rowsSince, g.approved], [1, true], 'the row and the approve stand');
+  assert.match(refuses(root, 'retract', '1', 'tick-2', 'again', '--by', 'owner'), /^acceptance line 2 of 1 has no tick that counts — no owner line of 1 has a tick that counts\n/);
+  assert.match(run(root, ['verify']).stdout, /^(?![\s\S]*tick retract)/, 'verify places the line');
+  assert.match(refuses(root, 'log', '1 tick retract · line 2 · by owner · why · [owner] x · material: y · check: z'), /reads as a tick retract line, .*\njarl\.mjs retract "<id>" "<tick-n>" "<why>" --by "<the-owner-himself>"\n$/s);
+  // The line is written only where a tick is, in record format 3: both frozen readers refuse that loop whole, with their
+  // own message, and never read a taken-back tick as one that counts.
+  for (const command of ['status', 'list']) {
+    const two = formatTwoJarl(root, command, {});
+    assert.equal(two.ok, false, command);
+    assert.match(two.error, /written for record format 3, and this Jarl reads format 1, 2 — nothing was read or written; the reader needs a Jarl that knows format 3/, command);
+    const one = oldJarl(root, command, {});
+    assert.equal(one.ok, false, command);
+    assert.match(one.error, /written for record format 3, and this Jarl reads format 1 — /, command);
+  }
+  jarl(root, 'tick', '1', '2', '--by', 'owner');
+  jarl(root, 'set', '1', 'done', 'finished');
+  assert.match(refuses(root, 'retract', '1', 'tick-2', 'too late', '--by', 'owner'), /^1 is done: a tick it was closed on is taken back once it is open again\n/);
+});
+
+test('retract tick-<n> in a loop with no owner line is refused and raises nothing', () => {
+  const root = loop();
+  jarl(root, 'new', 'plain', '--acceptance', 'it works');
+  const format = () => (existsSync(profileFile(root)) ? JSON.parse(readFileSync(profileFile(root), 'utf8')).format : 1);
+  const was = format();
+  const before = logText(root);
+  assert.match(refuses(root, 'retract', '1', 'tick-1', 'a mistake', '--by', 'owner'), /acceptance line 1 of 1 is not marked as one only the owner ticks/);
+  assert.equal(format(), was, 'the format is as it was');
+  assert.equal(logText(root), before, 'nothing was written');
 });
 
 test('next --as puts an owner line on whoever produces its material, then on the owner with the material and the instruction, and what waits on it with After stays unoffered', () => {
