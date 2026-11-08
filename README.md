@@ -1,10 +1,10 @@
-<p align="center"><img src="assets/social-card.png" alt="Jarl: on a feature branch, the agent files everything it sees as an issue, gives each issue a worker in its own worktree, and closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough." width="720"></p>
+<p align="center"><img src="assets/social-card.png" alt="Jarl: on a feature branch, the agent files everything it sees as an issue, gives each issue a worker in its own worktree, and closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough, or the owner waives the review." width="720"></p>
 
 # Jarl
 
 **Your feature branch has more issues than one agent can hold in its head, so it fixes one, forgets two, and loses the third in the diff.** Jarl makes the agent direct a crew instead of working alone.
 
-On a feature branch, the agent files everything it sees as an issue, gives each issue a worker in its own worktree, and closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough.
+On a feature branch, the agent files everything it sees as an issue, gives each issue a worker in its own worktree, and closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough, or the owner waives the review.
 
 ## What you install
 
@@ -123,7 +123,7 @@ Read more: [The skill](skills/jarl/SKILL.md) · [The record](skills/jarl/referen
 
 ## The Yggdrasil family
 
-**Jarl** is the loop. **[Yggdrasil](https://github.com/krzysztofdudek/Yggdrasil)** is the law. **[Grain](https://github.com/krzysztofdudek/Grain)** is the survey. Those three are the core, and they ship under one version number: one set of tools built and tested against each other. Each of them works alone. Where a repository has a check, the check decides what lands in a Jarl loop: a fresh reviewer can only stop a change, never make a failing check pass, and its word is recorded as testimony. A Jarl loop in a repository with no check lands on testimony alone, and says so. Law that stays inside one component is raised freely by the agent working it. Law or decisions that reach a whole type of code are shared vocabulary: the agent proposes them and they run as advice at once, and the client, the one person the whole system answers to, admits them in one batch when the work closes. Only the client lowers or vetoes law. The core's shared machine contracts are registered on [one page](https://krzysztofdudek.github.io/Yggdrasil/family-contracts). The family is developed in the open in [Althing](https://github.com/krzysztofdudek/Althing): its releases, research and rulings.
+**Jarl** is the loop. **[Yggdrasil](https://github.com/krzysztofdudek/Yggdrasil)** is the law. **[Grain](https://github.com/krzysztofdudek/Grain)** is the survey. Those three are the core, and they ship under one version number: one set of tools built and tested against each other. Each of them works alone. Where a repository has a check, the check decides what lands in a Jarl loop: a fresh reviewer can only stop a change, never make a failing check pass, and its word is recorded as testimony. A Jarl loop in a repository with no check lands on testimony alone, and says so. Law that stays inside one component is raised freely by the agent working it. Law or decisions that reach a whole type of code are shared vocabulary: the agent proposes them and they run as advice at once, and the client — the one person the whole system answers to — admits them in one batch when the work closes. Only the client lowers or vetoes law. The core's shared machine contracts are registered on [one page](https://krzysztofdudek.github.io/Yggdrasil/family-contracts). The family is developed in the open in [Althing](https://github.com/krzysztofdudek/Althing): its releases, research and rulings.
 
 Start at the step where it hurts.
 

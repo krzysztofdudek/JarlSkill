@@ -112,6 +112,21 @@ test('a change of Where logs at most the first 120 characters of what it held, w
   assert.equal(lastLine(root), `1 field Where · (cleared) · was ${long.slice(0, 120)}… (${long.length} characters)`, 'a cleared one too');
 });
 
+test('a change of Where logs at most the first 120 characters of the new value too, with its length when it is longer', () => {
+  const root = profiledLoop();
+  const long = `${'a long place '.repeat(20)}end`;
+  const longer = `${'another long place '.repeat(20)}end`;
+  jarl(root, 'field', '1', 'Where', 'a short place');
+  jarl(root, 'field', '1', 'Where', long, '--by', 'w-one');
+  assert.equal(lastLine(root), `1 field Where · ${long.slice(0, 120)}… (${long.length} characters) · was a short place · by w-one`);
+  jarl(root, 'field', '1', 'Where', longer);
+  assert.equal(lastLine(root), `1 field Where · ${longer.slice(0, 120)}… (${longer.length} characters) · was ${long.slice(0, 120)}… (${long.length} characters)`, 'both values are bounded');
+  const exact = 'x'.repeat(120);
+  jarl(root, 'field', '1', 'Where', exact);
+  assert.equal(lastLine(root), `1 field Where · ${exact} · was ${longer.slice(0, 120)}… (${longer.length} characters)`, 'a value of exactly 120 characters is kept whole');
+  assert.equal(lastLine(root).includes(longer.slice(130)), false, 'the rest of a long value is not in the log');
+});
+
 test('field logs the old value and who changed it on a list of ids, an added and a removed item, and a cleared field', () => {
   const root = profiledLoop();
   jarl(root, 'field', '1,2', 'Priority', '3', '--by', 'coord');

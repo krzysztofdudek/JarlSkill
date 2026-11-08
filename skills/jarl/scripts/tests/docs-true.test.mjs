@@ -96,6 +96,26 @@ test('the help text writes every flag of a command in that command\'s synopsis, 
   }
 });
 
+test('the brief help and the commands reference say the same of a finding the issue file has no entry for', () => {
+  const help = mcp.usageBlocks(USAGE).brief.description;
+  const md = skillText('references/commands.md');
+  const row = md.split('\n').find((l) => l.startsWith('| `brief <id>'));
+  assert.ok(row, 'the reference has the brief row');
+  for (const [name, text] of [['help', help], ['reference', row]]) {
+    assert.match(text, /log's line holds/, `${name} says the finding shows as the log's line holds it`);
+    assert.match(text, /first line and a count of the lines left out/, `${name} says what is shown of a text of several lines`);
+  }
+  assert.match(help, /a finding the issue file has no entry for: it shows as the log's line holds it/, 'the help names the finding whose file entry is gone');
+  assert.match(row, /where the issue's Reviews section holds that verdict's entry, else as the log's line holds them/, 'the reference names the same case');
+  assert.doesNotMatch(help, /every part whole\./, 'the help does not claim every part is whole without the exception');
+});
+
+test('the repositories reference ties a takeover to the goal\'s limit, not to a fixed number of rounds', () => {
+  const md = skillText('references/repositories.md');
+  assert.doesNotMatch(md, /takeover after three rounds/i);
+  assert.match(md, /A takeover, after as many red rounds as the goal's limit allows \(three unless it says otherwise\), is a handover too\./);
+});
+
 test('ask takes --kind as an option that defaults to stuck, as the reference writes it', () => {
   const { dir } = gitRepo({ prefix: 'jarl-docs-ask-' });
   jarl(dir, 'init', 'g');
@@ -291,7 +311,8 @@ test('the README\'s opening says what closes an issue as the done gate does, and
   assert.doesNotMatch(readme, /closes nothing without recorded evidence and a fresh reviewer/, 'an approval of a fresh reviewer is needed for code, not for every issue');
   const opening = readme.split('\n').filter((l) => l.includes('closes nothing without recorded evidence'));
   assert.equal(opening.length, 2, 'the picture\'s text and the opening line say it');
-  for (const l of opening) assert.match(l, /closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough\./);
+  for (const l of opening) assert.match(l, /closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough, or the owner waives the review\./);
+  assert.match(skillText('references/profile.md'), /The owner may close chosen issues without a review/, 'the waiver the opening names is described in the profile reference');
   const contract = readme.split('\n').find((l) => l.includes('record.mjs'));
   assert.ok(contract, 'the README names the record library');
   assert.equal(/under the contract `(jarl-record\/\d+)`/.exec(contract)?.[1], RECORD_API, 'the line names the contract the library holds as the current one');

@@ -523,12 +523,12 @@ const logValue = (v) => String(v ?? '').replace(/\r\n?/g, '\n').split('\n').map(
 const byPart = (by) => (by ? ` · by ${by}` : '');
 // The line a change of a header field writes, `<id> field <Name> · <value> · was <old value>[ · by <who>]`, or null when
 // the field already holds the value: a change to nothing writes no line. Where is free text of any length, so what it
-// held is kept as a section's first line is: at most EXCERPT_CHARS of it, and its length when it is cut.
+// held is kept as a section's first line is: at most EXCERPT_CHARS of it, and its length when it is cut. The value it
+// holds now is kept the same way.
 function fieldLine(id, name, value, was, by) {
   if (fieldText(value) === fieldText(was)) return null;
-  const held = fieldText(was);
-  const old = name === 'Where' && held.length > EXCERPT_CHARS ? `${logValue(held.slice(0, EXCERPT_CHARS))}… (${held.length} characters)` : logValue(was);
-  return `${id} field ${name} · ${fieldText(value) === '' ? '(cleared)' : logValue(value)} · was ${old}${byPart(by)}`;
+  const shown = (v) => (name === 'Where' && fieldText(v).length > EXCERPT_CHARS ? `${logValue(fieldText(v).slice(0, EXCERPT_CHARS))}… (${fieldText(v).length} characters)` : logValue(v));
+  return `${id} field ${name} · ${fieldText(value) === '' ? '(cleared)' : shown(value)} · was ${shown(was)}${byPart(by)}`;
 }
 // The most of a section's first line a body line keeps: the line stays one short line whatever the section holds.
 const EXCERPT_CHARS = 120;

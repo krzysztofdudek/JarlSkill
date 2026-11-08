@@ -1,4 +1,4 @@
-// A ruling recorded as the owner's carries his own words; a ruling without an author is the coordinator's.
+// A ruling recorded as the owner's carries his own words; a ruling by another name never takes them.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -42,7 +42,7 @@ test('show prints the owner\'s words beside a ruling that settles the issue', ()
   assert.match(jarl(root, 'show', '1'), /Ruling rule-a \(by owner\): Keep the flag\. · the owner's words: "Fine, keep it\."/);
 });
 
-test('a ruling with no --by is the coordinator\'s, never the owner\'s', () => {
+test('a ruling by the coordinator is recorded under that name with no quote, never as the owner\'s', () => {
   const root = loop({ via: 'cli' });
   assert.match(jarl(root, 'decide', 'rule-a', 'Provisional.', '--by', 'coordinator'), /decided rule-a · by coordinator/);
   const [d] = loadDecisions(root);

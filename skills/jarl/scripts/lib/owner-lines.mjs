@@ -213,7 +213,7 @@ export function cmdRetractTick(root, rawId, entry, reason, flags = {}) {
   need(n > 0, `retract takes the owner's tick of an acceptance line as tick-<n>, n its number counted from 1 (got "${entry}") — ${which}`, () => ({ replace: String(entry), value: hole('<tick-n>') }));
   const s = states.find((x) => x.n === n);
   need(s, `acceptance line ${n} of ${issue.id} is not marked as one only the owner ticks — ${which}`, () => ({ replace: String(entry), value: hole('<tick-n>') }));
-  need(!loop.profile.is(issue.status, 'terminal'), `${issue.id} is ${issue.status}: a tick it was closed on is taken back once it is open again`, () => ({ first: ['jarl.mjs', 'set', issue.id, hole('<status>'), '<why>'] }));
+  need(!loop.profile.is(issue.status, 'terminal'), `${issue.id} is ${issue.status}: opening it again spends every tick it was closed on; a tick he gives after that is taken back while the issue is open`, () => ({ first: ['jarl.mjs', 'set', issue.id, hole('<status>'), hole('<why>')] }));
   need(s.tick, `acceptance line ${n} of ${issue.id} has no tick that counts${s.spent ? `: his tick of ${s.spent.at} was spent when the work was sent back or started again` : ''} — ${which}`, () => ({ replace: String(entry), value: hole('<tick-n>') }));
   needFormat(root, 'owner-line');
   const why = noSeparators(oneBreak(reason).split('\n').map((l) => l.trim()).filter(Boolean).join(' ⏎ '));

@@ -363,6 +363,25 @@ test('a takeover starts a new count: the block comes once per takeover, not on e
   assert.doesNotMatch(out, /## Takeover/);
 });
 
+test('the takeover block quotes the log with no worktree path of the machine that wrote a lease, and keeps the rest of each line', () => {
+  const root = loop();
+  const { id } = R.newIssue(root, 'a thing', { acceptance: 'it works', tier: 'standard' });
+  R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
+  const log = join(root, '.jarl', 'log.md');
+  appendFileSync(log, `- 2026-10-18 10:00 · ${id} → in-progress · go · branch jarl/001-a · model m · worker w-six · worktree /home/other/Worktrees/Repo/001-a\n`);
+  appendFileSync(log, `- 2026-10-18 10:01 · ${id} → in-progress · handover · branch jarl/001-a · worker w-seven · worktree C:\\Users\\other\\Worktrees\\Repo\\001-a\n`);
+  appendFileSync(log, `- 2026-10-18 10:02 · ${id} → in-progress · the worktree was moved · branch jarl/001-a · worker w-eight\n`);
+  R.addRound(root, id, 'red one');
+  R.addRound(root, id, 'red two');
+  const r = R.addRound(root, id, 'red three');
+  assert.ok(r.block, 'the third red round prints the takeover block');
+  assert.doesNotMatch(r.block, /home.other|Users.other|Worktrees.Repo/, 'no path of the writing machine');
+  assert.match(r.block, new RegExp(`${id} → in-progress · go · branch jarl/001-a · model m · worker w-six\\n`), 'the lease fields before the worktree stay');
+  assert.match(r.block, new RegExp(`${id} → in-progress · handover · branch jarl/001-a · worker w-seven\\n`));
+  assert.match(r.block, new RegExp(`${id} → in-progress · the worktree was moved · branch jarl/001-a · worker w-eight\\n`), 'a reason that says the word worktree is kept');
+  assert.match(readFileSync(log, 'utf8'), /worktree \/home\/other\/Worktrees\/Repo\/001-a/, 'the record itself is not changed');
+});
+
 // An in-progress issue of a kind, in a loop whose goal carries the given lines.
 // Filed with three digits and no key (fileAsBefore), as the frozen reader of format 1 reads it.
 function leased(goalLines, kind) {
