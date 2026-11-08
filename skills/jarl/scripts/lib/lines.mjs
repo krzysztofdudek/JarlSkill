@@ -121,7 +121,10 @@ export function lineStates(loop, issue, g = gateOf(loop, issue.id)) {
     const n = k + 1;
     const line = readLine(text);
     const digest = lineDigest(text);
-    const base = { n, text, digest, method: line.method, what: line.what, by: line.by, ...(line.method === 'check' ? { declared: onDeclared(loop, issue, line) } : {}) };
+    // A check on the declared command is the landing's to prove, and only while the goal declares one for the issue's
+    // repositories: with none, done asks for rows like any other mechanical line.
+    const landable = line.method === 'check' && onDeclared(loop, issue, line) && repoNames(loop.root, issue).some((name) => declaredFor(loop, name).length > 0);
+    const base = { n, text, digest, method: line.method, what: line.what, by: line.by, ...(line.method === 'check' ? { declared: landable, noneDeclared: !line.by && !landable } : {}) };
     if (line.method === 'owner') {
       const o = owner.get(n);
       return { ...base, state: o && o.tick ? 'ticked' : 'unproved', missing: o && o.tick ? null : 'the owner\'s tick' };

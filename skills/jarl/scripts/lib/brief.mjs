@@ -387,7 +387,7 @@ function assumedNotes(issue) {
 function proofToReRun(loop, issue) {
   const states = lineStates(loop, issue).filter((s) => s.method === 'test' || s.method === 'check' || s.method === 'compare');
   const rows = countedRowsOf(issue, loop);
-  return states.map((s) => ({ line: s.n, method: s.method, text: s.what, ...(s.declared ? { declared: true } : {}), rows: rows.filter((r) => r.lines.includes(s.digest)).map((r) => ({ ran: r.ran, saw: r.saw, by: r.by })) }));
+  return states.map((s) => ({ line: s.n, method: s.method, text: s.what, ...(s.declared ? { declared: true } : {}), ...(s.noneDeclared ? { noneDeclared: true } : {}), rows: rows.filter((r) => r.lines.includes(s.digest)).map((r) => ({ ran: r.ran, saw: r.saw, by: r.by })) }));
 }
 
 function issueBrief(root, loop, rawIds, role, ctx) {
@@ -436,11 +436,11 @@ function mergerBrief(root, loop, slice, ctx) {
     { what: 'the settings of the merge drivers', command: printCommand([RUNTIME, SCRIPT, 'merge-driver', 'flags'], { globals: [] }) },
     { what: 'what the branch may touch', command: tool('scope', hole('<id>'), '--branch', hole('<branch>')) },
     { what: 'a green merge', command: tool('merged', hole('<ids>'), '--sha', hole('<sha>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), ...repoFlag) },
-    { what: 'a red check, the work\'s fault', command: tool('round', hole('<id>'), hole('<text>')) },
-    { what: 'a red check, cause outside the branch', command: tool('new', hole('<what-is-red>'), '--tier', hole('<tier>')) },
-    { what: 'a landing on red, only on the jarl\'s ruling', command: tool('merged', hole('<ids>'), '--sha', hole('<sha>'), '--red', hole('<id>')) },
+    { what: 'a red, the work\'s fault', command: tool('round', hole('<id>'), hole('<text>')) },
+    { what: 'a red from outside the branch', command: tool('new', hole('<what-is-red>'), '--tier', hole('<tier>')) },
+    { what: 'a landing on red', command: tool('merged', hole('<ids>'), '--sha', hole('<sha>'), '--red', hole('<id>')) },
     { what: 'closing each issue', command: tool('set', hole('<id>'), 'done', hole('<text>')) },
-    { what: 'the in-place commit, its sha in what it printed', command: tool('evidence', hole('<id>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>')) },
+    { what: 'the in-place commit, its sha printed', command: tool('evidence', hole('<id>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>')) },
     { what: 'its changelog entries', command: tool('changelog', hole('<ids>')) },
   ];
   return {
@@ -501,7 +501,7 @@ export function cmdBrief(root, rawIds, opts = {}) {
 const DO_NOT = Object.freeze({
   worker: ['widen the scope: anything else you see goes under "Found" in your report, never into the diff', 'weaken a test, a check, a guard or a hook: if a line seems to need that, record it with the stuck command and stop', 'approve anything: a fresh examiner does'],
   reviewer: ['fix what you find', 'merge anything', 'set the scope'],
-  merger: ['edit code, or a conflict by picking a side', 'judge content or scope: a branch without a fresh approve waits, and that is not your call', 'override a red check'],
+  merger: ['edit code, or a conflict by picking a side', 'judge content or scope', 'override a red check'],
 });
 
 const FIRST_STEP = (lease) => (lease.inPlace ? 'You work in place: no branch or worktree of your own, only the files the issue declares, where they are checked out in their repository. You commit nothing: once the approve stands, the merger where one runs, else the coordinator, commits them.' : `First: in your worktree, \`git merge ${lease.repos[0]?.base ?? hole('<base-branch>')}\`; \`git status\` must be clean afterwards, and if it is not, stop and report. A platform that gave you a branch of its own name: rename it (\`git branch -m ${lease.branch ?? '<branch>'}\`), never a second branch beside it.`);
@@ -590,31 +590,33 @@ function proofLines(o) {
     ? `- ${i.id} line ${r.line} [${r.method}]: re-run ${r.rows.map((x) => `${x.ran} (saw: ${x.saw}${x.by ? `, by ${x.by}` : ''})`).join(' · ')}`
     : r.declared
       ? `- ${i.id} line ${r.line} [${r.method}]: on the declared check, which the landing proves: no row is owed`
-      : `- ${i.id} line ${r.line} [${r.method}]: no row names it: run it yourself; the worker's missing row is an Important finding`)));
+      : r.noneDeclared
+        ? `- ${i.id} line ${r.line} [${r.method}]: the goal declares no check for it, so done asks for rows: a row by the worker and one by you, each naming the line`
+        : `- ${i.id} line ${r.line} [${r.method}]: no row names it: run it yourself; the worker's missing row is an Important finding`)));
   return out.length ? out : ['- (no test, check or compare line)'];
 }
 
 function renderMerger(o, out) {
   const target = o.target ?? 'the feature branch';
-  out.push(`The merger's brief${o.slice ? ` of the slice ${o.slice}` : ''}, assembled from the record; it writes nothing. This is all you need to read to do this job.`);
+  out.push(`The merger's brief${o.slice ? ` of the slice ${o.slice}` : ''}, assembled from the record. Read nothing else for this job.`);
   out.push(...o.notes.map((n) => `note: ${n}`), '');
   section(out, 'The goal', o.goal);
   section(out, 'Where you merge', [
     `You are ${o.merger ?? 'the merger'}. Your target: ${o.target ?? o.repos.map((r) => `${r.base} in ${r.label}`).join(', ') ?? 'the branch the loop lands on'}.`,
     ...o.repos.map((r) => `Repository ${r.label} (${r.repo}), base ${r.base}${o.target ? `, target ${r.target}` : ''}.`),
     `Loop root: ${o.root}. Tool: ${RUNTIME} ${o.script} (every command below is written with both).`,
-    'One writer per target branch: only you merge into it, in a worktree of your own on that branch, never a checkout another merger uses. You write the record through the tool, under its lock; only the holder of the main checkout commits `.jarl/`, so several mergers are not several committers there.',
+    'One writer per target branch: only you merge into it, in a worktree of your own, never a checkout another merger uses. You write the record through the tool; only the holder of the main checkout commits `.jarl/`.',
     o.committed
-      ? 'The loop is committed: if you hold the main checkout, commit `.jarl/` before each merge, since a file left uncommitted in a checkout you reset is lost, and again after each landing, everything in it, in the loop\'s repository even when the merge landed in another. If you do not, you never commit `.jarl/`.'
-      : 'The loop is out of git: you never commit `.jarl/`, and a diff that touches it is reported, not merged, since git treats the ignored loop as expendable and a merge would overwrite it.',
+      ? 'The loop is committed: if you hold the main checkout, commit `.jarl/` before each merge and again after each landing, even one in another repository. If you do not, you never commit `.jarl/`.'
+      : 'The loop is out of git: you never commit `.jarl/`, and a diff that touches it is reported, not merged, since a merge would overwrite the ignored loop.',
   ]);
   section(out, 'You do not', o.doNot.map((d) => `- ${d}`));
   section(out, 'Each branch, serially', [
     '1. Read the scope and the diff. A branch without a fresh reviewer\'s approve waits; report it.',
-    `2. Merge into ${target}, in your own worktree: git, then the settings the merge-driver command below prints, then \`merge --no-ff\` and the branch. Pass the settings on every merge, never leave them to the clone's configuration. Where the repository has .yggdrasil/, add \`--yg "<command>"\` to the merge-driver call, and run \`yg log merge-resolve\` right after the merge.`,
-    '3. A conflict the drivers stopped on (a ruling or log entry both sides changed): `git merge --abort` and report. Any other conflict: resolve only when one side is plainly a superset or the hunks are independent; otherwise abort and report the files.',
+    `2. Merge into ${target}, in your own worktree: git, then the settings the merge-driver command prints, on every merge, then \`merge --no-ff\` and the branch. Where the repository has .yggdrasil/, add \`--yg "<command>"\` to the merge-driver call and run \`yg log merge-resolve\` right after.`,
+    '3. A conflict the drivers stopped on: `git merge --abort` and report. Any other: resolve only when one side is plainly a superset or the hunks are independent, else abort and report the files.',
     '4. Branches sharing no file may be merged one after another and checked once as a batch; never batch two that touch one file.',
-    '5. Run the repository\'s check on the merged result, in the foreground, with your tool\'s own timeout set for the whole run. Report after the check has finished, never before.',
+    '5. Run the repository\'s check on the merged result, in the foreground, with your tool\'s own timeout set; report only after it has finished.',
     '6. Green: the green-merge command for the issues on the branch, close each issue, then `show` it and confirm it reads done. `NO PROOF FROM THE WORKER`: done waits for the worker\'s row. `MERGE WITHOUT THE BRANCH` or `WITHOUT THE BASE`: merge and check again. `APPROVED ON ANOTHER TIP`: report the two tips.',
     '7. Changelog entries, once the batch is green: paste them under `[Unreleased]`, edited into the repository\'s register, committed as that file alone.',
     '8. An issue worked in place brings no branch, and none of these steps apply: once its approve stands, commit its declared files, a commit of their own between two merges, record the commit as a row with the in-place command, then close it.',

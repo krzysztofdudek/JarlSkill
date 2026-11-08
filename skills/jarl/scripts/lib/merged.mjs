@@ -150,10 +150,13 @@ function mergeContentNotes(root, issue, sha, repoPath) {
     if (holdsChangesOf(repo, tip, sha)) notes.push(`SQUASH OR REBASE MERGE — ${sha} does not contain the commits of ${branch} (tip ${tip.slice(0, 12)}), but holds every file the branch changed exactly as the branch has it, so the branch's work landed without its commits, and the cleanup keeps ${branch} because its tip is in no merge`);
     else notes.push(`MERGE WITHOUT THE BRANCH — ${sha} does not contain the tip of ${branch} (${tip.slice(0, 12)}) and does not hold the files the branch changed as the branch has them, so a check that ran on it did not run on the branch's work; the check runs on the merge result: merge the branch, check the result, and record that commit with ${record}`);
   }
-  // A slice with a merger of its own lands on its integration branch, which is the base this merge is read against.
+  // A slice with a merger of its own lands on its integration branch, which is the base this merge is read against, unless
+  // the commit already stands on the feature branch: that merge is the feature branch's, whatever the integration branch holds.
   const merger = sliceMerger(goalLines(readGoal(jarlDir(root))), issue);
   const integration = merger ? integrationBranch(merger.slice) : null;
-  const base = integration && git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${integration}^{commit}`]) !== null ? integration : baseOf(root, repo);
+  const feature = baseOf(root, repo);
+  const intoSlice = integration && git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${integration}^{commit}`]) !== null && !holds(sha, feature);
+  const base = intoSlice ? integration : feature;
   const baseTip = base !== branch ? git(repo, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`]) : null;
   if (baseTip && !holds(sha, baseTip) && !holds(baseTip, sha)) notes.push(`MERGE WITHOUT THE BASE — ${sha} does not contain ${base} as it stands (${baseTip.slice(0, 12)}), so the check ran on a tree the base has moved past; the check runs on the merge result: merge the base into the result, check it again, and record that commit with ${record}`);
   return notes;
