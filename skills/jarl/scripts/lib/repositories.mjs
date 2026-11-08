@@ -4,7 +4,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
 import { afterView, echoWord, fieldText, hole, jarlLine, need, noSeparators, splitList } from './base.mjs';
-import { git } from './git.mjs';
+import { git, gitHere } from './git.mjs';
 import { canonical, issuesDir, jarlDir, normalPath, portablePath } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, branchNameProblem } from './ids.mjs';
@@ -183,7 +183,7 @@ function lineNamed(name) {
 // `copies` the loop's directory in every worktree, the main checkout first. The one helper that finds the main checkout
 // through git's own list of worktrees; the commands that must act on the main checkout's loop reuse it.
 export function mainCheckoutOf(root) {
-  const top = git(root, ['rev-parse', '--show-toplevel']);
+  const top = gitHere(root, ['rev-parse', '--show-toplevel']);
   const entries = top === null ? null : worktreesOf(root);
   if (entries === null) return null;
   const here = canonical(top);
@@ -263,8 +263,8 @@ export function reposNamed(issue) { return splitList(issue.fields.repo); }
 // that setting has none (bare). The list is read with -z, each attribute ended by a NUL and each entry by one more, so a
 // path that holds a line break is read whole; a git that does not know -z there gives the list with line ends.
 function worktreesOf(dir) {
-  const z = git(dir, ['worktree', 'list', '--porcelain', '-z']);
-  const text = z === null ? git(dir, ['worktree', 'list', '--porcelain']) : null;
+  const z = gitHere(dir, ['worktree', 'list', '--porcelain', '-z']);
+  const text = z === null ? gitHere(dir, ['worktree', 'list', '--porcelain']) : null;
   if (z === null && text === null) return null;
   const blocks = z !== null ? z.split('\0\0').map((b) => b.split('\0')) : text.split(/\n\s*\n/).map((b) => b.split('\n'));
   // The value of an attribute: the text after its name and a space, '' for a name alone, undefined when absent.
@@ -274,7 +274,7 @@ function worktreesOf(dir) {
     locked: value(lines, 'locked') !== undefined, reason: value(lines, 'locked') || undefined, prunable: value(lines, 'prunable') !== undefined,
   })).filter((e) => e.path).map((e, k) => {
     if (k !== 0 || e.bare || !existsSync(join(e.path, 'HEAD')) || existsSync(join(e.path, '.git'))) return e;
-    const tree = git(e.path, ['config', '--get', 'core.worktree']);
+    const tree = gitHere(e.path, ['config', '--get', 'core.worktree']);
     return tree ? { ...e, path: resolve(e.path, tree) } : { ...e, bare: true };
   });
 }

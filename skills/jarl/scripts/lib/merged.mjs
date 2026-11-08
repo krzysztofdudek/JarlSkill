@@ -85,7 +85,7 @@ export function cmdMerged(root, rawIds, flags) {
     const loop = readLoop(jarlDir(root));
     for (const issue of issues) {
       const g = gateOf(loop, issue.id);
-      if (proofSince(g, issue) === 0 && unprovedMechanical(lineStates(loop, issue, g)).length) notes.push(`NO PROOF FROM THE WORKER — ${issue.id} holds no Proof row since ${g.tracked ? sinceText(g.anchor) : 'it was filed'}; ${checkText ? 'the merge check is recorded in the merge record and is not proof' : 'the merge records no check, and a merge is not proof'}, so done refuses until the worker records it:${lineRowForm(issue.id)}`);
+      if (proofSince(g, issue) === 0 && unprovedMechanical(lineStates(loop, issue, g)).length) notes.push(`NO PROOF FROM THE WORKER — ${issue.id} holds no Proof row since ${g.tracked ? sinceText(g.anchor) : 'it was filed'}; ${checkText ? 'the merge check is recorded in the merge record and is not proof' : 'the merge records no check, and a merge is not proof'}, so done refuses until the worker records it: ${lineRowForm(issue.id)}`);
     }
   }
   // Said, never refused: a --ran that matches no declared check is recorded as given, and the banner reads it as no check
