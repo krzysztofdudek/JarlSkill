@@ -10,7 +10,8 @@ import { closedGateLine, disagreementText, gateLine, inFlightMark, needLoop, gat
 import { checkWaitingText, metricsOf, renderMetrics } from './metrics.mjs';
 import { ago } from './rounds.mjs';
 import { cmdTips, renderTips } from './tips.mjs';
-import { reasonWord, waitingOn, waitsOf } from './commands.mjs';
+import { reasonWord } from './shared.mjs';
+import { waitingOn, waitsOf } from './after.mjs';
 import { handoffAge, handoffPath, unsettledRulings, unsettledText } from './questions.mjs';
 import { answeredLines } from './journal.mjs';
 import { loopRules, ruleLines, rulesFor, withUnder } from './rules.mjs';

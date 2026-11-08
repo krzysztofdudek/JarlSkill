@@ -5,7 +5,7 @@ import { need } from './base.mjs';
 import { CHANGELOG_SECTIONS, changelogEntries } from './issues.mjs';
 import { repoFromInput, repoNames, topOf } from './repositories.mjs';
 import { issueTops } from './tips.mjs';
-import { issuesFor } from './commands.mjs';
+import { issuesFor } from './shared.mjs';
 
 // ---- changelog fragments -----------------------------------------------------------------------------
 

@@ -14,7 +14,7 @@ import { REPOS_DECLARED_IN, declaredNames, issueRepos, repoIdentity, repoValueKi
 import { IN_PLACE_TAG, headerReadNotes, readLoop, recordDisagreements, unorderedNamings, unorderedText } from './loop.mjs';
 import { attachmentFindings } from './attachments.mjs';
 import { modelLines, unknownModels } from './models.mjs';
-import { hasLiveLoop } from './commands.mjs';
+import { hasLiveLoop } from './shared.mjs';
 import { issuesNaming, loadAsks, unsettledRulings, unsettledText } from './questions.mjs';
 
 // ---- verify: the record read strictly, with nothing written ----------------------------------------------------

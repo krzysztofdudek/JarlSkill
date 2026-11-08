@@ -13,7 +13,7 @@ import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteShown, rulingAuthor
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
 import { needFormat, tipLinesOf } from './repositories.mjs';
 import { readLoop, sliceNamed } from './loop.mjs';
-import { issuesFor } from './commands.mjs';
+import { issuesFor } from './shared.mjs';
 import { appliesToLine, loopRules, parseScope, parseUntil, underText, withUnder } from './rules.mjs';
 
 // ---- questions to the owner and the handoff -------------------------------------------------
