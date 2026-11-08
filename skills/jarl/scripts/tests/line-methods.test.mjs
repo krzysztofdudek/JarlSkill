@@ -3,11 +3,13 @@
 // verdict that stands until a round or a new commit, and the lines as they were at a lease.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gitRepo, jarl, loop as makeLoop, refuses, run } from './helpers.mjs';
 
 const R = await import('../record.mjs');
+const L = await import('../jarl-lib.mjs');
 
 const FORM = /<test-check-compare-read-or-owner-line>/;
 const loopOf = (...acceptance) => {
@@ -137,6 +139,48 @@ test('a [check] line on the declared command is proved by the landing, a stated 
   assert.equal(jarl(stated, 'set', '1', 'done', 'landed'), '1 → done', 'a stated command that is not the declared one is proved by the rows');
 });
 
+test('a [check] line on the declared check, or in a loop that declares none, is proved by its two rows as it is by the landing', () => {
+  const none = leased('[check] the suite passes');
+  row(none, 'w1'); row(none, 'rev1'); approve(none);
+  assert.equal(stateOf(none)[2], 'proved', 'no Check line: the two rows prove it');
+  assert.equal(jarl(none, 'set', '1', 'done', 'on the rows'), '1 → done');
+  const declared = leased('[check] the suite passes · by: npm test');
+  goal(declared, '\nCheck: npm test\n');
+  row(declared, 'w1'); row(declared, 'rev1'); approve(declared);
+  assert.equal(jarl(declared, 'set', '1', 'done', 'on the rows'), '1 → done', 'a stated declared command is proved by the rows too');
+  const one = leased('[check] the suite passes');
+  row(one, 'w1'); approve(one);
+  const refusal = refuses(one, 'set', '1', 'done', 'try');
+  assert.match(refusal, /line 1 \[check\] unproved: a counted row naming it by a name that has not held the lease, or the landing on the declared check/);
+});
+
+test('with no lease on record one named row proves a mechanical line, and a row that names nobody counts for no one', () => {
+  const root = loopOf('[test] the export is written');
+  row(root, 'jarl'); approve(root, 'jarl');
+  assert.equal(stateOf(root)[2], 'proved');
+  assert.equal(jarl(root, 'set', '1', 'done', 'by the director'), '1 → done');
+  const unnamed = loopOf('[test] the export is written');
+  jarl(unnamed, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 3', '--line', '1');
+  approve(unnamed, 'jarl');
+  assert.match(refuses(unnamed, 'set', '1', 'done', 'try'), /line 1 \[test\] unproved: a counted row by a named writer/);
+  const compared = loopOf('[compare] the report is unchanged · by: node report.mjs');
+  row(compared, 'jarl', 'same output'); approve(compared, 'jarl');
+  assert.match(refuses(compared, 'set', '1', 'done', 'try'), /two rows with identical --saw/);
+  row(compared, 'jarl', 'same output');
+  assert.equal(jarl(compared, 'set', '1', 'done', 'compared'), '1 → done');
+});
+
+test('a parent with no code and no lease closes on one row of its own check by the director and his approve', () => {
+  const root = loopOf('[check] the whole builds · by: npm run build');
+  jarl(root, 'new', 'a part', '--acceptance', '[read] the part is there');
+  jarl(root, 'field', '2', 'Parent', '1');
+  jarl(root, 'review', '2', 'approve', '--by', 'rev1', 'read the part, nothing found');
+  jarl(root, 'set', '2', 'done', 'the part is there');
+  jarl(root, 'evidence', '1', '--ran', 'npm run build', '--saw', 'built', '--line', '1', '--by', 'jarl');
+  approve(root, 'jarl');
+  assert.equal(jarl(root, 'set', '1', 'done', 'checked against the whole'), '1 → done');
+});
+
 test('a [compare] line asks for two rows of the holder with identical saw and a row by a name that has not held it', () => {
   const line = '[compare] the report is unchanged · by: node report.mjs';
   const twoSame = leased(line);
@@ -161,6 +205,15 @@ test('a [read] line needs a live approve, a waiver or a profile with no approve 
   const waived = leased('[read] the docs describe the new default');
   jarl(waived, 'decide', 'no-review-for-1', 'the owner reads it himself', '--by', 'owner', '--quote', 'No review for that one.', '--waives-review', '1');
   assert.equal(jarl(waived, 'set', '1', 'done', 'on the waiver'), '1 → done');
+  const profile = join(mkdtempSync(join(tmpdir(), 'jarl-methods-profile-')), 'profile.json');
+  const { dir, g } = gitRepo({ prefix: 'jarl-methods-noapprove-', branch: 'main' });
+  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, format: 1, name: 'landed', statuses: L.BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true, approve: 'none' } }));
+  jarl(dir, 'init', 'work', '--profile', profile);
+  jarl(dir, 'new', 'the work', '--acceptance', '[read] the docs describe the new default');
+  jarl(dir, 'set', '1', 'in-progress', 'go', '--worker', 'w1');
+  assert.match(jarl(dir, 'show', '1'), /^line 1 \[read\] judged/m, 'a profile that asks for no approve stands in for it');
+  jarl(dir, 'merged', '1', '--sha', g('rev-parse', 'HEAD').trim(), '--keep');
+  assert.equal(jarl(dir, 'set', '1', 'done', 'landed'), '1 → done');
 });
 
 test('a [owner] line needs his tick', () => {

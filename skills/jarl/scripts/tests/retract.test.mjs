@@ -110,6 +110,7 @@ test('retract <id> <n>: the n-th row of the whole section is struck through and 
   assert.match(refuses(root, 'retract', id, 'two', '--by', 'jarl', 'not a number'), /retract takes review \(the newest approve\) or the number of an evidence row/);
   assert.match(refuses(root, 'retract', id, '1', 'because the row is wrong'), /needs --by/);
   assert.match(refuses(root, 'retract', id, '1', '--by', 'jarl', '-'), /a retraction needs words/);
+  assert.match(refuses(root, 'retract', id, '1', '--by', 'jarl', 'x', '--ran', 'a', '--saw', 'b'), /unknown flag --ran for retract/);
   assert.equal(readFileSync(profileFile(root), 'utf8'), profileBefore, 'refused retractions raise nothing');
 
   assert.equal(jarl(root, 'retract', id, '2', '--by', 'jarl', 'cmd two was run in the wrong place'), '001 evidence row 2 retracted by jarl');

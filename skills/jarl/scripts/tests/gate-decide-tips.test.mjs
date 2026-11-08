@@ -136,7 +136,7 @@ test('done: in progress → deferred → in progress spends the approve and the 
   assert.equal(jarl(root, 'set', '1', 'done', 'x'), '1 → done');
 });
 
-test('done: an issue the journal does not know (a hand-made file) needs a row in its Evidence; an approve logged by hand as self never counts', () => {
+test('done: an issue the journal does not know (a hand-made file) closes on what its lines ask; an approve logged by hand as self never counts', () => {
   const root = loop();
   jarl(root, 'new', 'hand', '--acceptance', '[read] it works');
   const dir = join(root, '.jarl', 'issues');
