@@ -76,7 +76,8 @@ export function loadIssues(root) { return read(() => L.loadIssues(root)); }
 // cannot tell their lines apart, so neither is the issue the number names. Two such issues each carry `shared`, the files
 // of their number, in loadIssues; no other issue has that key.
 export function findIssue(root, id) { return read(() => L.findIssue(root, id)); }
-// opts { live }: live leaves out the superseded rulings.
+// opts { live }: live leaves out the superseded rulings. A ruling made under one that does not hold carries why, as
+// underNotInForce.
 export function decisions(root, opts = {}) { return read(() => L.cmdDecisions(root, opts)); }
 export function loadAsks(root) { return read(() => L.loadAsks(root)); }
 
@@ -210,7 +211,8 @@ export function statusData(root, opts = {}) { return read(() => L.cmdStatus(root
 export function resumeData(root, opts = {}) { return read(() => L.cmdResume(root, opts)); }
 // brief --json: the brief of an issue's worker (opts { role: 'worker' }, the default) or reviewer (role 'reviewer'), or,
 // with id null and opts { slice }, of that slice's coordinator. It carries the role, the roles and moments the rules were
-// matched for and the rules that match (each { slug, scope, until, by, under, builtin, source, text }), the count of the
+// matched for and the rules that match (each { slug, scope, until, by, under, builtin, source, text }, and underNotInForce
+// when the ruling it is made under does not hold), the count of the
 // rulings in force with the command that lists them (rulings { inForce, command }), the role's
 // reference ({ file, section }, inside the skill's directory), the commands that record the result ({ what, command },
 // each with a placeholder for every value) and notes; an issue's brief also the issue as show prints it (show, without

@@ -150,14 +150,35 @@ export function ruleMatches(root, rule, reader) {
   return !onIssue.length || reader.issues.some((i) => issueHolds(root, i, onIssue));
 }
 
-// The loop's rules: every ruling with an Applies to line, read, with its end (null while it holds).
+// The loop's rules: every ruling with an Applies to line, read, with its end (null while it holds), and, for one made
+// under a ruling that is not in force, why not (underNotInForce).
 export function loopRules(loop, today) {
-  return loop.decisions.filter((d) => d.appliesTo).map((d) => {
+  const rules = loop.decisions.filter((d) => d.appliesTo).map((d) => {
     const read = readAppliesTo(d.appliesTo);
     const rule = { slug: d.slug, date: d.date, by: d.by, under: d.under, text: ruleText(d), scope: read.selectors ? scopeText(read.selectors) : d.appliesTo, selectors: read.selectors, until: read.until, supersededBy: d.supersededBy, ...(read.unread ? { unread: read.unread } : {}) };
     return { ...rule, ended: ruleEnd(rule, loop, today) };
   });
+  const ended = new Set(rules.filter((r) => r.ended).map((r) => r.slug));
+  return rules.map((r) => withUnder(loop.decisions, r, ended));
 }
+// Why the ruling a ruling names as the one it rests on (its Made under paragraph, whoever wrote it) does not hold, or null
+// while it is in force: no ruling of the loop has that slug, a later ruling supersedes it, the owner rejected it as an area
+// ruling, or it is a rule that has ended. `ended` holds the slugs of the rules that have ended.
+export function underNotInForce(decisions, slug, ended) {
+  const d = decisions.find((x) => x.slug === slug);
+  if (!d) return 'no ruling of this loop';
+  if (d.supersededBy) return `superseded by ${d.supersededBy}`;
+  if (d.rejected) return 'rejected by the owner';
+  if (ended.has(slug)) return 'a rule that has ended';
+  return null;
+}
+// A ruling as a view carries it, with underNotInForce when the ruling it is made under does not hold.
+export function withUnder(decisions, d, ended) {
+  const lapse = d.under ? underNotInForce(decisions, d.under, ended) : null;
+  return lapse ? { ...d, underNotInForce: lapse } : d;
+}
+// The words a view prints for the ruling a ruling is made under, marked when that ruling is not in force.
+export const underText = (r) => `under ${r.under}${r.underNotInForce ? ` (not in force: ${r.underNotInForce})` : ''}`;
 // The text a rule delivers: its ruling, or, for an accepted proposal (the answer to a question of kind rule), the rule
 // it proposed, every line of it: the question, up to the line of its answer.
 function ruleText(d) {
@@ -175,7 +196,7 @@ export function rulesFor(root, loop, reader, today) {
 // One rule as a view prints it: its slug and scope, its end when it has one, who ruled and the ruling it rests on (Jarl's
 // own: the reference it is quoted from), then its text whole, each further line indented.
 export function ruleLines(r) {
-  const head = `- ${r.slug} · ${r.scope}${r.until ? ` · ${untilText(r.until)}` : ''}${r.builtin ? ` · ${r.source}` : `${r.by ? ` · by ${r.by}` : ''}${r.under ? ` · under ${r.under}` : ''}`}`;
+  const head = `- ${r.slug} · ${r.scope}${r.until ? ` · ${untilText(r.until)}` : ''}${r.builtin ? ` · ${r.source}` : `${r.by ? ` · by ${r.by}` : ''}${r.under ? ` · ${underText(r)}` : ''}`}`;
   const lines = String(r.text).split('\n');
   return [`${head} — ${lines[0]}`, ...lines.slice(1).map((l) => `  ${l}`)];
 }
