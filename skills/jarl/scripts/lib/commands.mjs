@@ -17,7 +17,7 @@ import { FIELD_RE, PROPOSED, RENDERED_FIELDS, acceptanceHeading, acceptanceLineC
 import { baseOf, branchTip, commitRepoNames, fileKeysOf, isGitRepo, issueRepoPaths, issueRepoSlots, issueRepos, mainCheckoutOf, needFormat, needFormatHeld, needRightCheckouts, repoFromInput, repoLabel, repoList, reposNamed, tipLines, whyNotDeletable, worktreeState, worktreesOf } from './repositories.mjs';
 import { FIELD_NAMES, activeSlices, carriesCode, unmergedCode, unmergedText, gateOf, isSliceTag, leaseConflictOf, needOneSlice, readLoop, sinceText, sliceOf, unclearedText, unorderedNamings, unorderedText } from './loop.mjs';
 import { declaredChecks, lastMerge } from './metrics.mjs';
-import { modelLines, modelRefusalOf, modelReviewForm, modelValue, modelOfferAtLease, spellingNote } from './models.mjs';
+import { limitNote, modelLines, modelRefusalOf, modelReviewForm, modelValue, modelOfferAtLease, spellingNote } from './models.mjs';
 import { slotRefusal } from './attachments.mjs';
 import { NOTE_LIMIT, addedContentNotes, addedNoteText } from './rounds.mjs';
 import { resetCaches } from './tips.mjs';
@@ -1115,7 +1115,8 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // Said on the command line only, and only in a loop that declares model lines: a lease with no model (once per call).
   const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
   const worktreeNote = caller === 'cli' && holds && flags.worktree !== undefined ? '--worktree was checked and is not recorded — the worktree of a lease is found through its branch' : null;
-  const leaseNotes = [leaseNoModel, worktreeNote, spelling, modelOffer].filter(Boolean).join('; ');
+  const limit = caller === 'cli' && holds ? limitNote(root, model) : null;
+  const leaseNotes = [leaseNoModel, worktreeNote, spelling, limit, modelOffer].filter(Boolean).join('; ');
   return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(handover ? { handover: true } : {}), ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue, root) : {}), ...(leaseNotes && n === 0 ? { note: leaseNotes } : {}) })));
 }
 

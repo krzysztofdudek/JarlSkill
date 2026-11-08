@@ -23,6 +23,7 @@ import {
   renderProfile, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, workerEvidence, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
   needLoop, cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, cmdRetractTick, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES, cmdRenumber, cmdSplit,
+  needKnownModels,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 
@@ -463,7 +464,12 @@ commands:
                                                  Tier, the fields and sections its issues carry and the heading of their
                                                  acceptance, the record format beside the formats this Jarl reads; the
                                                  built-in one when the loop has none; with a file, that file checked
-                                                 against the profile schema instead
+                                                 against the profile schema instead; a profile's "models" names the
+                                                 strongest model the loop may use ("ceiling", read by its tier) and the
+                                                 ones it may not ("barred"): the owner's lever for cost, as Jarl reads
+                                                 no usage or budget from the host; next, the takeover and the notes of the
+                                                 fresh-review rule keep under it, and profile refuses a model no Model
+                                                 line of the goal places
   verify                                         read-only, with no lock and no network: the record read strictly. Each
                                                  reader lists the lines it does not place (the log, the goal, the issue
                                                  headers, the questions and the rulings), the profile is checked, a
@@ -1410,7 +1416,7 @@ function dispatchCall(root, commandName, rest, flags) {
     (writes ? (fn) => withLock(root, fn) : (fn) => fn())(() => withWriter(writer, writer === null ? null : (r) => needFormat(r, 'writer'), () => {
     if (writer !== null) needWriterFormat(root, cmd, flags);
     switch (cmd) {
-      case 'init': out = R.initLoop(root, rest[0], { ...flags, caller: 'cli' }); text = `opened ${out.dir} · ${out.permanent ? 'permanent record, no branch' : out.committed ? 'committed with the work' : 'kept out of git'}${out.profile ? ` · profile ${out.profile}` : ''}`; warn = [out.note, out.modelNote].filter(Boolean).map((n) => `note: ${n}`); break;
+      case 'init': out = R.initLoop(root, rest[0], { ...flags, caller: 'cli' }); text = `opened ${out.dir} · ${out.permanent ? 'permanent record, no branch' : out.committed ? 'committed with the work' : 'kept out of git'}${out.profile ? ` · profile ${out.profile}` : ''}`; warn = [out.note, out.modelNote, R.loadProfile(root).models && `the profile names models, and the goal places none yet: add a Model line for each tier, then check the profile — ${jarlLine('goal', '--set', hole('<machine-line>'))}, then ${jarlLine('profile')}`].filter(Boolean).map((n) => `note: ${n}`); break;
       // The command line says caller 'cli': the notes (the tier a new issue got) are for it, never for a library caller.
       case 'new': out = R.newIssue(root, rest[0], { ...flags, caller: 'cli', width: undefined }); out = { ...out, ...describeNew(out.file) }; text = renderNewReply(out); warn = out.note ? [out.note] : []; break;
       case 'renumber': out = cmdRenumber(root, rest[0], flags); text = `${out.from} → ${out.id} · issues/${basename(out.file)} · key ${out.key}`; break;
@@ -1497,7 +1503,8 @@ function dispatchCall(root, commandName, rest, flags) {
       case 'changelog': out = cmdChangelog(root, rest[0], flags); text = out.text || '(no changelog fragment on these issues)'; warn = out.missing.length ? [`note: no changelog fragment: ${out.missing.join(', ')} — record one with: ${jarlLine('field', '<id>', 'Changelog', '<changelog-entry>', '--add')}, its section first (Added, Changed, Deprecated, Removed, Fixed or Security, then a colon)`] : []; break;
       case 'archive': out = cmdArchive(root, rest[0], { caller: 'cli' }); text = `archived → ${out.archived}${out.leftOpen.length ? ` · ${out.leftOpen.length} still open or in progress: ${out.leftOpen.join(', ')}` : ''} · open a new loop with: ${jarlLine('init', '<goal>')}`; break;
       case 'mode': out = cmdMode(root, rest[0]); text = 'now permanent · not tied to a feature branch; close keeps the directory'; break;
-      case 'profile': out = cmdProfile(root, rest[0]); text = renderProfile(out); break;
+      // The profile check: a model the profile names is one a Model line of the loop's goal places.
+      case 'profile': out = cmdProfile(root, rest[0]); needKnownModels(root, rest[0] === undefined ? R.loadProfile(root) : readProfileFile(rest[0], { argument: true }).profile, rest[0] ?? 'the profile'); text = renderProfile(out); break;
       case 'verify': out = cmdVerify(root); text = renderVerify(out); break;
       case 'close': out = cmdClose(root, { ...flags, caller: 'cli' }); text = out.closed ? (out.kept ? `kept ${out.kept} · closed as a permanent record` : `removed ${out.removed}${out.archiveKept ? ' (the live loop; .jarl/archive/ is left in place)' : out.archiveRemoved ? ` (with .jarl/archive/: ${out.archiveRemoved.join(', ')})` : ''}`) + (out.deferred.length ? ` · ${out.deferred.length} deferred ${out.kept ? 'still waiting' : 'removed with the loop'}: ${out.deferred.join(', ')}` : '') + (out.uncommitted ? ` · ${out.uncommitted} loop file(s) not committed${out.kept ? ' — commit .jarl/' : ' before the removal'}` : '') + renderBatch(out.batch, out.kept ? 'kept' : 'removed') + renderPromotion(out.promotion, out.kept ? 'kept' : 'removed') : (renderBatch(out.batch, 'open') + renderPromotion(out.promotion, 'open')).trimStart(); break;
       default: refuse(`unknown command: ${cmd}`, { command: hole('<a-jarl-command>') });

@@ -23,7 +23,7 @@ export { raiseFormat, needFormat, mainCheckoutOf, worktreeState, fileAt, reposNa
 export { RULE_ROLES, RULE_MOMENTS, RULE_SELECTORS, BUILTIN_RULES, parseScope, parseUntil, readAppliesTo, ruleMatches, rulesFor } from './lib/rules.mjs';
 export { needLoop, readLoop, recordDisagreements, disagreementText, BASE_COORDINATORS, reviewerKind, coordinatorNames, carriesCode, inFlightMark, gateState, gateWindow, gateOf, wholeOf, sliceOf, coordinatorOf, reviewSplit } from './lib/loop.mjs';
 export { declaredChecksByRepo, declaredChecks, checkState, checkLines, mergeCheckLines, FOLLOW_UP_DAYS, loopMetrics, metricsOf, renderMetrics } from './lib/metrics.mjs';
-export { MODEL_MIN_N, modelLines, cmdModels, renderModels, modelMarks } from './lib/models.mjs';
+export { MODEL_MIN_N, modelLines, cmdModels, renderModels, modelMarks, needKnownModels } from './lib/models.mjs';
 export { roundsOf, cmdRound, renderCheckNotes, cmdCheck, cmdBranches, renderBranches, ago, leaseProblems } from './lib/rounds.mjs';
 export { requiredSlots, slotProblems, attachmentStates } from './lib/attachments.mjs';
 export { TIPS_RECENT_MS, resetCaches, ciOf, cmdTips, renderTips } from './lib/tips.mjs';

@@ -10,7 +10,7 @@ import { bodyText, parseIssue, reviewEntries, setSection, unattributedRefusal } 
 import { needFormat, tipLines } from './repositories.mjs';
 import { FORMAT_LINES, formatState, loadProfile, reviewerRule } from './profile.mjs';
 import { carriesCode, gateOf, readLoop, reviewerKind, unclearedText } from './loop.mjs';
-import { SEVERITIES, loggedFinding, modelLines, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote } from './models.mjs';
+import { SEVERITIES, limitNote, loggedFinding, modelLines, modelRefusalOf, modelReviewForm, modelValue, reviewModelNotes, spellingNote } from './models.mjs';
 import { EVIDENCE_HOW, cmdNew, issuesFor, nextIssueNumber, nothingWritten, oneOrMany, proofSince, refiled } from './commands.mjs';
 import { REVIEW_MIN_WORDS, needSaid, raisedText, retractedBy, struck } from './evidence.mjs';
 import { ownerLineWait } from './owner-lines.mjs';
@@ -136,6 +136,7 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
       flags.caller === 'cli' && verdict === 'approve' && proofSince(gateOf(loop, issue.id), issue) === 0 ? `${issue.id} holds no Proof row since the gate's window opened — done needs the worker's row, and the merger's check does not stand in for it: ${EVIDENCE_HOW(issue.id)}` : null,
       ...(lines && (lines.declared || rule !== 'agent') ? reviewModelNotes(loop, issue, verdict, model, lines, loop.eventsById.get(issue.id) || [], rule) : []),
       flags.caller === 'cli' && model !== undefined ? spellingNote(loop, model) : null,
+      flags.caller === 'cli' && n === 0 ? limitNote(root, model) : null,
     ].filter(Boolean);
     return said.length ? { note: said.join('; ') } : {};
   };

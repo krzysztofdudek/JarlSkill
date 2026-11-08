@@ -11,7 +11,7 @@ import { journalById, leaseOfMove, withoutWorktree } from './log.mjs';
 import { findIssue, loadIssues, mergedOf } from './issues.mjs';
 import { readLoop } from './loop.mjs';
 import { defaultBase, fetchedRefs, fileAt, isGitRepo, issuePlaces, issueRepoPaths, issueRepos, refsIn, repoFromInput, repoLabel, repoOf, reposNamed, worktreeState, worktreesOf } from './repositories.mjs';
-import { awaitsMerge } from './models.mjs';
+import { awaitsMerge, ceilingTier } from './models.mjs';
 
 // ---- rounds, branches, checks ------------------------------------------------------------------
 
@@ -31,17 +31,20 @@ function findingsOfRounds(entries) {
 // is another model or approach. After the first takeover the tier was already offered, so later advice leaves it out: the
 // issue's Tier stays as filed, and a model other than the ones that held the issue is the step. `held` is every model
 // the issue's leases recorded, in the order they first held it.
-function takeoverAdvice(tiers, tier, held, n, takeovers) {
+// Where the profile names a ceiling (`ceiling`, its tier's place among the tiers and the model), no tier above it is offered.
+function takeoverAdvice(tiers, tier, held, n, takeovers, ceiling = null) {
   const model = held.length ? held.join(', ') : 'the one that failed';
   const unknown = held.length ? '' : ' (its lease did not record one)';
   const at = tiers.findIndex((t) => t.toLowerCase() === String(tier).toLowerCase());
-  const above = at === -1 ? undefined : tiers[at + 1];
+  const capped = ceiling !== null && at !== -1 && at + 1 < tiers.length && at + 1 > ceiling.at;
+  const above = at === -1 || capped ? undefined : tiers[at + 1];
   const top = tiers[tiers.length - 1];
   const tried = held.length > 1 ? `it has failed ${times(n)} on the models that held it` : `the same model at the same tier has failed this ${times(n)}`;
   const lead = 'For whoever raises the fresh worker: ';
   if (takeovers > 1) return `${lead}put it on a model that has not held this issue (${held.length ? `it was held on ${model}` : 'its leases recorded no model'}), or change the approach — it has failed ${times(n)} since the last takeover, and an earlier takeover has not settled it.`;
   if (at === -1) return `${lead}${tier} is not a tier of this loop's profile (${tiers.join(', ')}), so put it on a model other than ${model}${unknown}, or change the approach — ${tried}.`;
   if (above) return `${lead}raise it one tier up from ${tier} (to ${above}), or put it on a model other than ${model}${unknown}, or change the approach — ${tried}.`;
+  if (capped) return `${lead}the profile's ceiling (${ceiling.ceiling}) allows no tier above ${tier}, so put it on a model other than ${model}${unknown} that the profile allows, or change the approach — ${tried}.`;
   return `${lead}${tier} is the top tier (${top}), so put it on a model other than ${model}${unknown}, or change the approach — ${tried}.`;
 }
 
@@ -119,7 +122,7 @@ export function cmdRound(root, rawId, what, dry = false, opts = {}) {
   // A move line names the lease's worktree, a place on the machine that wrote it, and the block is read on another one.
   const log = entries.filter((e) => e.type !== 'filed').map((e) => `- ${e.at} · ${e.type === 'move' ? withoutWorktree(e.text, e.written ?? e.id, e.to) : e.text}`).join('\n');
   const held = [...new Set([...entries.filter((e) => e.type === 'move' && e.model).map((e) => e.model), ...(fieldText(issue.fields.model) ? [fieldText(issue.fields.model)] : [])])];
-  const advice = takeoverAdvice(loadProfile(root).tiers, issue.tier, held, since, takeovers);
+  const advice = takeoverAdvice(loadProfile(root).tiers, issue.tier, held, since, takeovers, takeover ? ceilingTier(root) : null);
   const block = takeover ? `## Takeover\n\n${advice}\n\n${trend}A prior worker attempted issue ${issue.id} ${times(since)} (${n} round${n === 1 ? "" : "s"} in all); the issue is yours now. Its rounds so far:\n\n\`\`\`\n${log}\n\`\`\`\n` : null;
   return { id: issue.id, round: n, since, limit, takeover, block, ...(found === undefined ? {} : { findings: Number(found) }) };
 }
