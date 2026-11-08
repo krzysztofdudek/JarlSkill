@@ -180,7 +180,8 @@ commands:
                                                  for every id, so a package shares it; a lease holds: under the lock
                                                  it refuses an issue another worker or branch holds and a file or
                                                  resource another lease holds (naming the holder and its slice: tag),
-                                                 and, while more than one slice has an issue in play, a lease on an
+                                                 and, while more than one slice has an issue in play (the issues in
+                                                 no slice count as one), a lease on an
                                                  issue that declares no Files or Resources, naming the call that
                                                  declares them,
                                                  and --handover hands a leased issue to a new worker or branch, with
