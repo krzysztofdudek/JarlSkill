@@ -103,7 +103,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A findings file, a profile or a goal saved by an editor that puts a byte order mark at the start, as Windows editors do, is now read like any other. Before, a findings file saved that way was refused as not JSON.
 - An answer to an item waiting for the owner's approval must start with a word that approves or rejects it, such as yes or reject. Any other answer is refused, so it is always clear what the owner decided.
 - Taking back a review, a test result or a note in a loop that an older Jarl wrote no longer undoes the update of that task's repository field. Before, that one task kept the old form while every other task was updated.
-- A question asking the owner to start a fresh session for a review now holds the review only when it is a plain question, not an item to ratify or an escalation, and a list written with no space after its commas, such as `issues 1,2`, is read as a list. The line for several tasks waiting for a review now names each task with its title and worker.
+- A question asking the owner to start a fresh session for a review now holds the review only when it is a plain question, not an item to ratify or an escalation, and a list of numbers written with no space after its commas is read as a list. The line for several tasks waiting for a review now names each task with its title and worker.
 
 ## [6.2.0] - 2026-10-19
 
