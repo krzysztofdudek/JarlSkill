@@ -105,7 +105,7 @@ test('the brief help and the commands reference say the same of a finding whose 
     assert.match(text, /log's line holds/, `${name} says the finding shows as the log's line holds it`);
     assert.match(text, /first line and a count of the lines left out/, `${name} says what is shown of a text of several lines`);
   }
-  assert.match(help, /a finding whose entry the issue file no longer holds/, 'the help names the finding whose file entry is gone');
+  assert.match(help, /a finding the issue file has no entry for: it shows as the log's line holds it/, 'the help names the finding whose file entry is gone');
   assert.match(row, /where the issue's Reviews section holds that verdict's entry, else as the log's line holds them/, 'the reference names the same case');
   assert.doesNotMatch(help, /every part whole\./, 'the help does not claim every part is whole without the exception');
 });
