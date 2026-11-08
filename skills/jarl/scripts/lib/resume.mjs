@@ -137,7 +137,7 @@ export function cmdResume(root, flags = {}) {
   return {
     goal: status.goal, opened: status.opened, lastActivity: status.lastActivity, archived: status.archived, status, ...(slice !== null ? { slice } : {}),
     rulings, unsettled: unsettledRulings(loop), rules, inFlight, waiting,
-    questions: asks.filter((a) => a.kind !== 'ratify' && a.kind !== 'escalation' && a.kind !== 'rule' && askHolder(loop, a) === OWNER_HOLDER), toDirector: asks.filter((a) => (a.kind === 'stuck' || !a.kind) && askHolder(loop, a) !== OWNER_HOLDER).map((a) => ({ ...a, holder: askHolder(loop, a) })),escalations: asks.filter((a) => a.kind === 'escalation'), proposed: asks.filter((a) => a.kind === 'rule'), ratify: asks.filter((a) => a.kind === 'ratify'),
+    questions: asks.filter((a) => a.kind !== 'ratify' && a.kind !== 'escalation' && a.kind !== 'rule' && askHolder(loop, a) === OWNER_HOLDER), ...toDirectorKey(loop, asks), escalations: asks.filter((a) => a.kind === 'escalation'), proposed: asks.filter((a) => a.kind === 'rule'), ratify: asks.filter((a) => a.kind === 'ratify'),
     held, kept: keptRows, next: ready.slice(0, readyN).map((r) => ({ id: r.id, title: r.title, priority: r.priority, ...(r.noAcceptance ? { noAcceptance: true } : {}), ...(r.model ? { model: r.model } : {}), ...declared(byId.get(r.id)) })), readyTotal: scheduled ? null : ready.length,
     ...(scheduled ? { scheduler: profile.scheduler } : {}),
     queue: cmdQueue(root, { repo: flags.repo, base: flags.base }), merged, tips: cmdTips(root, { ci: flags.gh === true || flags.ci === true, repo: flags.repo }),
