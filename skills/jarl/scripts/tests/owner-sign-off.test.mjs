@@ -283,7 +283,7 @@ test('in a loop run by a composer, an [owner] line written there by a Jarl that 
   jarl(dir, 'init', 'a composed goal', '--profile', profile);
   const id = R.newIssue(dir, 'cut the film', { acceptance: '[read] the cut renders' }).id;
   const file = R.findIssue(dir, id).file;
-  R.writeAtomic(file, readFileSync(file, 'utf8').replace('the cut renders', OWNER_LINE));
+  R.writeAtomic(file, readFileSync(file, 'utf8').replace('[read] the cut renders', OWNER_LINE));
   jarl(dir, 'set', id, 'in-progress', 'go', '--worker', 'w1');
   jarl(dir, 'evidence', id, '--line', '1', '--ran', 'render the cut', '--saw', 'written');
   jarl(dir, 'review', id, 'approve', '--by', 'rev', FINDINGS);

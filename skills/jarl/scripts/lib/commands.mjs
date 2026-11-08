@@ -1651,7 +1651,10 @@ function doneGateIn(root, loop, issue, base) {
     if (g.tracked ? !g.rowsSince : !evidenceRows(issue).length) return { cause: 'evidence', text: `${issue.id} has no --ran/--saw row recorded${g.anchor ? ` since ${sinceText(g.anchor)}` : ''} — record what was done: ${jarlLine('evidence', issue.id, '--ran', '<command>', '--saw', '<what-it-printed>', '--by', '<who>')}` };
   } else if (!states.length) return { cause: 'lines', text: `${issue.id} has no acceptance line, so there is nothing done can ask of it — write what it is to prove first: ${jarlLine('field', issue.id, 'Acceptance', LINE_FORM)}` };
   const unproved = unprovedMechanical(states);
-  if (unproved.length) return { cause: 'evidence', text: `${issue.id} has lines whose method is not met${g.tracked && g.anchor ? ` (rows count since ${sinceText(g.anchor)})` : ''}: ${unproved.map(lineStateText).join('; ')} — ${lineRowForm(issue.id)}` };
+  // A merge that records its check does not stand in for a worker's row: said to whoever is refused, the merger included.
+  const mergeLine = lastMerge(loop.eventsById.get(issue.id) || []);
+  const gap = mergeLine && mergeLine.check ? ` — the merge records a check (${mergeLine.check}), but that check is the merger's and does not stand in for the worker's row: the row is the worker's proof of the work, so the worker records what the work's own check ran and printed, and nobody types the merge check into Proof in its place` : '';
+  if (unproved.length) return { cause: 'evidence', text: `${issue.id} has lines whose method is not met${g.tracked && g.anchor ? ` (rows count since ${sinceText(g.anchor)})` : ''}: ${unproved.map(lineStateText).join('; ')} — ${lineRowForm(issue.id)}${gap}` };
   const slots = slotRefusal(root, profile, issue, g);
   if (slots) return { cause: 'slots', text: slots };
   if (profile.doneGate['requires-merged']) { const m = mergeRefusal(root, issue, base, g); if (m) return { cause: 'merge', text: m }; }

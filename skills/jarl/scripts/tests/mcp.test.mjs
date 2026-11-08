@@ -194,7 +194,7 @@ test('smoke: initialize, tools/list, status and a writing command on a temporary
 
     // The CLI's stderr notes come back as a second block.
     await s.call('jarl_evidence', { ids: '1', ran: 'npm test', saw: 'ok', line: '1', root });
-    await s.call('jarl_review', { ids: '1', verdict: 'approve', text: FINDINGS, by: 'jarl', root });
+    await s.call('jarl_review', { ids: '1', verdict: 'approve', text: FINDINGS, by: 'rev', root });
     await s.call('jarl_merged', { ids: '1', sha: 'abc1234', ci: 'pending', root });
     const done = await s.call('jarl_set', { ids: '1', status: 'done', text: 'finished', root });
     assert.equal(done.isError, false, done.content[0].text);
@@ -372,7 +372,7 @@ test('with json: true, the answer is exactly one text block holding the JSON, wh
   // A command that notes something on stderr (set's evidence note) still comes back as one block, the note in _meta.
   mcp.callTool('jarl_new', { title: 't', acceptance: ['[read] x'], root: a });
   mcp.callTool('jarl_merged', { ids: '1', sha: 'abc1234', ci: 'pending', root: a });
-  mcp.callTool('jarl_review', { ids: '1', verdict: 'approve', text: FINDINGS, by: 'jarl', root: a });
+  mcp.callTool('jarl_review', { ids: '1', verdict: 'approve', text: FINDINGS, by: 'rev', root: a });
   const withNote = mcp.callTool('jarl_set', { ids: '1', status: 'done', text: 'finished', root: a, json: true });
   assert.equal(withNote.isError, false, withNote.content[0].text);
   assert.equal(withNote.content.length, 1);

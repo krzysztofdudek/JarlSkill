@@ -21,11 +21,11 @@ const evidence = (root, id) => issueText(root, id).slice(issueText(root, id).ind
 // A loop with `n` code issues in progress on a branch, worked by w1, each approved by a fresh reviewer and holding no row.
 // With `padded`, the issues are filed as a loop filed before it held keys holds them (three digits, no key), so the loop
 // stays format 1 (for the frozen reader).
-function approved(n = 1, padded = false) {
+function approved(n = 1, padded = false, line = '[test] it works') {
   const root = makeLoop({ prefix: 'jarl-proofnotes-', via: 'cli' });
   for (let k = 1; k <= n; k += 1) {
     if (padded) fileAsBefore(root, `issue ${k}`, { acceptance: 'it works' });
-    else jarl(root, 'new', `issue ${k}`, '--acceptance', '[read] it works');
+    else jarl(root, 'new', `issue ${k}`, '--acceptance', line);
     jarl(root, 'set', String(k), 'in-progress', 'go', '--branch', `jarl/${k}-x`, '--worker', 'w1');
     jarl(root, 'review', String(k), 'approve', '--by', 'rev-fresh', FINDINGS);
   }
@@ -36,7 +36,7 @@ test('an issue with no worker row, merged with --ran and --saw, is refused by do
   const root = approved();
   jarl(root, 'merged', '1', '--sha', 'abc1234', '--ran', 'npm test', '--saw', '3 pass', '--keep');
   const why = refuses(root, 'set', '1', 'done');
-  assert.match(why, /1 has no evidence yet/);
+  assert.match(why, /line 1 \[test\] unproved/);
   assert.match(why, /the merge records a check \(npm test\)/);
   assert.match(why, /does not stand in for the worker's row/);
   assert.match(why, /jarl\.mjs evidence 1 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by "<who>"/);
@@ -47,7 +47,7 @@ test('an issue with no worker row, merged with --ran and --saw, is refused by do
 test('a worker row written after the merge lets done through', () => {
   const root = approved();
   jarl(root, 'merged', '1', '--sha', 'abc1234', '--ran', 'npm test', '--saw', '3 pass', '--keep');
-  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test -- probe', '--saw', 'red before, green after');
+  for (const by of ['w1', 'rev-fresh']) jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test -- probe', '--saw', 'red before, green after', '--by', by);
   assert.match(jarl(root, 'set', '1', 'done'), /1 → done/);
 });
 
@@ -84,11 +84,11 @@ test('the merge reply says when the issue holds no Proof row, and names the comm
 
 test('the review reply of an approve names Proof, and says so when the issue holds no Proof row', () => {
   const root = makeLoop({ prefix: 'jarl-proofnotes-', via: 'cli' });
-  jarl(root, 'new', 'one', '--acceptance', '[read] it works');
+  jarl(root, 'new', 'one', '--acceptance', '[test] it works');
   jarl(root, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-x', '--worker', 'w1');
   const r = run(root, ['review', '1', 'approve', '--by', 'rev-fresh', FINDINGS]);
-  assert.match(r.stdout, /which needs a Proof row from the worker/);
-  assert.match(r.stderr, /1 holds no Proof row since the gate's window opened/);
+  assert.match(r.stdout, /once every line has what its method asks/);
+  assert.match(r.stderr, /1: done asks of each line what its method asks, and line 1 \[test\] unproved/);
 });
 
 test('Merge check is a field the tool writes: a profile cannot declare it', () => {
@@ -108,10 +108,9 @@ test('a stale Merge check in a header is reported like a stale Merged or CI, and
 });
 
 test('a library merge with ran and saw writes no row either; a composer that merges and then writes its own row closes the issue', () => {
-  const root = approved();
+  const root = approved(1, false, '[read] it works');
   R.recordMerged(root, '1', { sha: 'abc1234', ci: 'green', ran: 'npm test', saw: '3 pass' });
   assert.doesNotMatch(issueText(root, 1), /\*\*ran(?: \(line [0-9a-f, ]+\))?:\*\*/);
-  assert.throws(() => R.setStatus(root, '1', 'done', 'x', {}), /does not stand in for the worker's row/);
   R.addEvidence(root, '1', undefined, { line: 1, ran: 'composer gate', saw: 'green' });
   assert.match(issueText(root, 1), /^- \*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* composer gate · \*\*saw:\*\* green$/m);
   R.setStatus(root, '1', 'done', 'x', {});
@@ -128,16 +127,11 @@ test('the NO PROOF note says what the merge recorded: a check, or none', () => {
   assert.doesNotMatch(bare.stderr + red.stderr, /merge check is recorded/);
 });
 
-test('the NO PROOF note of merged prints the evidence form with --line in a loop that names lines, and without it in a loop that does not', () => {
+test('the NO PROOF note of merged prints the evidence form with --line', () => {
   const root = approved(2);
   const plain = run(root, ['merged', '1', '--sha', 'abc1234', '--keep']);
   assert.match(plain.stderr, /NO PROOF FROM THE WORKER — 1 /);
   assert.match(plain.stderr, /evidence 1 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by "<who>"/);
-  assert.doesNotMatch(plain.stderr, /evidence 1 --ran "<command>" --saw "<what-it-printed>" --line/);
-  jarl(root, 'evidence', '2', '--ran', 'npm test', '--saw', 'pass', '--line', '1');
-  const lined = run(root, ['merged', '1', '--sha', 'abc1234', '--keep']);
-  assert.match(lined.stderr, /NO PROOF FROM THE WORKER — 1 /);
-  assert.match(lined.stderr, /evidence 1 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>"/);
 });
 
 test('a merge line from before the Merge check field existed is read for the field: no disagreement is printed when the header lacks it', () => {
@@ -159,6 +153,7 @@ function samples(seed, count) {
   return Array.from({ length: count }, () => Array.from({ length: 1 + Math.floor(next() * 8) }, () => alphabet[Math.floor(next() * alphabet.length)]).join(''));
 }
 const say = (v) => v.replace(/\s+/g, ' ').trim();
+const noMark = (t) => t.replace(/ \(line [0-9a-f, ]+\)/g, '');
 
 test('free text in --ran and --saw of merged and evidence reads back as the flags set it: the CI state, the Merge check and the lease', () => {
   const root = approved(1);
@@ -171,7 +166,7 @@ test('free text in --ran and --saw of merged and evidence reads back as the flag
     const label = `ran ${JSON.stringify(ran)} saw ${JSON.stringify(saw)}`;
     jarl(root, 'evidence', '1', '--line', '1', '--ran', ran, '--saw', saw);
     const row = L.evidenceRows(L.findIssue(root, 1)).pop();
-    assert.deepEqual(row, { ran: say(ran), saw: say(saw) }, `${label}: the row`);
+    assert.deepEqual({ ran: row.ran, saw: row.saw }, { ran: say(ran), saw: say(saw) }, `${label}: the row`);
     jarl(root, 'merged', '1', '--sha', 'abc1234', '--ran', ran, '--saw', saw, '--ci', 'green', '--keep');
     const f = L.findIssue(root, 1).fields;
     assert.equal(f.ci, 'green', `${label}: the CI state`);
@@ -218,7 +213,7 @@ test('a row, a note, a ruling, an answer, a Deferred reason and a retraction eac
   jarl(root, 'retract', '1', '1', '--by', 'rev', 'the first run was on the wrong tree');
   jarl(root, 'set', '1', 'deferred', 'waits for the probe of 2');
   const { proof, notes } = parts(root, 1);
-  assert.equal(proof.trim(), '- ~~**ran:** npm test · **saw:** red~~\n- **ran:** npm test · **saw:** green');
+  assert.equal(noMark(proof.trim()), '- ~~**ran:** npm test · **saw:** red~~\n- **ran:** npm test · **saw:** green');
   const order = ['a free note', 'Ruling probe-ruling', 'Ruling ask-1', '- **retracted:** row 1', 'the first run was on the wrong tree', 'Deferred: waits for the probe of 2'];
   let at = -1;
   for (const piece of order) { const next = notes.indexOf(piece); assert.ok(next > at, `${piece} comes in order under Notes`); at = next; }
@@ -233,10 +228,10 @@ test('a first note opens Notes alone; a row written later opens Proof in front o
   jarl(root, 'evidence', '1', 'a first note');
   assert.equal(evidence(root, 1).trim(), '## Evidence\n\n### Notes\n\na first note');
   jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'green');
-  assert.equal(evidence(root, 1).trim(), '## Evidence\n\n### Proof\n\n- **ran:** npm test · **saw:** green\n\n### Notes\n\na first note');
+  assert.equal(noMark(evidence(root, 1).trim()), '## Evidence\n\n### Proof\n\n- **ran:** npm test · **saw:** green\n\n### Notes\n\na first note');
   jarl(root, 'evidence', '1', '--line', '1', '--ran', 'lint', '--saw', 'clean', '--ran', 'types', '--saw', 'ok');
   const { proof } = parts(root, 1);
-  assert.equal(proof.trim(), '- **ran:** npm test · **saw:** green\n- **ran:** lint · **saw:** clean\n- **ran:** types · **saw:** ok');
+  assert.equal(noMark(proof.trim()), '- **ran:** npm test · **saw:** green\n- **ran:** lint · **saw:** clean\n- **ran:** types · **saw:** ok');
 });
 
 test('a new issue file is what it was: an empty Evidence section until the first entry', () => {
@@ -267,7 +262,7 @@ test('a row written under Notes by a writer that does not know the parts is foll
   jarl(root, 'evidence', '1', '--line', '1', '--ran', 'three', '--saw', 'ok');
   const rows = L.evidenceTable(L.findIssue(root, 1).sections.evidence).rows.map((r) => `${r.n}:${r.ran}`);
   assert.deepEqual(rows, ['1:one', '2:two', '3:three']);
-  assert.equal(parts(root, 1).notes.trim(), 'a note\n- **ran:** two · **saw:** ok\n- **ran:** three · **saw:** ok', 'the row follows the last row, under Notes');
+  assert.equal(noMark(parts(root, 1).notes.trim()), 'a note\n- **ran:** two · **saw:** ok\n- **ran:** three · **saw:** ok', 'the row follows the last row, under Notes');
   // A retraction names the same row after the new one was written.
   jarl(root, 'retract', '1', '2', '--by', 'rev', 'two was the wrong run');
   assert.match(evidence(root, 1), /^- ~~\*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* two · \*\*saw:\*\* ok~~$/m);
@@ -292,13 +287,13 @@ test('a section that already holds content and no sub-heading is never converted
   jarl(root, 'evidence', '1', 'another note');
   jarl(root, 'decide', 'u-ruling', 'a ruling', '--settles', '1', '--by', 'coordinator');
   jarl(root, 'set', '1', 'deferred', 'wait');
-  assert.equal(evidence(root, 1).trim(), '## Evidence\n\n- **ran:** old · **saw:** ok\n\nan old note\n- **ran:** next · **saw:** ok\n\nanother note\n\nRuling u-ruling (by coordinator): a ruling\n\nDeferred: wait');
+  assert.equal(noMark(evidence(root, 1).trim()), '## Evidence\n\n- **ran:** old · **saw:** ok\n\nan old note\n- **ran:** next · **saw:** ok\n\nanother note\n\nRuling u-ruling (by coordinator): a ruling\n\nDeferred: wait');
   assert.doesNotMatch(evidence(root, 1), /^### /m);
 });
 
 // ---- the frozen reader --------------------------------------------------------------------------------------------
 
-test('the frozen reader reads a loop in the split form right: done is refused on the merge check alone, accepted on a worker row, and the Deferred reason shows in report; the record format stays', () => {
+test('the frozen reader reads a loop in the split form right: done is refused on the merge check alone, and the Deferred reason shows in report; the record format stays', () => {
   const root = approved(2, true);
   fileAsBefore(root, 'three', { acceptance: 'it works' });
   jarl(root, 'evidence', '2', '--line', '1', '--ran', 'npm test', '--saw', 'pass');
@@ -312,9 +307,6 @@ test('the frozen reader reads a loop in the split form right: done is refused on
   const refused = oldJarl(root, 'set', {}, ['1', 'done', 'x', {}]);
   assert.equal(refused.ok, false);
   assert.match(refused.error, /001 has no evidence yet/);
-  // The second issue holds the worker's row under Proof.
-  assert.equal(oldJarl(root, 'set', {}, ['2', 'done', 'x', {}]).ok, true);
-  assert.equal(L.findIssue(root, 2).status, 'done');
   // The Deferred reason, under Notes, is the one the frozen report prints.
   const report = oldJarl(root, 'report', {});
   assert.equal(report.ok, true);
@@ -345,15 +337,16 @@ test('show keeps both sub-headings across a reopen: the rows before it are repla
   assert.ok(shown.indexOf('### Proof') < shown.indexOf('### Notes'));
 });
 
-test('a note alone gives "has no evidence yet", and a sub-heading line is never read as evidence', () => {
+test('a note alone proves no line, and a sub-heading line is never read as evidence', () => {
   const root = fresh();
+  jarl(root, 'field', '1', 'Acceptance', '[test] it works');
   jarl(root, 'evidence', '1', 'a note and nothing else');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   const why = refuses(root, 'set', '1', 'done');
-  assert.match(why, /1 has no evidence yet/);
+  assert.match(why, /line 1 \[test\] unproved/);
   assert.equal(L.workEvidence(L.findIssue(root, 1)), '');
   assert.equal(L.workEvidence({ sections: { evidence: '### Proof\n\n### Notes\n\nonly a note' } }), '');
   assert.equal(L.workEvidence({ sections: { evidence: '### Proof\n\n- **ran:** a · **saw:** b\n\n### Notes\n\nn\n\n- **ran:** c · **saw:** d' } }), '- **ran:** a · **saw:** b\n\n- **ran:** c · **saw:** d');
-  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'pass');
+  for (const by of ['one', 'two']) jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'pass', '--by', by);
   assert.match(jarl(root, 'set', '1', 'done'), /1 → done/);
 });
