@@ -494,7 +494,8 @@ const NAME_FLAGS = new Set(['by', 'worker', 'model', 'root']);
 const isFlagWord = (word) => String(word).startsWith('--');
 const NAME_FLAG_HOLES = { by: '<who>', worker: '<the-new-worker>', model: '<model-id>', root: '<loop-root>' };
 // One sentence per command: what it does, the MCP tool's whole description after "WRITES the loop." or "Read-only.".
-// The rest of what a command takes and does is its block of USAGE, which the jarl_help tool and --help print.
+// The rest of what a command takes and does is its block of USAGE, which the jarl_help tool prints, and <command> --help prints
+// one command's.
 export const COMMAND_SUMMARY = {
   init: 'Open a loop: create .jarl/ with the goal, out of git by default, committed or permanent when asked.',
   new: 'File an issue under the next free number, with its fields and its What, Why and Acceptance; a promise (kind promise) or a wait on an outside person (kind wait, with person and check-when).',
@@ -537,6 +538,38 @@ export const COMMAND_SUMMARY = {
   close: 'Close the loop, filing the ratification batch first; it refuses while issues are open or in progress, or deferred where it removes the loop, unless force is set.',
   use: 'List the loops under this checkout, or name the loop the calls that follow reach: a tool session keeps it until use names another, and the command line prints the JARL_ROOT setting to export.',
 };
+
+// The help a call with no command prints: the start of the usage, one line for each command, what it does as far as its
+// first sentence allows, and the section the usage ends with. The whole usage is the jarl_help tool's answer; one command's
+// is <command> --help.
+const SHORT_LINE = 110;
+const firstSentence = (text) => { const s = text.split(/(?<=[.;])\s/)[0]; return s.length <= SHORT_LINE ? s : `${s.slice(0, s.lastIndexOf(' ', SHORT_LINE - 1))} …`; };
+const USAGE_BLOCKS = (() => {
+  const lines = USAGE.split('\n');
+  const out = new Map();
+  let current = null;
+  for (const line of lines.slice(lines.indexOf('commands:') + 1)) {
+    if (/^\S/.test(line)) break;
+    const head = /^ {2}([a-z]+)\b/.exec(line);
+    if (head && COMMAND_FLAGS[head[1]]) { current = out.get(head[1]) ?? []; out.set(head[1], current); }
+    if (current && line.trim()) current.push(line);
+  }
+  return out;
+})();
+// What <command> --help prints: that command's own block of the usage, or null for a word that is no command of it.
+export function commandUsage(cmd) {
+  const block = USAGE_BLOCKS.get(cmd);
+  if (!block) return null;
+  const [synopsis, ...first] = block[0].trim().split(/\s{2,}/);
+  return [`usage: jarl.mjs ${synopsis}`, ...first.map((l) => `  ${l}`), ...block.slice(1).map((l) => `  ${l.trim()}`)].join('\n');
+}
+export function shortUsage() {
+  const names = [...USAGE_BLOCKS.keys()].filter((c) => COMMAND_SUMMARY[c] && !INTERNAL_COMMANDS.includes(c));
+  const width = Math.max(...names.map((n) => n.length));
+  const usageHead = USAGE.split('\n').slice(0, USAGE.split('\n').indexOf('commands:')).join('\n');
+  const closing = USAGE.split('\n\n').pop();
+  return [usageHead, 'commands (each with its own usage: <command> --help; the whole usage: the jarl_help tool):', ...names.map((n) => `  ${n.padEnd(width)}  ${firstSentence(COMMAND_SUMMARY[n])}`), '', closing].join('\n');
+}
 // The fields that hold a list, per command: an argument (named as in COMMAND_ARGS) or a flag, and what one item is.
 // A name (an issue or question id, a tag, a finding's reference or id) never holds a bracket or a quote; a path (Files,
 // Repo) may hold brackets that pair up, as file names do (src/[id]/page.tsx). tag's operations add names. The tools take
@@ -780,7 +813,7 @@ function main() {
   try { parsed = parseArgs(process.argv.slice(2)); } catch (e) { console.error(e.message); process.exit(1); }
   const { positional, flags } = parsed;
   const [cmd, ...rest] = positional;
-  if (!cmd || flags.help) { console.log(USAGE); process.exit(flags.help ? 0 : 1); }
+  if (!cmd || flags.help) { console.log(cmd && commandUsage(cmd) ? commandUsage(cmd) : shortUsage()); process.exit(flags.help ? 0 : 1); }
   let located;
   try { located = cliRoot(cmd, flags, process.env, process.cwd(), rest); } catch (e) { console.error(e.message); process.exit(1); }
   const { root } = located;
@@ -948,7 +981,7 @@ function dispatchCall(root, commandName, rest, flags) {
       case 'merged': out = R.recordMerged(root, rest[0], { ...flags, caller: 'cli' }); text = `${out.ids.join(', ')} ${out.sha ? `merged ${out.sha}` : 'merge'}${out.check ? ` · check ${out.check}` : ''}${out.red ? ` · landed red, cause ${out.red}` : ''}${out.ci ? ` · CI ${out.ci}` : ''}${(out.cleanup || []).map((c) => `\n${c.kept ? `kept ${c.branch}${c.worktree ? ` (worktree ${c.worktree} removed)` : ''} — ${c.kept}` : `removed ${c.worktree ? `the worktree ${c.worktree} and ` : ''}the branch ${c.branch}`}${(c.commands || []).length ? `\nafter looking at the files, remove them with:\n${c.commands.map((x) => `  ${x}`).join('\n')}` : ''}${out.cleanup.some((x) => x.repo !== c.repo) ? ` [${c.repo}]` : ''}`).join('')}`; warn = out.notes.map((n) => `note: ${n}`); break;
       case 'scope': out = cmdCheck(root, rest[0], flags); text = `${out.id === null ? `package ${out.ids.join(', ')} on ${out.branch}\n` : ''}${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}${out.notes.length || out.notesOmitted ? `\n${renderCheckNotes(out)}` : ''}`; break;
       case 'branches': out = cmdBranches(root, flags); text = renderBranches(out, root); break;
-      case 'ask': out = R.ask(root, rest[0], { ...flags, width: undefined }); text = askText(out); break;
+      case 'ask': out = R.ask(root, rest[0], { ...flags, width: undefined }); text = askText(out); if (flags.kind === undefined) warn.push(`note: asked as ${out.kind}, the default kind (--kind is one of stop, stuck, lower, charter, ratify, escalation, rule)`); break;
       // --by and --option reach the answer through jarl-lib.mjs, under the lock held here.
       // A judgement names its author: on the command line an answer and a ruling are refused without --by, and the refusal
       // ends with the form of the call, its --by a placeholder. The library takes a call that names nobody.

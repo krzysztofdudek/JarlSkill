@@ -324,7 +324,7 @@ commands:
                                                  repository, every repository an open or in-progress issue
                                                  names and every one where an issue not dropped records a Branch
   ask "<text>" [--kind stop|stuck|lower|charter|ratify|escalation|rule] [--target x] [--issue 7] [--slice <coordinator>] [--option "<label:effect>"]... [--applies-to "<selectors>" [--until <date-or-id>] [--to owner]] --by who
-                                                 a question the owner has to answer; lower needs --target; stuck with
+                                                 a question the owner has to answer, of kind stuck unless --kind says otherwise; lower needs --target; stuck with
                                                  --issue and --by the holder of its lease goes up instead, to the
                                                  director of the issue's slice (the jarl with no slice), and to the
                                                  owner when the asker is the director;

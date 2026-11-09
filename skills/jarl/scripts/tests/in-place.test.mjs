@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SPAWN_TIMEOUT, gitRepo, jarl, refuses, run } from './helpers.mjs';
@@ -155,6 +155,18 @@ test('in a loop in a subdirectory of its repository, an uncommitted edit of the 
   decoys(top, root, 'another file, not committed\n');
   const r = run(root, ['set', '1', 'done', 'written and committed', '--by', 'jarl']);
   assert.equal(r.status, 0, r.stderr);
+});
+
+test('a declared path that is not there at the top of its repository, written from the loop\'s own folder, is refused with the base it is read from and the form of Files', () => {
+  const { top, root, g } = subdirectoryLoop('notes/only-here.md');
+  mkdirSync(join(root, 'notes'), { recursive: true });
+  writeFileSync(join(root, 'notes', 'only-here.md'), 'a note\n');
+  g('add', '-A'); g('commit', '-qm', 'the note, in the folder of the loop');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'git commit', '--saw', `${shortHead(g)} the note`, '--by', 'w1');
+  jarl(root, 'review', '1', 'approve', '--by', 'rev-1', FINDINGS);
+  const said = refuses(root, 'set', '1', 'done', 'written', '--by', 'jarl');
+  assert.ok(said.startsWith(`1 is worked in place, and notes/only-here.md is not there: a declared path is read from the top of its repository, ${realpathSync(top)}, not from the folder of the loop`), said);
+  assert.equal(lastLine(said), 'jarl.mjs field "<ids>" Files "<paths>" --by "<who>"');
 });
 
 test('a declared path that climbs out of its repository with .. is refused with the form of Files', () => {
