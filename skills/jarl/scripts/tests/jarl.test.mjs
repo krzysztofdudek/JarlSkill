@@ -5,7 +5,7 @@ import { join, basename, delimiter } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { sh, NO_EXCLUDES } from './portable.mjs';
-import { run, jarl, refuses, gitRepo, SPAWN_TIMEOUT, withNames } from './helpers.mjs';
+import { run, jarl, refuses, gitRepo, posixForms, SPAWN_TIMEOUT, withNames } from './helpers.mjs';
 import { fileURLToPath } from 'node:url';
 import { FINDINGS } from './findings.mjs';
 
@@ -29,7 +29,7 @@ test('the hint for an empty Found by is the field call that writes it, and that 
   const { file } = JSON.parse(jarl(root, 'new', 'bare', '--acceptance', '[read] it works', '--json'));
   writeFileSync(file, readFileSync(file, 'utf8').replace(/^\*\*Found by:\*\*.*$/m, '**Found by:**'));
   const hint = describeNew(file).empty.find((e) => e.field === 'found by');
-  assert.equal(hint.fill, "jarl.mjs field 1 'Found by' \"<who>\" --by \"<who>\"");
+  assert.equal(posixForms(hint.fill), "jarl.mjs field 1 'Found by' \"<who>\" --by \"<who>\"");
   assert.equal(jarl(root, 'field', '1', 'Found by', 'rev-a'), '1 Found by: rev-a');
   assert.equal(describeNew(file).empty.find((e) => e.field === 'found by'), undefined);
 });

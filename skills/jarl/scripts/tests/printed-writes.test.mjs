@@ -2,7 +2,7 @@
 // record holds who runs it, and the placeholder where it does not.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { jarl, loop } from './helpers.mjs';
+import { jarl, loop, posixForms } from './helpers.mjs';
 import { MUTATING } from '../jarl.mjs';
 import { TOOL_OPTIONS } from '../jarl-mcp.mjs';
 import { jarlLine } from '../lib/base.mjs';
@@ -35,7 +35,7 @@ test('a write printed by the common printer carries the placeholder of its write
   assert.equal(jarlLine('list', '--all'), 'jarl.mjs list --all');
   assert.equal(jarlLine('goal'), 'jarl.mjs goal');
   assert.equal(jarlLine('goal', '--set', '<machine-line>'), 'jarl.mjs goal --set "<machine-line>" --by "<who>"');
-  assert.equal(jarlLine('evidence', '--', '<ids>', '<text>'), 'jarl.mjs evidence --by "<who>" -- "<ids>" "<text>"');
+  assert.equal(posixForms(jarlLine('evidence', '--', '<ids>', '<text>')), 'jarl.mjs evidence --by "<who>" -- "<ids>" "<text>"', 'quoted on Windows, where PowerShell reads a bare -- as its own');
 });
 
 test('every write next prints names its writer, and the holder of the row where the record holds one', () => {

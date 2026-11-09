@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loop as makeLoop, gitRepo, jarl, refuses, run } from './helpers.mjs';
+import { loop as makeLoop, gitRepo, jarl, posixForms, refuses, run } from './helpers.mjs';
 import { sh } from './portable.mjs';
 import { FINDINGS } from './findings.mjs';
 
@@ -323,7 +323,7 @@ test('the idle row of a lease of several issues prints the form that moves the w
   W.setClock(Date.now() + 40 * 60_000);
   try {
     const row = L.cmdNextAs(root, { as: 'jarl', all: true }).rows.find((r) => r.what === 'idle');
-    assert.match(row.command, /^jarl\.mjs set 1,2 in-progress /);
+    assert.match(posixForms(row.command), /^jarl\.mjs set 1,2 in-progress /);
     assert.match(row.command, /--handover --by jarl$/);
   } finally { W.setClock(null); }
 });

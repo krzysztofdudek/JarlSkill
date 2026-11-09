@@ -168,10 +168,10 @@ const current = () => printing ?? { globals: [], shell: shellOf() };
 // A global flag as the words of a command: --json and --help as switches (whatever value they were given), --root as the
 // call gave it (--root x, --root=x), or its placeholder where it has no value, is one, was given twice or holds what the
 // shell cannot carry (a line break, or on Windows a character cmd and PowerShell read apart).
-export const rootPrintable = (v, shell) => typeof v === 'string' && !isPlaceholder(v) && !LINE_BREAKING.test(v) && printable(v, shell) && printable(`--root=${v}`, shell);
+export const rootPrintable = (v, shell, spelt) => typeof v === 'string' && !isPlaceholder(v) && !LINE_BREAKING.test(v) && (spelt === '=' || printable(v, shell)) && printable(`--root=${v}`, shell);
 export function globalWords(k, v, spelt, shell = 'posix') {
   if (k !== 'root') return [`--${k}`];
-  if (!rootPrintable(v, shell)) return ['--root', hole('<loop-root>')];
+  if (!rootPrintable(v, shell, spelt)) return ['--root', hole('<loop-root>')];
   return spelt === '=' ? [`--root=${v}`] : ['--root', v];
 }
 // The commands that write the record. goal writes only when it is given --set.

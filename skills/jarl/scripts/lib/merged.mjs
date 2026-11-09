@@ -1,6 +1,6 @@
 // The merged command: a recorded merge, what it checks and the notes it adds.
 
-import { CI_STATES, fieldText, hole, jarlLine, need, noSeparators, shellWord, splitList } from './base.mjs';
+import { CI_STATES, fieldText, hole, jarlLine, need, noSeparators, printCommand, splitList } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { git } from './git.mjs';
 import { canonical, jarlDir } from './where.mjs';
@@ -225,7 +225,7 @@ function approveTipNotes(root, issue, live, sha) {
   const is = repos.map((dir) => (dir && isGitRepo(dir) ? git(dir, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`]) : null));
   const unmoved = was.length === repos.length && repos.every((dir, k) => !dir || is[k] === was[k]);
   if (!is.some(Boolean) || unmoved) return [];
-  const see = (dir, a, b) => `git -C ${shellWord(dir)} log --oneline --first-parent ${short(a)}..${short(b)} and git -C ${shellWord(dir)} diff ${short(a)} ${short(b)}`;
+  const see = (dir, a, b) => `${printCommand(['git', '-C', dir, 'log', '--oneline', '--first-parent', `${short(a)}..${short(b)}`], { globals: [] })} and ${printCommand(['git', '-C', dir, 'diff', short(a), short(b)], { globals: [] })}`;
   const lines = (dir, args) => (git(dir, args) || '').split('\n').filter(Boolean);
   // The newest commit of the branch after the approved tip that the recorded commit holds; null when it holds none of
   // them and holds the approved tip (the reviewed commit landed), the branch's tip when it does not hold the approved tip.

@@ -7,7 +7,9 @@ import fs from 'node:fs';
 import { constants, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const outer = tmpdir();
+// Under the real path of the system's temporary directory: on macOS it stands behind a symlink (/var is /private/var) and
+// on Windows behind a short name (RUNNER~1), and git prints every path under it resolved.
+const outer = fs.realpathSync.native(tmpdir());
 const own = fs.mkdtempSync(join(outer, 'jarl-test-'));
 for (const name of ['TMPDIR', 'TMP', 'TEMP']) process.env[name] = own;
 

@@ -281,10 +281,10 @@ test('merged without --sha on an issue whose lease records no branch says so, an
 
 const APPROVED_ELSEWHERE = /APPROVED ON ANOTHER TIP/;
 // The commands the note gives to see what changed between two tips in a repository: the branch's commits along its first
-// parents, merges included, and the whole difference; the path as the shell takes it.
+// parents, merges included, and the whole difference; the path as the shell of the platform takes it (double quotes on Windows).
 const seeing = (dir, a, b) => {
   const at = realpathSync.native(dir);
-  const word = /^[A-Za-z0-9_@%+=:,./-]+$/.test(at) ? at : `'${at}'`;
+  const word = process.platform === 'win32' ? (/^[A-Za-z0-9_./:=-]+$/.test(at) ? at : `"${at}"`) : /^[A-Za-z0-9_@%+=:,./-]+$/.test(at) ? at : `'${at}'`;
   return `git -C ${word} log --oneline --first-parent ${a}..${b} and git -C ${word} diff ${a} ${b}`;
 };
 // The fixture with its issue approved by a fresh reviewer on the branch as it stands, and a helper that adds a commit on

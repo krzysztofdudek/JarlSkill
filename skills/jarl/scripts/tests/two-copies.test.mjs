@@ -122,7 +122,7 @@ for (const [shape, make] of [
     assert.match(readFileSync(join(b.dir, '.jarl', 'issues', '3-second-on-b.md'), 'utf8'), /^# 3 · second on B\n/);
     const logAfter = readFileSync(join(b.dir, '.jarl', 'log.md'), 'utf8');
     assert.ok(logAfter.startsWith(logBefore), 'no line of the log is rewritten');
-    assert.match(logAfter.slice(logBefore.length), new RegExp(`^- \\S+ \\S+ key ${keyB} by coordinator B · 3 renumbered from 2 · issues/3-second-on-b\\.md\\n$`));
+    assert.match(logAfter.slice(logBefore.length), new RegExp(`^- \\S+ \\S+ key ${keyB} by coordinator B · 3 renumbered from 2 · issues/3-second-on-b\\.md\\r?\\n$`), 'the new line ends as the log\'s lines do');
     // After it: each issue is read from its own lines, under its own number.
     const two = json(b.dir, 'show', '2');
     const three = json(b.dir, 'show', '3');
@@ -208,7 +208,8 @@ test('a second writer that sets the lease the issue already has is no conflict',
 // line escaped with a backslash, every other line as given.
 const QUOTED = 'git left this in the file:\n```\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> main\n```\nand the same with no fence:\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> main\nand a line that quotes <<<<<<< HEAD inline';
 const ESCAPED = 'git left this in the file:\n```\n\\<<<<<<< HEAD\nours\n\\=======\ntheirs\n\\>>>>>>> main\n```\nand the same with no fence:\n\\<<<<<<< HEAD\nours\n\\=======\ntheirs\n\\>>>>>>> main\nand a line that quotes <<<<<<< HEAD inline';
-const issueText = (dir, file) => readFileSync(join(dir, '.jarl', 'issues', file), 'utf8');
+// A conflicted file as a test reads it: git on Windows checks it out with CRLF (core.autocrlf), and the tool reads either.
+const issueText = (dir, file) => readFileSync(join(dir, '.jarl', 'issues', file), 'utf8').replace(/\r\n/g, '\n');
 const MARKER_LINE = /^(?:<{7}|={7}|>{7})/m;
 
 test('text that quotes a git conflict, written through new, body, a note and a reason, has each marker line escaped, reads back as written, and verify reads it as text', () => {
@@ -302,8 +303,8 @@ test('a lone opening marker is no conflict, and a conflict after it is still ref
 // A real pull whose conflict holds, on one side, a marker line the tool did not write (a hand edit, or text written raw):
 // `edit` turns the text the tool wrote on that side into the text with the stray line.
 for (const [shape, side, edit] of [
-  ['an opening marker after the separator', 'a', (t) => t.replace('the text on A\n', 'the text on A\n<<<<<<< lone line\n')],
-  ['a closing marker before the separator', 'b', (t) => t.replace('the text on B\n', 'the text on B\n>>>>>>> lone line\n')],
+  ['an opening marker after the separator', 'a', (t) => t.replace(/the text on A(\r?\n)/, 'the text on A$1<<<<<<< lone line$1')],
+  ['a closing marker before the separator', 'b', (t) => t.replace(/the text on B(\r?\n)/, 'the text on B$1>>>>>>> lone line$1')],
 ]) {
   test(`verify refuses a real git conflict whose side holds ${shape}`, () => {
     const a = committedLoop();

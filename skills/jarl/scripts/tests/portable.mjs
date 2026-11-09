@@ -7,9 +7,15 @@
 //
 // ghStub: a stand-in for gh that records its calls and prints the given runs. It is a node script, not a shell one:
 // jarl runs a JARL_GH ending in .mjs with node, so the stub works where a shebang does not.
+//
+// importSpecifier: a module's path as an import names it. Node refuses a Windows path given to --import or import(),
+// reading the drive letter as a URL scheme (`Received protocol 'd:'`); a file URL is what it reads on every OS.
 import { execFileSync } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+export const importSpecifier = (path, platform = process.platform) => pathToFileURL(path, { windows: platform === 'win32' }).href;
 
 let BASH;
 export function bashBin() {

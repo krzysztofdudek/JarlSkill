@@ -37,10 +37,16 @@ export function renameRetry(from, to, rename = renameSync, platform = process.pl
 const IN_RECORD = /(?:^|[\\/])\.jarl[\\/]/;
 function needRecordText(path, before, text) { if (IN_RECORD.test(path)) needNoNewOwnersWords(before(), text, basename(path)); }
 
+// Whether every line of a file ends in CRLF: a Windows checkout with core.autocrlf, or an editor there, hands it back
+// that way. A file read and written back keeps its endings: written whole, each line of the new text ends as the file's did;
+// appended to, the bytes already there are not touched and the new lines end as they do.
+const endsInCrlf = (raw) => raw.includes('\r\n') && !/(?:^|[^\r])\n/.test(raw);
+const withEndingsOf = (raw, text) => (endsInCrlf(raw) ? text.replace(/\r?\n/g, '\r\n') : text);
+
 // Written whole beside the target, then renamed over it: a reader sees the old file or the new one.
 export function writeAtomic(path, text) {
   needRecordText(path, () => (existsSync(path) ? readText(path) : ''), text);
-  writeRaw(path, text);
+  writeRaw(path, existsSync(path) ? withEndingsOf(readFileSync(path, 'utf8'), text) : text);
 }
 function writeRaw(path, text) {
   const tmp = join(dirname(path), `.${basename(path)}.${process.pid}.tmp`);
@@ -50,7 +56,9 @@ function writeRaw(path, text) {
 
 function appendAtomic(path, header, text) {
   needRecordText(path, () => '', text);
-  writeRaw(path, (existsSync(path) ? readText(path) : header) + text);
+  if (!existsSync(path)) { writeRaw(path, header + text); return; }
+  const raw = readFileSync(path, 'utf8');
+  writeRaw(path, raw + withEndingsOf(raw, text));
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
