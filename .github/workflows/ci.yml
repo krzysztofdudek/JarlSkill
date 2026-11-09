@@ -36,13 +36,15 @@ jobs:
 
   # Runs the same tests on Windows: paths with drive letters and backslashes, CRLF checkouts (the runner's git has
   # core.autocrlf on), a runner with no bash of its own, and a rename refused over an open file. Git for Windows' bash
-  # runs the tests' own shell steps (tests/portable.mjs).
+  # runs the tests' own shell steps (tests/portable.mjs). In three shards on each Node version, for the runner's few
+  # cores: tests/tmp-cleanup.test.mjs holds that together they run every test file.
   test-windows:
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
         node-version: [22, 24]
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
 
@@ -58,7 +60,7 @@ jobs:
 
       - name: Run tests
         working-directory: skills/jarl/scripts
-        run: npm test
+        run: npm test -- --test-shard=${{ matrix.shard }}/3
 
   # Runs the same tests on macOS: a case-insensitive disk, the temporary directory behind a symlink (/var/folders is
   # /private/var/folders, as /tmp is /private/tmp), zsh as well as sh in the walks of the printed forms, and BSD tools
