@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- The brief a coordinator is raised with lists the open questions of its slice, says how far each issue in flight has come, and marks which issues are promises or waits, so a coordinator taking over a slice sees what the one before it left open.
 - A worker, a reviewer or a merger is raised with one complete brief the tool prints, every command filled in, and reads nothing else for its role. What each agent is told to do next now shows a takeover that is due, sends a stuck worker's question to whoever directs its work, and lists the work nearest to landing first.
 
 - The owner can close chosen tasks without a review, by a decision of his that names them and keeps his own words. Nobody else can. The decision counts until the task is sent back, reopened or its code changes, and the status counts such tasks apart from reviewed ones.

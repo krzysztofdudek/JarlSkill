@@ -12,13 +12,13 @@ import { firstLine, firstLineReadings, goalLineOf, goalPath } from './journal.mj
 import { outOfGit } from './loop-git.mjs';
 import { acceptanceLines, evidenceNotes, evidenceTable, issueNamed, reviewEntries } from './issues.mjs';
 import { countedRowsOf, lineChanges, lineStates, linesAtFirstLease, noRowOwed, readLine, shownRowLines, tierAtFirstLease } from './lines.mjs';
-import { gateOf, worksInPlace } from './gate.mjs';
+import { gateOf, inFlightMark, worksInPlace } from './gate.mjs';
 import { readLoop } from './loop.mjs';
 import { integrationBranch, sameSlice, sliceNamed, sliceOf } from './slices.mjs';
 import { loopRepos, takenOver } from './rounds.mjs';
 import { findingOfLog, modelLinesIn } from './models.mjs';
 import { loopRules, ruleLines, rulesFor } from './rules.mjs';
-import { issueView } from './evidence.mjs';
+import { IN_FLIGHT_MARKS, issueView } from './evidence.mjs';
 import { baseOf, isGitRepo, issueRepos, refsIn, repoLabel, worktreeState, worktreesOf } from './repositories.mjs';
 import { cmpId } from './ids.mjs';
 import { sameLease } from './leases.mjs';
@@ -456,9 +456,14 @@ function sliceBrief(root, loop, name) {
   const notes = [];
   if (!declared) notes.push(`the goal's Coordinators line does not name ${slice}: its approve counts as fresh and what its slice holds is the jarl's until the line names it — ${jarlLine('goal', '--set', hole('<machine-line>'))}`);
   if (!inPlay.length) notes.push(`no issue of the slice ${slice} is in play`);
+  const inScope = new Set(inPlay.map((i) => i.id));
+  // A replacement is told what the old coordinator left open: what the slice asked and has no answer to, and how far each lease has come.
+  const questions = loop.asks.filter((a) => a.state === 'open' && ((a.issue && inScope.has(a.issue)) || sameSlice(a.slice ?? null, slice)));
+  const stageOf = (i) => { if (!loop.profile.is(i.status, 'holds-claim')) return {}; const mark = inFlightMark(loop, i); return mark === 'no-rows' ? {} : { stage: IN_FLIGHT_MARKS[mark] }; };
   return {
     role: 'coordinator', slice, declared, roles: ['coordinator'], moments: [...COORDINATOR_MOMENTS].sort(),
-    issues: inPlay.map((i) => ({ id: i.id, title: i.title, status: i.status, worker: fieldText(i.fields.worker) || null, ...(i.tree && i.tree.parent ? { parent: i.tree.parent.id } : {}) })),
+    issues: inPlay.map((i) => ({ id: i.id, title: i.title, status: i.status, worker: fieldText(i.fields.worker) || null, ...(i.tree && i.tree.parent ? { parent: i.tree.parent.id } : {}), ...(loop.profile.keptKind(i.kind) ? { kept: loop.profile.keptKind(i.kind) } : {}), ...stageOf(i) })),
+    questions: questions.map((a) => ({ id: a.id, kind: a.kind || 'stuck', issue: a.issue ?? null, question: a.question })),
     rules, reference: REFERENCES.coordinator,
     record: [{ what: 'what is on the coordinator now, each line with the command that moves it', command: jarlLine('next', '--as', slice) },
       { what: 'an escalation to the jarl, for one of the four reasons', command: jarlLine('ask', hole('<text>'), '--kind', 'escalation', '--slice', slice, '--by', slice) }],
@@ -646,7 +651,8 @@ export function renderBrief(o) {
     out.push(`The coordinator's brief for the slice ${o.slice} (slice:${o.slice}), assembled from the record; it writes nothing.`);
     out.push(...o.notes.map((n) => `note: ${n}`), '');
     out.push(`## The issues of the slice in play (${o.issues.length})`);
-    out.push(...(o.issues.length ? o.issues.map((i) => `- ${i.id} ${i.status}${i.worker ? ` · ${i.worker}` : ''} · ${i.title}${i.parent ? ` · sub-issue of ${i.parent}` : ''}`) : ['- (none)']));
+    out.push(...(o.issues.length ? o.issues.map((i) => `- ${i.id} ${i.status}${i.kept ? ` · ${i.kept}` : ''}${i.worker ? ` · ${i.worker}` : ''} · ${i.title}${i.parent ? ` · sub-issue of ${i.parent}` : ''}${i.stage ? ` · ${i.stage}` : ''}`) : ['- (none)']));
+    if (o.questions.length) out.push('', `## Open questions of the slice (${o.questions.length})`, ...o.questions.map((q) => `- a-${q.id} (${q.kind})${q.issue ? ` · issue ${q.issue}` : ''} · ${q.question}`));
     out.push('', `## Rules for the coordinator of the slice ${o.slice} (${o.rules.length})`, ...(o.rules.length ? o.rules.flatMap(ruleLines) : ['- (none)']), `${o.rulings.inForce} ruling(s) in force in the loop: ${o.rulings.command}`);
     out.push('', '## The role', `${o.reference.file}, section "${o.reference.section}", in the jarl skill's directory: the role in full; this brief adds what the record holds.`);
     out.push('', '## Recording the result', ...o.record.map((r) => `- ${r.what}: ${r.command}`));
