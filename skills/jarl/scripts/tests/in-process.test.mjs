@@ -3,7 +3,7 @@
 // pasted into a shell, read by the shell and run in-process, matches the same line run by a real process.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, mkdtempSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, relative } from 'node:path';
@@ -88,4 +88,15 @@ test('a line pasted into a shell reads as the same line run by a real process: t
       assert.deepEqual(record(dirA), record(dirB), `${sh} ${line}`);
     }
   }
+});
+
+test('a call that never ends fails at its time limit instead of hanging, with the console given back and the next call running', () => {
+  const log = console.log;
+  assert.throws(() => runInProcess(['status'], { timeout: 200, main: () => { for (;;) { /* a command that never ends */ } } }), /jarl status did not end within 200 ms/);
+  assert.equal(console.log, log, 'the console is the test\'s again');
+  assert.equal(runInProcess(['--version']).status, 0, 'the next call runs');
+});
+
+test('a call held up by a child process that never ends fails at its time limit too', () => {
+  assert.throws(() => runInProcess(['status'], { timeout: 300, main: () => execFileSync(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' }) }), /did not end within 300 ms/);
 });
