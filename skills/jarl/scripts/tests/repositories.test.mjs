@@ -790,6 +790,7 @@ test('a loop outside any repository is told apart without starting git, and a lo
   jarl(outside, 'init', 'a goal');
   jarl(outside, 'new', 'one', '--acceptance', '[read] it works');
   assert.deepEqual(asked(outside, ['brief', '1', '--role', 'reviewer']), [], 'no process was started to ask');
+  assert.deepEqual(asked(outside, ['resume']), [], 'nor by a view that reads the checkout');
   const repo = join(top, 'repo');
   mkdirSync(repo);
   git(repo, 'init', '-q', '-b', 'main');
