@@ -269,7 +269,7 @@ test('a repository the issue names where its branch has no work needs no landing
 
 test('the merger of a loop over several repositories is told one merge per repository with work, and one done after the last', () => {
   const { a } = twoRepositories();
-  assert.match(jarl(a.dir, 'brief', '--role', 'merger'), /a green merge, one per repository where the branch has work, each with --repo, and done after the last:/);
+  assert.match(jarl(a.dir, 'brief', '--role', 'merger'), /a green merge, one per repository with work, then done:/);
 });
 
 test('report --metrics prints the lines by method and the count per stage, as status does', () => {

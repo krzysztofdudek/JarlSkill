@@ -388,7 +388,7 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
     ...(o.disagreements || []).map(disagreementText),
     ...(o.headerRead || []).map((n) => `note: ${n.line}`),
     ...(o.lines && o.lines.total ? [linesCountText(o.lines)] : []),
-    ...(o.stages ? [`stages: ${Object.entries(o.stages).map(([k, v]) => `${v} ${k}`).join(' · ')}`] : []),
+    ...(o.stages ? [stagesText(o.stages)] : []),
     ...(o.check ? checkLines(o.check) : []),
     ...by,
     ...(o.by && o.by.where && Object.keys(o.by.where).length ? ['where each repository is on this machine:', ...reposWhereLines(o.by.where)] : []),
@@ -468,3 +468,4 @@ export function renderList(rows, profile = DEFAULT_PROFILE) {
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
 export { countsLine };
+export const stagesText = (stages) => `stages: ${Object.entries(stages).map(([k, v]) => `${v} ${k}`).join(' · ')}`;

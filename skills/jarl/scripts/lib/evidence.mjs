@@ -598,10 +598,11 @@ const SENT_BACK = 'sent back by a round, no new proof yet — it is back with th
 const APPROVED_IN_PLACE = 'approved and worked in place, so no merge waits — next its files are committed, a row names the commit, and it is set done';
 // Why an issue's recorded merge does not count for its code as it is now (see unmergedCode), as the words after "and":
 // done refuses that merge, so the views ask for the merge again. Null when the issue records no merge, or one that counts.
-export function mergeAgainWhy(loop, issue) {
+export function mergeAgainWhy(loop, issue, repo) {
   if (!mergedOf(issue)) return null;
   const u = unmergedCode(issue, gateOf(loop, issue.id));
   if (!u) return null;
+  if (u.why === 'repo') return repo === undefined || u.repos.includes(repo) ? unmergedText(u) : null;
   return u.why === 'tip' ? 'the branch has commits after its last merge' : 'its last merge was spent by a later start, reopen or red round';
 }
 // An approve refused for its model on an issue whose merge counts for its code as it is now: the merge queue has nothing

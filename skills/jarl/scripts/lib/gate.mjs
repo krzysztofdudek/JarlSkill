@@ -1,15 +1,17 @@
 // The done gate: the window of the log it reads, what clears it and what stands in its way.
 
+import { basename } from 'node:path';
 import { fieldText, jarlLine } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { idKey } from './ids.mjs';
 import { BOT_PREFIX, clearsOf, clearsWords, reviewerRule } from './profile.mjs';
 import { isParentLine, leaseOfMove } from './log.mjs';
 import { alignRows, evidenceNotes, evidenceTable, mergedOf } from './issues.mjs';
-import { branchTip } from './repositories.mjs';
+import { baseOf, branchTip, isGitRepo, issueRepos, refsIn } from './repositories.mjs';
+import { git } from './git.mjs';
 import { OWNER } from './owner.mjs';
 import { leaseWorkers, readLoop } from './loop.mjs';
-import { reviewerKind } from './slices.mjs';
+import { integrationBranch, reviewerKind, sliceMerger } from './slices.mjs';
 
 // How strong an approve of each standing is, strongest first. A bot's approve clears nothing unless the done gate names it,
 // so it stands below the loop's director's, which still clears an issue that carries no code.
@@ -60,12 +62,15 @@ export function unmergedCode(issue, g) {
   if (!fieldText(issue.fields.branch)) return null;
   const state = g.mergeState();
   if (state === null) return mergedOf(issue) ? null : { why: 'none' };
-  return state.counts ? null : state;
+  if (!state.counts) return state;
+  const repos = g.unlandedRepos();
+  return repos.length ? { why: 'repo', repos } : null;
 }
 
 // What unmergedCode found, as the words after "and": the done refusal and the status flag say it alike.
 export function unmergedText(u) {
   if (u.why === 'none') return 'records no merge';
+  if (u.why === 'repo') return `no recorded merge lands its work in ${u.repos.map((r) => basename(r)).join(', ')}`;
   const short = (tip) => tip.split(',').map((s) => s.slice(0, 12)).join(',');
   const last = `its last merge, ${u.last.sha} (${u.last.at}),`;
   return u.why === 'tip'
@@ -351,6 +356,20 @@ export function gateOf(loop, id) {
       if (merges.some(counts)) return { counts: true };
       const last = merges[merges.length - 1];
       return { counts: false, last, why: inWindow(last) ? 'tip' : 'window', tipNow: now() };
+    },
+    // An issue that names several repositories has a merge per repository: those where its branch has work its target lacks
+    // and no counted merge commit is known. An issue of one repository is read by its merge alone.
+    unlandedRepos: () => {
+      const branch = issue ? fieldText(issue.fields.branch) : '';
+      const repos = branch && loop.root ? issueRepos(loop.root, issue).filter(isGitRepo) : [];
+      if (repos.length < 2) return [];
+      const m = sliceMerger(loop.goalLines, issue);
+      const landed = merges.filter(counts).map((x) => x.sha);
+      return repos.filter((r) => {
+        if (!refsIn(r).has(branch) || landed.some((sha) => git(r, ['cat-file', '-e', `${sha}^{commit}`]) !== null)) return false;
+        const target = m && refsIn(r).has(integrationBranch(m.slice)) ? integrationBranch(m.slice) : baseOf(loop.root, r);
+        return Number(git(r, ['rev-list', '--count', `${target}..${branch}`]) || 0) > 0;
+      });
     },
     closingTip: () => {
       if (now() !== null) return now();

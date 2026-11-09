@@ -432,7 +432,7 @@ function mergerBrief(root, loop, slice, ctx) {
     { what: 'what waits for you, branch by branch', command: tool(...(m ? ['next', '--as', m.name, '--all'] : ['resume', ...repoFlag])) },
     { what: 'the settings of the merge drivers', command: printCommand([RUNTIME, SCRIPT, 'merge-driver', 'flags'], { globals: [] }) },
     { what: 'what the branch may touch', command: tool('scope', hole('<id>'), '--branch', hole('<branch>')) },
-    { what: 'a green merge', command: tool('merged', hole('<ids>'), '--sha', hole('<sha>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), ...repoFlag) },
+    { what: `a green merge${repoFlag.length ? ', one per repository with work, then done' : ''}`, command: tool('merged', hole('<ids>'), '--sha', hole('<sha>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), ...repoFlag) },
     { what: 'a red, the work\'s fault', command: tool('round', hole('<id>'), hole('<text>')) },
     { what: 'a red from outside the branch', command: tool('new', hole('<what-is-red>'), '--tier', hole('<tier>')) },
     { what: 'a landing on red', command: tool('merged', hole('<ids>'), '--sha', hole('<sha>'), '--red', hole('<another-issue>')) },
@@ -607,7 +607,7 @@ function renderMerger(o, out) {
   section(out, 'Where you merge', [
     `You are ${o.merger ?? 'the merger'}. Your target: ${o.target ?? o.repos.map((r) => `${r.base} in ${r.label}`).join(', ') ?? 'the branch the loop lands on'}.`,
     ...o.repos.map((r) => `Repository ${r.label} (${r.repo}), base ${r.base}${o.target ? `, target ${r.target}` : ''}. ${r.checkout ? `Merge in ${r.checkout}: it holds ${r.target}, and a second worktree of a checked-out branch is refused.` : `No checkout holds ${r.target}: cut a worktree of your own with ${printCommand(['git', '-C', r.repo, 'worktree', 'add', ...(r.exists ? [hole('<path>'), r.target] : ['-b', r.target, hole('<path>'), r.base])], { globals: [] })}.`}`),
-    `Loop root: ${o.root}. Tool: ${RUNTIME} ${o.script} (every command below is written with both).`,
+    `Loop root: ${o.root}. Tool: ${RUNTIME} ${o.script}.`,
     'One writer per target branch: only you merge into it, in a worktree of your own where no checkout holds the target, never a checkout another merger uses; only the holder of the main checkout commits `.jarl/`.',
     o.committed
       ? 'The loop is committed: if you hold the main checkout, commit `.jarl/` before each merge and again after each landing, even one in another repository. If you do not, you never commit `.jarl/`.'
