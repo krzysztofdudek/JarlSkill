@@ -116,7 +116,7 @@ test('next --as jarl and resume ask for the merge again, with the form of merged
   work('late.txt');
   const row = rowOf(root);
   assert.equal(row.says, 'approved, and the branch has commits after its last merge; merge it again and record the merge');
-  assert.equal(row.command, 'jarl.mjs merged 1 --sha "<sha>" --ran "<command>" --saw "<what-it-printed>"');
+  assert.equal(row.command, 'jarl.mjs merged 1 --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" --by jarl');
   const step = stepOf(root);
   assert.equal(step.mark, 'approved');
   assert.equal(step.next, 'approved, and the branch has commits after its last merge — next the merger lands it again and records the merge, then set it done');
@@ -139,7 +139,7 @@ test('next --as jarl asks for the merge again when a red round spent it, and a l
   assert.match(refuses(bare.root, 'set', '1', 'done', 'all green'), /so the commits after it are not merged/, 'done refuses the merge');
   const row = rowOf(bare.root);
   assert.equal(row.says, 'proof recorded, and the branch has commits after its last merge; merge it again and record the merge');
-  assert.equal(row.command, 'jarl.mjs merged 1 --sha "<sha>" --ran "<command>" --saw "<what-it-printed>"');
+  assert.equal(row.command, 'jarl.mjs merged 1 --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" --by jarl');
 });
 
 test('a red round after a merge spends it as it spends the approve', () => {

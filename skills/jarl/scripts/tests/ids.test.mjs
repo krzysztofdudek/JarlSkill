@@ -1,6 +1,5 @@
 // The id grammar: one or more digits, written plain or with leading zeros, compared as numbers. 007 and 7 name one issue
-// in every command, a number of fewer than three digits or of 1000 or more is written plain and raises the record format
-// before it is written, so a reader that expects three digits refuses the loop loudly instead of skipping a file.
+// in every command, a number of fewer than three digits or of 1000 or more is written plain.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
@@ -151,7 +150,7 @@ test('the same commands work by the MCP tool', () => {
   assert.match(tool(root, 'jarl_ask', { text: 'which?', issue: '1000' }), /a-1\b/);
 });
 
-test('questions: a-1000 and the plain 1000 in a question read and write the same, and the first of either raises the format', () => {
+test('questions: a-1000 and the plain 1000 in a question read and write the same', () => {
   const root = mkdtempSync(join(tmpdir(), 'jarl-ids-'));
   mkdirSync(join(root, '.git'));
   jarl(root, 'init', 'a goal');
@@ -163,8 +162,7 @@ test('questions: a-1000 and the plain 1000 in a question read and write the same
   assert.match(readFileSync(join(root, '.jarl', 'asks.md'), 'utf8'), /\*\*a-1000\*\* \(answered\)/);
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /answered a-1000 · this one/);
   assert.deepEqual(L.loadAsks(root).map((a) => a.id), ['999', '1000']);
-  // A question naming an issue of 1000 or more raises the format as well.
-  // The number 1000 is written as a file with no key, so the loop stays in format 1 until the question names it.
+  // The number 1000 is written as a file with no key.
   const other = loopAt999();
   writeFileSync(join(other, '.jarl', 'issues', '1000-thousand.md'), L.renderIssue({ id: '1000', title: 'thousand', kind: 'task', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
   jarl(other, 'ask', 'about it', '--issue', '1000');

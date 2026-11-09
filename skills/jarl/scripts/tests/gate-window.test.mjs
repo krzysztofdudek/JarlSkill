@@ -87,7 +87,7 @@ test('gateWindow gives the anchor and the cut for every event, from each closing
 
 // A loop at the root of a git repository on main, its first issue leased on the branch jarl/1-x with one commit of its
 // own, proved and approved by a fresh reviewer. `commit` adds a commit on the branch; `fresh` reads the gate as a new
-// the row's, raises the loop to record format 3.
+// process reads it.
 function leased({ library = false } = {}) {
   const { dir: root, g } = gitRepo({ prefix: 'jarl-pause-', branch: 'main' });
   jarl(root, 'init', 'goal');

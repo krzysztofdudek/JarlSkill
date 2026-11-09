@@ -139,8 +139,8 @@ test('in a loop whose profile requires a field, a finding outside the issue take
   assert.match(alone, /--field names a field of the issues --outside files/);
 });
 
-// first tip line raises a loop to format 3).
-function formatOneLeased(titles) {
+// Issues in progress on their branches, filed with three digits and no key.
+function leasedIssues(titles) {
   const root = makeLoop({ prefix: 'jarl-outside-tip-', via: 'cli', dotGit: false });
   const tool = join(root, 'tool');
   mkdirSync(tool);

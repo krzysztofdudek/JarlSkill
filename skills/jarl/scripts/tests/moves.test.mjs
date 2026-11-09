@@ -324,7 +324,7 @@ test('the idle row of a lease of several issues prints the form that moves the w
   try {
     const row = L.cmdNextAs(root, { as: 'jarl', all: true }).rows.find((r) => r.what === 'idle');
     assert.match(row.command, /^jarl\.mjs set 1,2 in-progress /);
-    assert.match(row.command, /--handover$/);
+    assert.match(row.command, /--handover --by jarl$/);
   } finally { W.setClock(null); }
 });
 

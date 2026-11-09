@@ -404,7 +404,7 @@ function freezeProfile(p) {
 const PROFILES = new Map();
 export function loadProfile(root) { return profileAt(jarlDir(root)); }
 // The profile of the record held in `dir` (a loop's .jarl/, or an archived loop's directory).
-export function profileAt(dir) {
+export function profileAt(dir, { archived = false } = {}) {
   const path = join(dir, 'profile.json');
   let st;
   try { st = statSync(path); } catch { return DEFAULT_PROFILE; }
@@ -413,9 +413,16 @@ export function profileAt(dir) {
   if (hit && hit.key === key) return hit.profile;
   let json;
   try { json = JSON.parse(readText(path)); } catch (e) { refuse(`${path} is not JSON: ${e.message}`, afterView(['jarl.mjs', 'profile'])); }
-  const profile = validateProfile(json, path);
+  const profile = archived ? archivedProfile(json, path) : validateProfile(json, path);
   PROFILES.set(path, { key, profile });
   return profile;
+}
+// An archive is read as it stands, and a profile it keeps from a format before this one is no refusal: the key that marked
+// the format is no part of a profile, and a file that holds nothing else, or that does not validate, reads as the built-in.
+function archivedProfile(json, path) {
+  const { format, ...rest } = json !== null && typeof json === 'object' && !Array.isArray(json) ? json : {};
+  if (rest.statuses === undefined) return DEFAULT_PROFILE;
+  try { return validateProfile(rest, path); } catch { return DEFAULT_PROFILE; }
 }
 // A write of the profile file by this process: the next read reads it again, even when the file kept its size and the
 // clock did not move between the two writes.

@@ -123,3 +123,41 @@ test('a goal text that holds a line that reads as the format line is refused, wi
   assert.match(said, /Format:/);
   assert.deepEqual(readdirSync(root), ['.git']);
 });
+
+// An archived loop of the record before this one: the marker its profile.json held, and lines of the shape before the writer.
+function archiveOfTheFormatBefore(root, name = 'old') {
+  const dir = join(root, '.jarl', 'archive', name);
+  mkdirSync(join(dir, 'issues'), { recursive: true });
+  writeFileSync(join(dir, 'profile.json'), JSON.stringify({ 'jarl-profile': 1, format: 2 }));
+  writeFileSync(join(dir, 'goal.md'), '# Goal\n\nthe goal of before\n');
+  writeFileSync(join(dir, 'log.md'), '# Log\n\n- 2026-09-01 08:00 · opened · the goal of before\n- 2026-09-01 08:01 · filed 1 · one\n');
+  writeFileSync(join(dir, 'issues', '1-one.md'), '# 1 · one\n\n**Status:** open\n**Priority:** 2\n**Tier:** standard\n**Kind:** task\n**Tags:** \n\n## What\n\nx\n');
+  return dir;
+}
+
+test('an archive of the format before is read by models, its marker no profile and its lines not placed, and nothing refuses', () => {
+  const root = loop({ via: 'cli' });
+  const dir = archiveOfTheFormatBefore(root);
+  const archives = spawnSync(process.execPath, [SCRIPT, 'models', '--archives', '--root', root], { encoding: 'utf8', timeout: 60_000 });
+  assert.equal(archives.status, 0, archives.stderr);
+  const named = spawnSync(process.execPath, [SCRIPT, 'models', '--with', dir, '--root', root], { encoding: 'utf8', timeout: 60_000 });
+  assert.equal(named.status, 0, named.stderr);
+});
+
+test('a marker in a live loop of this format is still refused as a profile that does not validate', () => {
+  const root = loop({ via: 'cli' });
+  writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, format: 2 }));
+  assert.notEqual(spawnSync(process.execPath, [SCRIPT, 'status', '--root', root], { encoding: 'utf8', timeout: 60_000 }).status, 0);
+});
+
+test('models --with a live loop of another format is refused, naming the conversion file and writing nothing, by its root and by its .jarl', () => {
+  const root = loop({ via: 'cli' });
+  const other = loopWithMark(null);
+  const before = snapshot(other);
+  for (const given of [other, join(other, '.jarl')]) {
+    const r = spawnSync(process.execPath, [SCRIPT, 'models', '--with', given, '--root', root], { encoding: 'utf8', timeout: 60_000 });
+    assert.notEqual(r.status, 0, given);
+    assert.ok(r.stderr.includes(CONVERSION), r.stderr);
+  }
+  assert.deepEqual(snapshot(other), before);
+});

@@ -36,7 +36,7 @@ test('a lease is one unit, whatever it carries: the proofs waiting for a verdict
     { ids: ['8'] },
   ], 'a package of six is one unit, never cut');
   assert.equal(row.says, 'proof recorded, no verdict; raise one fresh reviewer per unit: 1, 2, 3, 4, 5, 6 (one branch, jarl/a) · 7 · 8; if you cannot raise agents, ask the owner to start a fresh session');
-  assert.equal(row.command, "jarl.mjs review \"<ids>\" \"<verdict>\" --by \"<reviewer>\" --model \"<model-id>\" \"<text>\", or jarl.mjs ask 'start a fresh session to review issues 1, 2, 3, 4, 5, 6, 7, 8'");
+  assert.equal(row.command, "jarl.mjs review \"<ids>\" \"<verdict>\" --by \"<reviewer>\" --model \"<model-id>\" \"<text>\", or jarl.mjs ask 'start a fresh session to review issues 1, 2, 3, 4, 5, 6, 7, 8' --by jarl");
   assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1, 2, 3, 4, 5, 6, 7, 8: proof recorded, no verdict; raise one fresh reviewer per unit: 1, 2, 3, 4, 5, 6 \(one branch, jarl\/a\) · 7 · 8;/m);
   assert.doesNotMatch(jarl(root, 'next', '--as', 'jarl'), /jarl:coordinator-shared-review/);
 });

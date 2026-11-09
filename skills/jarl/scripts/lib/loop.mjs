@@ -34,9 +34,9 @@ export function needLoop(root) {
 //   bots          the names of the bots the profile's done gate names
 //   branchWorkers every worker leased on each Branch, across every issue that records it
 // goal, goalLines, asks, decisions, coordinators, bots and branchWorkers are read on first use.
-export function readLoop(dir) {
+export function readLoop(dir, { archived = false } = {}) {
   const root = basename(dir) === '.jarl' ? dirname(dir) : dir;
-  const profile = profileAt(dir);
+  const profile = profileAt(dir, { archived });
   const events = loopEvents(dir, profile);
   return makeLoop({ dir, root, profile, issues: issuesAt(dir, profile, events), events });
 }

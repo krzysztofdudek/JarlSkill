@@ -1,7 +1,7 @@
 // What is on whom: every open thing of the loop has one holder who must move next, derived from the record and never
 // stored, and next --as <holder> lists what is on that one, each line with the command that moves it.
 
-import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need, slugify } from './base.mjs';
+import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need, shellWord, slugify } from './base.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
 import { carriesCode, gateOf, holderKey, inFlightMark, leaseConflictOf, sameHolder, sentBack, statusWith, worksInPlace } from './gate.mjs';
@@ -80,7 +80,7 @@ function issueRows(ctx) {
     out.push({ what: 'ready', id: r.id, title: r.title, priority: r.priority, holder: holderOfId(r.id),
       says: 'ready to start, raise a worker', command: jarlLine('set', r.id, leaseStatus, ...(worksInPlace(i) ? [] : ['--branch', '<branch>']), '--worker', '<name>', '--model', '<model-id>') });
   }
-  const evidence = (id) => jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>', '--by', '<who>');
+  const evidence = (id, by = '<who>') => jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>', '--by', by);
   const verdict = (id) => jarlLine('review', id, '<verdict>', '--by', '<reviewer>', '--model', '<model-id>', '<text>');
   const unclearedBy = new Map();
   // A wait has rows of its own (keptRows); a promise in a lease is worked as any issue, and its maker holds each line.
@@ -126,7 +126,7 @@ function issueRows(ctx) {
       continue;
     }
     if (mark === 'no-rows' || backAfterRound) {
-      out.push({ ...base, what: 'worker', says: `${withWorker}${since}, ${backAfterRound ? 'sent back by a round, no new proof yet' : 'no proof yet'}; the worker records it`, command: evidence(i.id) });
+      out.push({ ...base, what: 'worker', says: `${withWorker}${since}, ${backAfterRound ? 'sent back by a round, no new proof yet' : 'no proof yet'}; the worker records it`, command: evidence(i.id, fieldText(i.fields.worker) || '<who>') });
       continue;
     }
     // A close the done gate would refuse for an owner line not ticked is not offered: that line's own row stands instead.
@@ -387,7 +387,7 @@ function ownerLineRows(ctx) {
       } else if (!s.ready) {
         // Its material is produced in the lease, so the line is on whoever holds the lease's rows: the coordinator of the
         // issue's slice, the jarl with none.
-        out.push({ ...line, holder: sliceHolder(ctx.loop, i), says: `acceptance line ${s.n} is the owner's to tick once its material is there (${s.material}); ${s.why}`, command: jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>', '--by', '<who>') });
+        out.push({ ...line, holder: sliceHolder(ctx.loop, i), says: `acceptance line ${s.n} is the owner's to tick once its material is there (${s.material}); ${s.why}`, command: jarlLine('evidence', id, '--ran', '<command>', '--saw', '<what-it-printed>', '--line', '<line-number>', '--by', fieldText(i.fields.worker) || '<who>') });
       } else {
         out.push({ ...line, holder: OWNER_HOLDER, material: s.material, check: s.check, says: `acceptance line ${s.n} is yours to tick: review ${s.material}${s.at ? ` (in ${s.at})` : ''} and check ${s.check}`, command: jarlLine('tick', id, s.n, '--by', '<the-owner-himself>') });
       }
@@ -532,6 +532,9 @@ export function ballRows(root, flags = {}) {
   const liveness = (i) => { if (!ages.has(i.id)) ages.set(i.id, leaseLiveness(root, i, minutes, { events: loop.eventsById.get(i.id) || [] })); return ages.get(i.id); };
   const ctx = { root, loop, profile, merger: loop.goalLines.merger === null ? JARL_HOLDER : holderOf(loop.goalLines.merger), next: nextRows(root, { perSlice: true }), awaiting, onOwner: new Set(heldByOwner(loop, awaiting)), ownerStates, liveness };
   const rows = ROW_SOURCES.flatMap((s) => s(ctx));
+  // The holder of a row is who runs its command, so a write printed for it names that writer: all but a wait, held by an
+  // outside person whose answer someone else records.
+  for (const r of rows) if (typeof r.command === 'string' && r.holder && r.what !== 'wait') r.command = r.command.replaceAll('--by "<who>"', () => `--by ${shellWord(r.holder)}`);
   // Who each issue holds up: the issues in play whose After names it, not settled yet, and for a question the issues it holds.
   const active = loop.issues.filter((i) => profile.active(i.status));
   const dependents = new Map();

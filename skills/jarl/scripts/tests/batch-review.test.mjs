@@ -1,7 +1,5 @@
-// One verdict given on several issues is one review: each of its lines in the log carries the same batch id, the first
-// such verdict raises the loop to record format 3 (a reader of formats 1 and 2 would count it as several reviews, so it
-// refuses the loop instead), and report shows each batch with its size and the rounds that came after it. A verdict on one
-// issue carries no batch id and raises nothing, and a loop whose format a composer keeps writes no batch id at all.
+// One verdict given on several issues is one review: each of its lines in the log carries the same batch id, and report shows each batch with its size and the rounds that came after it. A verdict on one
+// issue carries no batch id.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -20,8 +18,7 @@ const formatOf = (root) => (existsSync(marker(root)) ? JSON.parse(readFileSync(m
 const verdictLines = (root) => log(root).split('\n').filter((l) => / review (approve|changes) · /.test(l));
 const batchOf = (line) => (/ · batch (\S+) · /.exec(line) || [])[1] ?? null;
 
-// Four issues filed as a loop of format 1 holds them (three digits, no key), each in progress on its own branch with a
-// proof row; nothing written so far raises the format.
+// Four issues with three digits and no key, each in progress on its own branch with a proof row.
 function fourInFlight() {
   const root = makeLoop({ prefix: 'jarl-batch-', via: 'cli' });
   for (const t of ['first', 'second', 'third', 'fourth']) {
@@ -32,7 +29,7 @@ function fourInFlight() {
   return root;
 }
 
-test('a verdict on one issue carries no batch id and leaves the record format as it was', () => {
+test('a verdict on one issue carries no batch id', () => {
   const root = fourInFlight();
   jarl(root, 'review', '001', 'approve', '--by', 'rev-a', FINDINGS);
   assert.deepEqual(verdictLines(root).map(batchOf), [null]);

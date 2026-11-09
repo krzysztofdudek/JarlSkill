@@ -59,7 +59,7 @@ test('a --line the issue has no line for, a number that is no line, a --line on 
   assert.match(refuses(root, 'evidence', '1,2', '--ran', 'npm test', '--saw', 'pass', '--line', '5'), /^1 has 3 acceptance lines: there is no line 5 — nothing was written\n/);
   for (const bad of ['0', 'two', '-1x']) assert.match(refuses(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass', `--line=${bad}`), /--line takes the number of an acceptance line, 1 for the first, got|an item cannot start with -/, bad);
   assert.match(refuses(root, 'evidence', '1', 'a note', '--line', '1'), /^--line names the acceptance lines a --ran\/--saw row proves, and a free-text note or an attachment proves none: record the row, or leave --line out\njarl\.mjs evidence "<ids>" "<text>" --by "<who>"\n$/);
-  assert.match(refuses(root, 'evidence', '3', '--ran', 'npm test', '--saw', 'pass', '--line', '1'), /^3 has no acceptance line, so a row of it can name none: write the acceptance first, jarl\.mjs field 3 Acceptance "<line>"\njarl\.mjs field "<id>" Acceptance "<line>" --by "<who>"\n$/);
+  assert.match(refuses(root, 'evidence', '3', '--ran', 'npm test', '--saw', 'pass', '--line', '1'), /^3 has no acceptance line, so a row of it can name none: write the acceptance first, jarl\.mjs field 3 Acceptance "<line>" --by "<who>"\njarl\.mjs field "<id>" Acceptance "<line>" --by "<who>"\n$/);
   assert.deepEqual(before(), was, 'nothing was written');
 });
 
@@ -148,7 +148,7 @@ test('the number of an acceptance line has a placeholder of its own, apart from 
   jarl(root, 'new', 'no acceptance yet');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 3', '--line', '1');
   assert.match(refuses(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass', '--line', '4'), /\njarl\.mjs evidence "<ids>" --by "<who>" --ran "<command>" --saw "<what-it-printed>" --line "<line-number>"\n$/);
-  assert.match(refuses(root, 'evidence', '2', '--ran', 'npm test', '--saw', 'pass', '--line', '1'), /write the acceptance first, jarl\.mjs field 2 Acceptance "<line>"\n/);
+  assert.match(refuses(root, 'evidence', '2', '--ran', 'npm test', '--saw', 'pass', '--line', '1'), /write the acceptance first, jarl\.mjs field 2 Acceptance "<line>" --by "<who>"\n/);
   assert.match(refuses(root, 'tick', '1', 'two', '--by', 'owner'), /\njarl\.mjs tick "<id>" "<line-number>"/);
   assert.match(jarl(root, 'brief', '1'), /--line "<line-number>"/);
   assert.match(refuses(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass', '--line', '<line-number>'), /placeholder/, 'pasted unfilled, it writes nothing');

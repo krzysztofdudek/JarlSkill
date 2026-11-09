@@ -1,7 +1,5 @@
 // The key of an issue: its filing stamp and a few random letters, written by new into the header and, in its fixed place
-// after the stamp, into the filed line and every later log line about the issue. The key raises the loop to record
-// composer keeps is never raised, and its issues carry no key. Lines with no key, which a loop filed before it was
-// raised holds, are read by number.
+// after the stamp, into the filed line and every later log line about the issue. Lines with no key are read by number.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';

@@ -51,7 +51,7 @@ test('field writes every section of the description: a value replaces it, --add 
   assert.equal((issue(root, '1').sections.why ?? '').trim(), '', '--clear empties a section');
   jarl(root, 'field', '1,2', 'What', 'shared what');
   assert.equal(issue(root, '2').sections.what.trim(), 'shared what', 'a list of ids takes the one value');
-  assert.match(refuses(root, 'field', '1', 'What', 'x', '--remove'), /a section holds text, not items, so --remove takes nothing off it \(got "x"\): write it whole with jarl\.mjs field "<ids>" What "<text>", or add to it with --add/);
+  assert.match(refuses(root, 'field', '1', 'What', 'x', '--remove'), /a section holds text, not items, so --remove takes nothing off it \(got "x"\): write it whole with jarl\.mjs field "<ids>" What "<text>" --by "<who>", or add to it with --add/);
 });
 
 test('field adds and removes the items of a list field, each issue keeping what it held, and logs the line a replacement logs', () => {
@@ -156,7 +156,7 @@ test('set takes statuses only: a field given to it is refused with the field cal
 test('base is the command that changes the base branch of a declared repository', () => {
   const root = makeLoop({ prefix: 'jarl-surface-base-', via: 'cli' });
   // A loop that declares no repository: the step that declares one first, then the call's own form, each with placeholders.
-  assert.match(refuses(root, 'base', 'nothing-here', 'main'), /^nothing-here is not declared in this loop; Jarl declares a repository the first time an issue names it \(jarl\.mjs field "<id>" Repo "<name-or-path>"\)\njarl\.mjs field "<id>" Repo "<name-or-path>" --by "<who>"\njarl\.mjs base "<name>" "<branch>" --by "<who>"\n$/);
+  assert.match(refuses(root, 'base', 'nothing-here', 'main'), /^nothing-here is not declared in this loop; Jarl declares a repository the first time an issue names it \(jarl\.mjs field "<id>" Repo "<name-or-path>" --by "<who>"\)\njarl\.mjs field "<id>" Repo "<name-or-path>" --by "<who>"\njarl\.mjs base "<name>" "<branch>" --by "<who>"\n$/);
   assert.match(refuses(root, 'base', 'nothing-here'), /^base requires its branch: the form below has a placeholder for each value\njarl\.mjs base "<name>" "<branch>" --by "<who>"\n$/);
 });
 

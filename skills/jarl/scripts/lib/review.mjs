@@ -297,7 +297,7 @@ function fileOutside(root, issues, by, o, flags, withModel, dry, number) {
 // gate does not name, or the loop's own definition of an approved issue; an approve that clears it is then next.
 // `close` is the close the done gate takes (closeForm): the profile's closing status.
 function nextAfterVerdict(issue, verdict, kind, wait = null, model = { rule: 'agent', refused: false }, uncleared, close) {
-  if (verdict === 'changes') return `the jarl records the round — ${jarlLine('round', issue.id, '<text>')} — and a worker is raised again to fix it`;
+  if (verdict === 'changes') return `the jarl records the round — ${jarlLine('round', issue.id, '<text>', '--by', 'jarl')} — and a worker is raised again to fix it`;
   if (uncleared) return `${uncleared.text} — an approve that clears it is next — ${jarlLine('review', issue.id, '<verdict>', '--by', uncleared.cause === 'bot' ? '<a-fresh-reviewer>' : '<reviewer>', '--model', '<model-id>', '<text>')}`;
   if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — ${model.rule === 'agent' ? jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '--model', '<model-id>', '<text>') : modelReviewForm(issue.id)} — then the merger lands it`;
   const after = carriesCode(issue)

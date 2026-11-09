@@ -207,15 +207,15 @@ test('the reply of review names the next step: an approve the merger\'s one merg
   const root = loop(2);
   jarl(root, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/1-a', '--worker', 'w-one');
   const approve = jarl(root, 'review', '1', 'approve', '--by', 'rev-fresh', FINDINGS);
-  assert.match(approve, /· next: the merger merges the branch and records it with one call — jarl\.mjs merged 1 --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" — then jarl\.mjs set 1 done "<why>", once every line has what its method asks \(the merge check is the merger's and proves no line but one on the declared check\); a worker never sets done$/);
+  assert.match(approve, /· next: the merger merges the branch and records it with one call — jarl\.mjs merged 1 --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" --by "<who>" — then jarl\.mjs set 1 done "<why>" --by "<who>", once every line has what its method asks \(the merge check is the merger's and proves no line but one on the declared check\); a worker never sets done$/);
   const changes = jarl(root, 'review', '1', 'changes', '--by', 'rev-fresh', CHANGES);
-  assert.match(changes, /· next: the jarl records the round — jarl\.mjs round 1 "<text>" — and a worker is raised again to fix it$/);
+  assert.match(changes, /· next: the jarl records the round — jarl\.mjs round 1 "<text>" --by jarl — and a worker is raised again to fix it$/);
   // A coordinator's approve on code keeps its note and points at the fresh reviewer.
   const coordinator = run(root, 'review', '1', 'approve', '--by', 'jarl', FINDINGS);
   assert.match(coordinator.stderr, /carries code and jarl is a coordinator/);
   assert.match(coordinator.stdout, /· next: a fresh reviewer's approve is next/);
   // An issue with no code is closed by its evidence.
-  assert.match(jarl(root, 'review', '2', 'approve', '--by', 'rev-fresh', FINDINGS), /· next: jarl\.mjs set 2 done "<why>" once every line has what its method asks; a worker never sets done$/);
+  assert.match(jarl(root, 'review', '2', 'approve', '--by', 'rev-fresh', FINDINGS), /· next: jarl\.mjs set 2 done "<why>" --by "<who>" once every line has what its method asks; a worker never sets done$/);
   // A package names the step for each issue; the JSON carries the same line.
   const both = json(root, 'review', '1,2', 'approve', '--by', 'rev-fresh', FINDINGS);
   assert.equal(both.length, 2);

@@ -40,13 +40,13 @@ const formatLinesOf = (text) => text.split(/\r?\n/).filter((l) => FORMAT_LINE_RE
 // Whether a text holds a line a reader of the goal takes for the format line.
 export const holdsFormatLine = (text) => formatLinesOf(String(text ?? '')).length > 0;
 // The refusal of a loop in any other format. A place with no live loop has no format to refuse.
-export function needRecordFormat(root) {
+export function needRecordFormat(root, whose = 'this loop\'s') {
   const path = goalPath(jarlDir(root));
   if (!existsSync(path)) return;
   const lines = formatLinesOf(readText(path));
   if (lines.length === 1 && lines[0].trimEnd() === FORMAT_MARK) return;
   const held = lines.length === 0 ? `holds no "Format:" line` : lines.length > 1 ? `holds ${lines.length} "Format:" lines` : `says "${lines[0].trim()}"`;
-  refuse(`this loop's ${GOAL_FILE} ${held}, and this Jarl reads a loop whose ${GOAL_FILE} holds the one line "${FORMAT_MARK}" — nothing was read or written; an agent converts a loop of the format before by following ${CONVERSION_FILE}`, { external: `follow ${CONVERSION_FILE}, in the directory of the skill` });
+  refuse(`${whose} ${GOAL_FILE} ${held}, and this Jarl reads a loop whose ${GOAL_FILE} holds the one line "${FORMAT_MARK}" — nothing was read or written; an agent converts a loop of the format before by following ${CONVERSION_FILE}`, { external: `follow ${CONVERSION_FILE}, in the directory of the skill` });
 }
 function decisionsPath(dir) { return join(dir, DECISIONS_FILE); }
 function asksPath(dir) { return join(dir, ASKS_FILE); }

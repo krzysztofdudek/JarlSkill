@@ -1,7 +1,5 @@
-// The profile keys a composer's loop stands on:"set-by" on a status, "external-scheduler", "done-gate" and
-// "format". A loop run by a composer must not be misread by Jarl's own views: a status only the composer
-// may set is refused to jarl set and the MCP tools, next and queue say who schedules instead of computing a ready list,
-// done needs a merge the base holds, and a record format this Jarl does not know is refused before anything is read.
+// The profile keys "set-by" on a status and "done-gate". A loop with a profile is read by Jarl's views through it: a status
+// the record alone may set is refused to jarl set and the MCP tools, and done needs a merge the base holds.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -28,9 +26,8 @@ function file(obj) {
 }
 const reason = (fn) => { try { fn(); } catch (e) { return e.message; } throw new Error('expected a refusal'); };
 
-// A composed loop's profile in a composer's shape: a proposal and the queue belong to the composer (its planner's veto stands
-// between them), a merge is recorded only by its landing, the composer's tick schedules, and an issue closes on a merge
-// the base holds, with no approve of Jarl's own.
+// A profile of a tool that runs its own loop: a proposal and the queue are the record's to set, a merge is recorded only
+// by its landing, and an issue closes on a merge the base holds, with no approve of Jarl's own.
 const COMPOSER = {
   'jarl-profile': 1,
   name: 'composer-x',
@@ -160,7 +157,7 @@ test('done-gate requires-merged: a composer landing into a branch nobody has che
 });
 
 test('done-gate requires-merged with approve fresh: the landed merge and the fresh approve are both asked for', () => {
-  const { repo, root } = composedLoop({ ...COMPOSER, name: 'both', 'external-scheduler': undefined, 'done-gate': { approve: 'fresh', 'requires-merged': true }, statuses: { ...COMPOSER.statuses, merged: ['settles-dependents', 'terminal', 'closes-record'] } });
+  const { repo, root } = composedLoop({ ...COMPOSER, name: 'both', 'done-gate': { approve: 'fresh', 'requires-merged': true }, statuses: { ...COMPOSER.statuses, merged: ['settles-dependents', 'terminal', 'closes-record'] } });
   jarl(root, 'new', 'an issue', '--acceptance', '[read] it works');
   R.setStatus(root, '1', 'queued');
   jarl(root, 'set', '1', 'running', '--branch', 'jarl/1-t', '--worker', 'w1');
@@ -174,7 +171,7 @@ test('done-gate requires-merged with approve fresh: the landed merge and the fre
 });
 
 test('no done-gate: a loop without the key closes exactly as before — no merge asked for', () => {
-  const { root } = composedLoop({ ...COMPOSER, name: 'plain', 'done-gate': undefined, 'external-scheduler': undefined, statuses: { ...COMPOSER.statuses, merged: ['settles-dependents', 'terminal', 'closes-record'] } });
+  const { root } = composedLoop({ ...COMPOSER, name: 'plain', 'done-gate': undefined, statuses: { ...COMPOSER.statuses, merged: ['settles-dependents', 'terminal', 'closes-record'] } });
   jarl(root, 'new', 'an issue', '--acceptance', '[read] it works');
   R.setStatus(root, '1', 'queued');
   jarl(root, 'set', '1', 'running', '--worker', 'w1');
@@ -185,7 +182,63 @@ test('no done-gate: a loop without the key closes exactly as before — no merge
 
 // ---- every view on a composed loop ----
 
-test('no profile: next is still the list and the merge queue of resume the rows, with no scheduler key anywhere', () => {
+// ---- every view on a loop with a profile ----
+
+test('every view tells the truth on a loop with a profile: next, status, resume with its tips, branches, report, list', () => {
+  const { repo, root } = composedLoop();
+  // 1 merged and landed; 2 in flight on its branch; 3 queued; 4 proposed; 5 dropped.
+  for (const t of ['landed one', 'in flight', 'queued', 'proposed', 'gone']) jarl(root, 'new', t, '--acceptance', '[read] it works');
+  R.setStatus(root, '1,2,3,5', 'queued');
+  sh(repo, 'git checkout -q -b jarl/1-landed && echo 2 > src/a.mjs && git commit -qam one && git checkout -q main && git merge -q --ff-only jarl/1-landed');
+  jarl(root, 'set', '1', 'running', '--branch', 'jarl/1-landed', '--worker', 'w1');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'gate', '--saw', 'green');
+  R.recordMerged(root, '1', { sha: sh(repo, 'git rev-parse HEAD'), ci: 'none' });
+  R.setStatus(root, '1', 'merged');
+  sh(repo, 'git checkout -q -b jarl/2-flight && echo 3 > src/b.mjs && git add src/b.mjs && git commit -qm two && git checkout -q main');
+  jarl(root, 'set', '2', 'running', '--branch', 'jarl/2-flight', '--worker', 'w2');
+  jarl(root, 'set', '5', 'dropped', 'out of scope');
+
+  // status: the counts by the profile's statuses.
+  const st = json(root, 'status');
+  assert.deepEqual(st.statuses, { proposed: 1, queued: 1, running: 1, landed: 0, changes: 0, held: 0, merged: 1, dropped: 1 });
+  assert.equal(st.inFlight, 1);
+  const stText = jarl(root, 'status');
+  assert.match(stText, /^goal: the composed goal\n.*profile composer-x\n/);
+  assert.match(stText, /closed on a merge in the base, no approve required/);
+
+  // resume: in flight is the one running, by its branch and worker.
+  const rs = json(root, 'resume');
+  assert.deepEqual(rs.inFlight.map((x) => [x.id, x.branch, x.worker]), [['2', 'jarl/2-flight', 'w2']]);
+
+  // next offers the queued issue and nothing another status holds.
+  assert.deepEqual(json(root, 'next').map((r) => r.id), ['3']);
+
+  // tips: the feature branch of the work in flight and the base, in the repository the loop lives in.
+  const rows = json(root, 'resume', '--gh').tips.repos[0].rows.map((r) => [r.role, r.branch, r.issues || []]);
+  assert.deepEqual(rows, [['worker', 'jarl/2-flight', ['2']], ['feature', 'main', []]]);
+
+  // branches: the landed branch is done and deletable, the one in flight is not.
+  const br = Object.fromEntries(json(root, 'branches').map((b) => [b.branch, b]));
+  assert.equal(br['jarl/1-landed'].done, 'delete');
+  assert.deepEqual(br['jarl/1-landed'].issues, ['1']);
+  assert.equal(br['jarl/2-flight'].done, null);
+
+  // report: merged is the done work, with the merge it closed on; dropped with its reason; the rest still open.
+  const rp = json(root, 'report');
+  assert.equal(rp.done, 1);
+  assert.equal(rp.dropped, 1);
+  assert.equal(rp.left, 3);
+  assert.deepEqual(rp.statuses, st.statuses);
+  assert.equal(rp.issues.find((i) => i.id === '1').merged, sh(repo, 'git rev-parse HEAD'));
+  assert.match(rp.text, /## Done \(1\)\nclosed on a merge in the base, no approve required \(this loop's done gate\)/);
+  assert.match(rp.text, /## Dropped \(1\)\n- 5 gone — out of scope/);
+  assert.match(rp.text, /## Still open \(3\)\n- 2 in flight \(running\)\n- 3 queued \(queued\)\n- 4 proposed \(proposed\)/);
+
+  // list: the unfinished ones, by the profile's statuses.
+  assert.deepEqual(json(root, 'list').map((i) => [i.id, i.status]), [['2', 'running'], ['3', 'queued'], ['4', 'proposed']]);
+});
+
+test('no profile: next is the list and status and resume count what is ready', () => {
   const root = mkdtempSync(join(tmpdir(), 'jarl-keys-plain-'));
   mkdirSync(join(root, '.git'));
   jarl(root, 'init', 'goal');
@@ -193,11 +246,8 @@ test('no profile: next is still the list and the merge queue of resume the rows,
   assert.ok(Array.isArray(json(root, 'next')));
   const st = json(root, 'status');
   assert.equal(st.ready, 1);
-  assert.equal('scheduler' in st, false);
   const rs = json(root, 'resume');
   assert.equal(rs.readyTotal, 1);
-  assert.equal('scheduler' in rs, false);
-  assert.equal('scheduler' in json(root, 'resume').queue, false);
 });
 
 // ---- a composer's loop keeps its record format ----

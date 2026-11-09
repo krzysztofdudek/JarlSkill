@@ -79,7 +79,7 @@ test('two sibling repositories get names and a third that is not a sibling keeps
 
 test('an issue with no Repo is read in the root of the loop, and a loop that names no repository writes no declaration', () => {
   const w = world('tool');
-  // Filed with three digits and no key (fileThreeDigits): nothing here raises the loop.
+  // Filed with three digits and no key (fileThreeDigits).
   fileThreeDigits(w.hub, 'plain');
   assert.doesNotMatch(w.issue(1), /\*\*Repo:\*\*/);
   assert.equal(existsSync(join(w.hub, '.jarl', 'repos.md')), false);
@@ -198,7 +198,7 @@ test('two repositories that share a directory name stay apart: the second keeps 
   assert.equal(after.find((x) => x.id === '2').ready, true);
 });
 
-// ---- the first name raises the record format -------------------------------------------------------
+// ---- the first name -------------------------------------------------------------------------------
 
 test('a path-only loop reads the same after a lease that checks a worktree and stores none', () => {
   const w = world();
@@ -627,7 +627,7 @@ test('the files and the leases of a loop are never given a machine\'s path by a 
   assert.doesNotMatch(everything, new RegExp(escaped(dirname(w.parent))));
 });
 
-// ---- every raise of the format keeps a bare-word path pointing where it pointed ---------------------------------------
+// ---- a bare-word path keeps pointing where it pointed ------------------------------------------------------------------
 
 // api, its merge is recorded with that word, and a different repository named api stands beside the loop. A branch of the
 // same name is in both, so a reader that picks the wrong one deletes the wrong branch.

@@ -105,7 +105,7 @@ test('verify notes each open issue whose text names an unordered open issue, nam
   assert.equal(r.status, 0, 'a note is not a finding');
   assert.match(r.stdout, /^verify: clean/);
   assert.deepEqual(unordered(r.stdout).map((l) => l.replace(/ — .*$/, '')), ['note: issue 4: names issues 1, 2 in What, Why or Acceptance, which are neither done nor dropped, and no After orders them with 4']);
-  assert.match(r.stdout, /if the text relies on them, order the two by adding them to After, which keeps what After holds: jarl\.mjs field 4 After "<ids-it-waits-on>" --add$/m);
+  assert.match(r.stdout, /if the text relies on them, order the two by adding them to After, which keeps what After holds: jarl\.mjs field 4 After "<ids-it-waits-on>" --add --by "<who>"$/m);
 });
 
 test('the command the note ends with adds to After and keeps what After held: run filled, an issue already waiting on another waits on both', () => {
@@ -116,9 +116,9 @@ test('the command the note ends with adds to After and keeps what After held: ru
   const said = run(root, ['field', '3', 'What', 'relies on issue 4 for its data']);
   assert.equal(said.status, 0, said.stderr);
   const note = unordered(`${said.stdout}\n${said.stderr}`)[0];
-  const command = /: jarl\.mjs (field 3 After "<ids-it-waits-on>" --add)$/.exec(note ?? '');
+  const command = /: jarl\.mjs (field 3 After "<ids-it-waits-on>" --add --by "<who>")$/.exec(note ?? '');
   assert.ok(command, `the note ends with the command that adds: ${note}`);
-  jarl(root, ...command[1].replace('"<ids-it-waits-on>"', '4').split(' '));
+  jarl(root, ...command[1].replace('"<ids-it-waits-on>"', '4').replace('"<who>"', 'jarl').split(' '));
   assert.deepEqual(R.findIssue(root, '3').after, ['1', '4'], 'the wait on 1 is kept, and 4 is added');
 });
 

@@ -160,3 +160,15 @@ test('the writer of a write is written once, in the fixed place, and a tool\'s b
   assert.match(logOf(root), / by mcp-writer · through the server/);
 });
 
+
+test('a name given as --name=value that reads as a flag is refused like the spaced one, at the command line and through the tools', () => {
+  const root = one(makeLoop({ prefix: 'jarl-names-', via: 'cli' }));
+  const before = logOf(root);
+  for (const flags of [['--by=--x'], ['--by', '--x']]) {
+    const said = refusesBare(root, 'log', 'a note', ...flags);
+    assert.match(lastLine(said), /--by "<who>"/, said);
+    assert.equal(logOf(root), before, flags.join(' '));
+  }
+  assert.equal(mcp.callTool('jarl_log', { text: 'a note', by: '--x', root }).isError ?? true, true);
+  assert.equal(logOf(root), before, 'through the tool');
+});

@@ -16,7 +16,7 @@ import { basename, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
-  fieldText, need, refuse, Refusal, isFix, isExternal, isPlaceholder, hole, HOLE, commandOf, printedLine, commandLine, readyText, breaksLine, escapedEchoes, shellWord, shellOf, printable, printCommand, printingFor, jarlLine, rootPrintable, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdRound,
+  fieldText, need, refuse, Refusal, isFix, isExternal, isPlaceholder, hole, HOLE, commandOf, printedLine, commandLine, readyText, breaksLine, escapedEchoes, shellWord, shellOf, printable, printCommand, MUTATING, writes, signedWords, printingFor, jarlLine, rootPrintable, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdRound,
   cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswerMany, cmdModels, renderModels,
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
@@ -337,7 +337,7 @@ export function refusalFor(e, call, platform = process.platform) {
     : [commandOf(e.ready)];
   let unprintable = false;
   // A form of a write holds its writer, so pasted and filled it is a call the command takes.
-  const signed = lines.map((words) => (writes(words) && !words.includes('--by') ? [...words, '--by', hole('<who>')] : words));
+  const signed = lines.map((words) => signedWords(words));
   const printed = signed.map((words) => words.map((w) => (printable(w, shell) ? w : ((unprintable = true), hole('<value>')))))
     .map((words) => (writes(words) && !words.some((w) => HOLE.test(String(w))) ? [...words, hole('<as-the-reason-says>')] : words));
   // The globals of the call as the shape left them: a shape may name the loop root the form is for.
@@ -472,10 +472,9 @@ export const COMMAND_ARGS = {
   changelog: ['ids'], mode: ['mode'], close: [], profile: ['file?'], extend: ['part', 'name'], verify: [], use: ['path?'],
 };
 // The commands that write: each runs under .jarl/.lock (see withLock).
-export const MUTATING = new Set(['init', 'new', 'renumber', 'import', 'set', 'field', 'split', 'base', 'merged', 'evidence', 'retract', 'review', 'round', 'tick', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close', 'extend']);
+export { MUTATING, writes };
 // Whether a printed command (jarl.mjs, then its words) writes: a command of the set above, but goal, which writes only
 // with --set and else reads the goal.
-export const writes = (words) => MUTATING.has(words[1]) && !(words[1] === 'goal' && !words.some((w) => w === '--set' || String(w).startsWith('--set=')));
 
 // The writes, each with what its --by names: every write names its writer, on the command line and in its tool, where the
 // field is required. goal writes only with --set and is left out here: its call is refused without --by when it writes.
@@ -493,6 +492,7 @@ const REFUSE_THEIR_OWN_BY = ['answer', 'decide', 'review', 'retract', 'tick'];
 // A value an identity flag takes is one name: a word that starts with -- is the next flag, never a value.
 const NAME_FLAGS = new Set(['by', 'worker', 'model', 'root']);
 const isFlagWord = (word) => String(word).startsWith('--');
+const NAME_FLAG_HOLES = { by: '<who>', worker: '<the-new-worker>', model: '<model-id>', root: '<loop-root>' };
 // One sentence per command: what it does, the MCP tool's whole description after "WRITES the loop." or "Read-only.".
 // The rest of what a command takes and does is its block of USAGE, which the jarl_help tool and --help print.
 export const COMMAND_SUMMARY = {
@@ -871,6 +871,7 @@ function dispatchCall(root, commandName, rest, flags) {
   const missing = (COMMAND_ARGS[cmd] || []).filter((a, n) => !/[?.]$/.test(a) && rest[n] === undefined && !(cmd === 'set' && a === 'status' && flags.header));
   need(missing.length === 0, `${cmd} requires ${missing.map((a) => `its ${a}`).join(' and ')}: the form below has a placeholder for each value`, { retry: true });
   if (writes(['jarl.mjs', cmd, ...Object.keys(flags).map((k) => `--${k}`)]) && !REFUSE_THEIR_OWN_BY.includes(cmd)) need(flags.by !== undefined, `${cmd} writes the record, and every write names its writer with --by: ${ownWriter(cmd)}`, () => ({ flag: '--by', value: '<who>' }));
+  for (const name of NAME_FLAGS) need(typeof flags[name] !== 'string' || !isFlagWord(flags[name]), `--${name} takes a name, and ${JSON.stringify(flags[name])} reads as a flag`, () => ({ flag: `--${name}`, value: NAME_FLAG_HOLES[name] }));
   if (flags.by !== undefined && MUTATING.has(cmd)) need(!UNRECORDED_NAME.test(String(flags.by)), `${UNRECORDED} is the mark of a line nobody named a writer for, never a name a call gives — every write says who made it`, () => ({ flag: '--by', value: '<who>' }));
   if (MUTATING.has(cmd) && !NEEDS_NO_LOOP.includes(cmd)) needLoop(root);
   ({ rest, flags } = readLists(cmd, rest, flags));

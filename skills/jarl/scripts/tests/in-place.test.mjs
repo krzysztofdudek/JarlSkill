@@ -1,7 +1,7 @@
 // An issue tagged in-place is worked in place: its worker writes the files it declares in the checkout of their repository, with no
 // branch and no merge, and they are committed in the main checkout once the approve stands. The lease takes no branch and needs the
 // files declared, which keep two such issues off one file as for any lease. It closes on the commit of its files: a row of
-// its proof names a commit on the branch checked out that changes one of them. The tag is a line of record format 3: its
+// its proof names a commit on the branch checked out that changes one of them. An
 // issue that carries code is never tagged in-place, and its own gate stays as it is.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

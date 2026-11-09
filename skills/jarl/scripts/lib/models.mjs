@@ -7,7 +7,7 @@ import { acceptanceLines } from './issues.mjs';
 import { canonical, jarlDir } from './where.mjs';
 import { cmpId } from './ids.mjs';
 import { loadProfile, reviewerRule } from './profile.mjs';
-import { GOAL_FILE, LOG_FILE, appendLog, goalLines, logPath, readGoal } from './journal.mjs';
+import { GOAL_FILE, LOG_FILE, appendLog, goalLines, logPath, needRecordFormat, readGoal } from './journal.mjs';
 import { readText } from './files.mjs';
 import { repoLabel, reposNamed } from './repositories.mjs';
 import { carriesCode, gateOf, inFlightMark } from './gate.mjs';
@@ -492,10 +492,11 @@ export function cmdModels(root, flags = {}) {
     if (basename(path) === '.jarl' && loopShape(dirname(path)) === 'root') path = dirname(path);
     const shape = loopShape(path);
     need(shape, `${p} is not a loop: it holds no .jarl/ with a log and issues, and is not an archived loop (an archive directory holds ${LOG_FILE} and issues/) — nothing was read`, () => ({ replace: p, value: '<loop-root>' }));
+    if (shape === 'root') needRecordFormat(path, `${echoWord(p)}'s`);
     add(p, path, shape);
   }
   need(sources.length, `no loop to read here: ${echoWord(root)} holds no live loop — name one with --with <loop-root>, or its archives with --archives`, () => ({ flag: '--with', value: '<loop-root>' }));
-  const facts = sources.map((s) => modelFacts(readLoop(s.shape === 'archive' ? s.path : jarlDir(s.path)), s.label, lines));
+  const facts = sources.map((s) => modelFacts(readLoop(s.shape === 'archive' ? s.path : jarlDir(s.path), { archived: s.shape === 'archive' }), s.label, lines));
   const unitRows = facts.flatMap((f) => f.units);
   const verdictRows = facts.flatMap((f) => f.verdicts);
   const tables = (u, v) => { const w = workerTable(u, lines); return { workers: w.rows, reviewers: reviewerTable(v), baselines: w.baselines }; };

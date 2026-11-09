@@ -25,7 +25,7 @@ test('extend section adds a section to a loop with no profile: the loop gets one
   const before = issueText(root, '1');
   const r = jarlResult(root, ['extend', 'section', 'Risks', '--by', 'jarl']);
   assert.equal(r.stdout, 'profile extended: section Risks');
-  assert.equal(r.stderr, 'note: the issues already filed carry the section once field writes it: jarl.mjs field "<ids>" Risks "<text>"');
+  assert.equal(r.stderr, 'note: the issues already filed carry the section once field writes it: jarl.mjs field "<ids>" Risks "<text>" --by "<who>"');
   const json = profileJson(root);
   assert.deepEqual(json.statuses, BUILTIN_STATUSES);
   assert.deepEqual(json.sections, ['Risks']);
@@ -119,22 +119,6 @@ test('extend refuses the profile of a loop a composer runs, naming the composer\
   assert.equal(lastLine(said), 'composer tick');
   assert.deepEqual(snapshot(dir), held);
 });
-
-// A loop in record format 1 with no profile, in format 2, in format 3, and in format 1 with a profile of its own.
-const FORMATS = [
-  ['format 1 with no profile', () => { const root = makeLoop({ prefix: 'jarl-extend-f1-' }); fileThreeDigits(root, 'filed by the first reader'); return root; }, undefined],
-  ['format 2', () => { const root = makeLoop({ prefix: 'jarl-extend-f2-' }); filePlain(root, 'filed by the reader of formats 1 and 2'); return root; }, 2],
-  ['format 3', () => { const root = makeLoop({ prefix: 'jarl-extend-f3-', via: 'cli' }); jarl(root, 'new', 'filed with a key', '--acceptance', '[read] it works'); return root; }, 3],
-  ['format 1 with a profile of its own', () => {
-    const file = join(mkdtempSync(join(tmpdir(), 'jarl-extend-own-')), 'profile.json');
-    writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'own', statuses: BUILTIN_STATUSES, sections: ['Plan'] }));
-    const root = makeLoop({ prefix: 'jarl-extend-own-', via: 'cli', initFlags: ['--profile', file] });
-    fileThreeDigits(root, 'filed by the first reader');
-    return root;
-  }, undefined],
-];
-for (const [name, make, format] of FORMATS) {
-}
 
 test('a profile that cannot be written leaves no log line, with --by and without', () => {
   const root = makeLoop({ prefix: 'jarl-extend-failed-', via: 'cli' });

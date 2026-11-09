@@ -6,7 +6,7 @@
 
 import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { REVIEWER_KIND_SRC, fieldText, hole, jarlLine, need, printCommand } from './base.mjs';
+import { REVIEWER_KIND_SRC, fieldText, hole, jarlLine, need, printCommand, signedWords } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
 import { firstLine, firstLineReadings, goalLineOf, goalPath } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
@@ -320,12 +320,12 @@ function leaseWhere(root, loop, issues) {
   return { branch, worker: fieldText(first.fields.worker) || null, model: fieldText(first.fields.model) || null, inPlace, tier, repos };
 }
 
-const toolCommand = (ctx) => (...words) => printCommand([RUNTIME, SCRIPT, ...words, '--root', ctx.root], { globals: [] });
+const toolCommand = (ctx, by) => (...words) => printCommand([RUNTIME, SCRIPT, ...signedWords(['jarl.mjs', ...words], by).slice(1), '--root', ctx.root], { globals: [] });
 
 // The commands a role uses, each with every value the record holds filled.
 function workerCommands(ctx, issues, lease) {
   const by = lease.worker ?? hole('<who>');
-  const tool = toolCommand(ctx);
+  const tool = toolCommand(ctx, by);
   const ids = issues.map((i) => i.id).join(',');
   const issueWord = issues.length > 1 ? hole('<id>') : issues[0].id;
   const proofs = issues.map((i) => ({ forIssue: i.id, what: `proof of a line of ${i.id}, one row per run`, command: tool('evidence', i.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>'), '--by', by) }));
@@ -423,7 +423,7 @@ function mergerBrief(root, loop, slice, ctx) {
     return { repo, label: repoLabel(repo), base, target: m ? integrationBranch(m.slice) : base };
   });
   const rules = rulesFor(root, loop, { roles: new Set(['merger']), slice: null, moments: new Set(['merge']), issues: [] }, today()).map(ruleOf);
-  const tool = toolCommand(ctx);
+  const tool = toolCommand(ctx, m ? m.name : lines.merger ?? hole('<who>'));
   const repoFlag = repos.length > 1 ? ['--repo', hole('<name-or-path>')] : [];
   const record = [
     { what: 'what waits for you, branch by branch', command: tool(...(m ? ['next', '--as', m.name, '--all'] : ['resume', ...repoFlag])) },

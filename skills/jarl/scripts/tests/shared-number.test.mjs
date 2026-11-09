@@ -238,6 +238,27 @@ test('a file copied by hand leaves one filing: the finding says so, claims nothi
   assert.equal(JSON.parse(jarl(a.dir, 'show', '2', '--json')).status, 'in-progress');
 });
 
+test('a third file merged in after the renumbering shares the number again and is refused and named', () => {
+  const a = committedLoop();
+  const b = cloneOf(a.dir);
+  const c = cloneOf(a.dir);
+  fileAndCommit(a, 'second on A');
+  fileAndCommit(b, 'second on B');
+  fileAndCommit(c, 'second on C');
+  b.g('pull', '-q', '--no-rebase', '--no-edit', 'origin', 'main');
+  renumber(b, '2-second-on-b.md', 3);
+  jarl(b.dir, 'set', '3', 'open');
+  jarl(b.dir, 'log', 'the second on B is now 3');
+  b.g('add', '-A'); b.g('commit', '-qm', 'renumbered');
+  b.g('remote', 'add', 'c', c.dir);
+  b.g('pull', '-q', '--no-rebase', '--no-edit', 'c', 'main');
+  const r = run(b.dir, ['verify']);
+  assert.equal(r.status, 2, r.stdout);
+  assert.match(r.stdout, /2 issue files carry the number 2: issues\/2-second-on-a\.md and issues\/2-second-on-c\.md/);
+  assert.match(refuses(b.dir, 'set', '2', 'dropped', 'x'), /issues\/2-second-on-a\.md and issues\/2-second-on-c\.md/);
+  assert.doesNotMatch(views(b, '3'), JUDGES_2);
+});
+
 // Clone A files its second issue, works it on a branch with a row and a fresh approve and closes it; clone B files its own
 // second issue and starts it. One clone pulls the other and one file is renumbered. `aPullsB` says which clone merges: B's
 // lines then come after A's in the log, else A's after B's. `renamed` is the file given the number 3.

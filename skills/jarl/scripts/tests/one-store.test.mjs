@@ -216,7 +216,7 @@ test('a hand edit of Status is reported by status, resume and show as one line t
   assert.deepEqual(recordLines(jarl(root, 'status')), [], 'a loop moved through the tool prints no such line');
   assert.equal(JSON.parse(jarl(root, 'status', '--json')).disagreements, undefined);
   editHeader(root, '1', (t) => t.replace('**Status:** in-progress', '**Status:** done'));
-  const line = 'record: 1 Status reads done in the file and in-progress in the log, which is the record — to follow the log, write **Status:** in-progress back into the header; to make the file\'s value the record, jarl.mjs set 1 done (a move into done, through its checks)';
+  const line = 'record: 1 Status reads done in the file and in-progress in the log, which is the record — to follow the log, write **Status:** in-progress back into the header; to make the file\'s value the record, jarl.mjs set 1 done --by "<who>" (a move into done, through its checks)';
   assert.deepEqual(recordLines(jarl(root, 'status')), [line]);
   assert.deepEqual(recordLines(jarl(root, 'resume')), [line]);
   assert.match(jarl(root, 'resume'), /## The files disagree with the log \(1\)\nrecord: 1 /);
@@ -259,7 +259,7 @@ for (const c of CASES) {
     if (c.make) {
       writeFileSync(issueFile(root, '1'), edited);
       const printed = /to make the file's value the record, (jarl\.mjs [^(]+?) \(/.exec(status[0])[1];
-      assert.deepEqual(printed.split(' ').slice(1), c.make);
+      assert.deepEqual(printed.split(' ').slice(1), [...c.make, '--by', '"<who>"']);
       jarl(root, ...c.make);
       assert.deepEqual(recordLines(jarl(root, 'status')), []);
       assert.deepEqual(recordLines(jarl(root, 'resume')), []);
@@ -274,7 +274,7 @@ test('an issue the journal holds no filing and no move of is reported as not in 
   const root = makeLoop();
   writeFileSync(join(R.jarlDir(root), 'issues', '1-by-hand.md'), '# 1 · by hand\n\n**Status:** open\n**Kind:** bug\n');
   const lines = recordLines(jarl(root, 'status'));
-  assert.deepEqual(lines, ['record: 1 is not in the log (it holds no filing and no move), so its header is read as it stands — to put it in the log: jarl.mjs set 1 open']);
+  assert.deepEqual(lines, ['record: 1 is not in the log (it holds no filing and no move), so its header is read as it stands — to put it in the log: jarl.mjs set 1 open --by "<who>"']);
   jarl(root, 'set', '1', 'open');
   assert.deepEqual(recordLines(jarl(root, 'status')), []);
 });
@@ -697,7 +697,7 @@ test('a bulk set that stopped after its journal lines is repaired by set --heade
   const lines = recordLines(jarl(root, 'status'));
   assert.ok(lines.length >= ids.length, 'each issue is reported');
   const shown = jarl(root, 'status');
-  assert.match(shown, /jarl\.mjs set 001 in-progress --header \(writes the header from the log\)/);
+  assert.match(shown, /jarl\.mjs set 001 in-progress --header --by "<who>" \(writes the header from the log\)/);
   const before = logLinesOf(root).length;
   jarl(root, 'set', ids.join(','), 'in-progress', '--header');
   assert.equal(logLinesOf(root).length, before, 'no second journal line');

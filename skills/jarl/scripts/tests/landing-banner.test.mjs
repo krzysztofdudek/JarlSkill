@@ -120,7 +120,7 @@ test('the help of status and report says when the testimony mark shows and what 
 
 test('the testimony mark of status and report names the merge that carries a check as a command of its own, with the call\'s --root, declared check or none', () => {
   const root = loop(1);
-  const form = /: jarl\.mjs merged "<ids>" --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" --root \S+\)/;
+  const form = /: jarl\.mjs merged "<ids>" --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" --by "<who>" --root \S+\)/;
   for (const view of ['status', 'report']) {
     const said = spawnJarl(root, [view]).stdout;
     assert.match(said, /^no check is declared — this loop lands its merges on testimony alone/m, view);
@@ -135,3 +135,4 @@ test('the testimony mark of status and report names the merge that carries a che
     assert.match(said, form, view);
   }
 });
+

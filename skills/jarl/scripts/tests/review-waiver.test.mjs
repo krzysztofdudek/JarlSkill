@@ -115,10 +115,9 @@ test('a superseded waiver, or a ruling whose words are not the owner\'s, waives 
   assert.equal(run(other.root, ['status']).status, 0);
 });
 
-// A loop whose issue is filed with three digits and no key (fileThreeDigits) and written with no writer, so it stays in
-// record format 1 until the waiver: one code issue on a branch, with its proof row and its merge recorded by the pinned
-function formatOneLoop() {
-  const { dir: root, g } = gitRepo({ prefix: 'jarl-waiver-format-', branch: 'main' });
+// A loop whose one code issue, filed with three digits and no key, is on a branch with its proof row and its merge.
+function mergedIssueLoop() {
+  const { dir: root, g } = gitRepo({ prefix: 'jarl-waiver-merged-', branch: 'main' });
   jarl(root, 'init', 'goal');
   const id = fileThreeDigits(root, 'move the helper', { acceptance: '[compare] the output is the same · by: node report.mjs' });
   g('checkout', '-q', '-b', 'jarl/move');
@@ -129,11 +128,10 @@ function formatOneLoop() {
   jarl(root, 'merged', id, '--sha', g('rev-parse', 'jarl/move').trim(), '--ci', 'none');
   return { root, id };
 }
-const format = (root) => json(root, 'profile').format;
 const waiveIn = (root, id, slug = 'no-review', extra = []) => jarl(root, 'decide', slug, 'Closes without a review.', '--by', 'owner', '--quote', 'No review for that one.', '--waives-review', id, ...extra);
 
-test('a waiver refused for its slug or the ruling it supersedes writes nothing and leaves the record format as it was', () => {
-  const { root, id } = formatOneLoop();
+test('a waiver refused for its slug or the ruling it supersedes writes nothing', () => {
+  const { root, id } = mergedIssueLoop();
   jarl(root, 'decide', 'taken', 'A ruling.', '--by', 'jarl');
   const before = decisions(root);
   assert.match(refuses(root, 'decide', 'taken', 'Closes without a review.', '--by', 'owner', '--quote', 'No review for that one.', '--waives-review', id), /^duplicate slug: taken/);

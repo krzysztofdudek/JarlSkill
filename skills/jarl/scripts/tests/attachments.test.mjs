@@ -155,8 +155,8 @@ test('done is refused until every required slot is filled, naming each missing s
   const root = loopWith();
   const why = refuses(root, 'set', '1', 'done');
   assert.match(why, /1 needs these attachments before done/);
-  assert.match(why, /slot before: no file recorded — jarl\.mjs evidence 1 --file "<path>" --slot before \(a file at attachments\/1\/before\.\*\)/);
-  assert.match(why, /slot after: no file recorded — jarl\.mjs evidence 1 --file "<path>" --slot after \(a file at attachments\/1\/after\.\*\)/);
+  assert.match(why, /slot before: no file recorded — jarl\.mjs evidence 1 --file "<path>" --slot before --by "<who>" \(a file at attachments\/1\/before\.\*\)/);
+  assert.match(why, /slot after: no file recorded — jarl\.mjs evidence 1 --file "<path>" --slot after --by "<who>" \(a file at attachments\/1\/after\.\*\)/);
   put(root, 'attachments/1/before.png');
   attach(root, 'before', 'attachments/1/before.png');
   const half = refuses(root, 'set', '1', 'done');
@@ -173,7 +173,7 @@ test('done is refused when a recorded file is gone', () => {
   unlinkSync(join(root, 'attachments', '1', 'before.png'));
   const why = refuses(root, 'set', '1', 'done');
   assert.match(why, /slot before: attachments\/1\/before\.png is gone/);
-  assert.match(why, /jarl\.mjs evidence 1 --file "<path>" --slot before \(a file at attachments\/1\/before\.\*\)/);
+  assert.match(why, /jarl\.mjs evidence 1 --file "<path>" --slot before --by "<who>" \(a file at attachments\/1\/before\.\*\)/);
   assert.doesNotMatch(why, /slot after/);
 });
 

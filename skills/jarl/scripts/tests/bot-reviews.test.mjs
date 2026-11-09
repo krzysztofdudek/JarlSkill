@@ -1,6 +1,5 @@
 // A verdict can be recorded as a bot's (review --bot, or a name the loop's done gate names as a bot): its line carries the
-// standing bot, which a reader of record formats 1 and 2 would take for an approve with no reviewer, so the first one raises
-// the loop to format 3. Which approves clear an issue is the loop's own definition, the done gate's "clears": by default a
+// standing bot. Which approves clear an issue is the loop's own definition, the done gate's "clears": by default a
 // fresh agent's or the owner's; a loop may name a bot there, and may ask for several approves together. With no
 // definition a bot's approve never clears, and done says so, naming the bot. status and report count bot and relayed
 // verdicts apart from fresh ones.

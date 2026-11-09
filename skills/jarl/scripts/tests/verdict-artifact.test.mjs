@@ -2,8 +2,7 @@
 // line after the reviewer's marks and in the Reviews entry, and show prints it with the verdict. A value that is not a
 // plain relative path inside the repository is refused with nothing written, its reason named: the record holds no place
 // on one machine (artifact-path.test.mjs proves the rule over a product of values).
-// loop that names none is never raised, and a loop whose format a composer keeps refuses it with nothing written. report
-// counts the verdicts that name one. Nothing gates on it: done and the merge read the verdict as they read any other.
+// report counts the verdicts that name one. Nothing gates on it: done and the merge read the verdict as they read any other.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -19,7 +18,7 @@ const log = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
 const marker = (root) => join(root, '.jarl', 'profile.json');
 const formatOf = (root) => (existsSync(marker(root)) ? JSON.parse(readFileSync(marker(root), 'utf8')).format : 1);
 
-// An issue filed as a loop of format 1 holds it, in progress with a proof row: nothing written so far raises the format.
+// An issue with three digits and no key, in progress with a proof row.
 function inFlight(prefix = 'jarl-artifact-', initFlags = []) {
   const root = makeLoop({ prefix, via: 'cli', initFlags });
   const id = fileThreeDigits(root, 'a page change', { acceptance: '[read] the page renders' });

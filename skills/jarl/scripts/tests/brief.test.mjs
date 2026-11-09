@@ -102,7 +102,7 @@ test('brief <id> --role reviewer carries the rules of the reviewer, of the round
   jarl(root, 'merged', '3', '--sha', 'abc1234');
   jarl(root, 'set', '3', 'done', 'approved');
   assert.equal(json(root, 'brief', '3', '--role', 'reviewer').rounds.length, 1);
-  assert.match(jarl(root, 'brief', '3'), /\nnote: 3 is done: a worker starts on it once it is reopened — jarl\.mjs set 3 open "<why>"\n/);
+  assert.match(jarl(root, 'brief', '3'), /\nnote: 3 is done: a worker starts on it once it is reopened — jarl\.mjs set 3 open "<why>" --by "<who>"\n/);
 });
 
 test('an issue whose file holds no Reviews section is briefed with the findings its journal holds, without the verdict and reviewer repeated', () => {

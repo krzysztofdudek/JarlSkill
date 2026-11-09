@@ -1,7 +1,7 @@
 // A loop whose goal declares no Model line is offered the lines by the lease that raises its first agent, once: the answer
 // of that lease names the tier of the jarl (strong) and of the coordinators (standard) and ends with the form of the goal
 // line that adds them, and one log line remembers it. No view holds the offer. A lease that records no model raises nobody
-// and says nothing, a loop run by an external scheduler places its models in its composer, a note in the shape of the
+// and says nothing, and a note in the shape of a line the lease writes is refused.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -16,7 +16,7 @@ const log = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
 const count = (root, word) => log(root).split('\n').filter((l) => l.includes(` · ${word} · `)).length;
 const offers = (root) => count(root, 'models offered');
 const closes = (root) => count(root, 'models offer closed');
-const OFFER = /^note: \S+ is leased with a model and the goal declares no Model line, so no model is placed and none ranked; add one line for each tier: Model \(strong\): <model-id> for the jarl, Model \(standard\): <model-id> for the coordinators — jarl\.mjs goal --set "<machine-line>"$/m;
+const OFFER = /^note: \S+ is leased with a model and the goal declares no Model line, so no model is placed and none ranked; add one line for each tier: Model \(strong\): <model-id> for the jarl, Model \(standard\): <model-id> for the coordinators — jarl\.mjs goal --set "<machine-line>" --by "<who>"$/m;
 let seq = 0;
 // A lease through the command line; `model` is the model of the agent raised for it.
 const lease = (root, { model = 'some-model' } = {}) => {

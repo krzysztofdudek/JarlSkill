@@ -2,7 +2,7 @@
 // parent waits on its sub-issues, and a sub-issue on what the After of every issue above it names; a split moves each
 // acceptance line of a parent to a sub-issue or keeps it there, and refuses a line moved nowhere; a parent whose sub-issues
 // are all closed is on its coordinator to check its own acceptance against the whole, and done waits for that check; a
-// sub-issue is in its parent's slice and under the rules that name its parent. The first parent written raises the record
+// sub-issue is in its parent's slice and under the rules that name its parent.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -213,7 +213,7 @@ test('a split that moves a line nowhere is refused, naming the line, and so are 
   assert.match(refuses(root, 'split', '1', '--line', '1=5', '--line', '2=3', '--line', '3=1'), /^5 is a sub-issue of 4: a split moves lines to the sub-issues of 1, or to issues with no parent \(got "1=5"\)$/m);
   assert.match(refuses(root, 'split', '1', '--line', '1=6', '--line', '2=3', '--line', '3=1'), /^6 is done: a line moved to it would never be checked — move it to an issue in play \(got "1=6"\)$/m);
   assert.match(refuses(root, 'split', '1', '--line', '1=1', '--line', '2=1', '--line', '3=1'), /^every line stays on 1: a split moves at least one acceptance line to a sub-issue$/m);
-  assert.match(refuses(root, 'split', '2', '--line', '1=3'), /^2 has no acceptance line to share out — an issue is put under it with jarl\.mjs field "<ids>" Parent 2\njarl\.mjs field "<ids>" Parent "<id>" --by "<who>"\n$/);
+  assert.match(refuses(root, 'split', '2', '--line', '1=3'), /^2 has no acceptance line to share out — an issue is put under it with jarl\.mjs field "<ids>" Parent 2 --by "<who>"\njarl\.mjs field "<ids>" Parent "<id>" --by "<who>"\n$/);
   assert.match(refuses(root, 'split', '1', '--line', '1=<id>'), /placeholder/);
   assert.deepEqual(state(), before, 'nothing was written');
 });
@@ -229,7 +229,7 @@ test('a parent whose sub-issues are all closed holds the ball on its coordinator
   const subsOpen = refuses(root, 'set', '1', 'done', 'finished');
   assert.match(subsOpen, /^1 has sub-issues not closed: 2 \(open\), 3 \(open\) — a parent is closed once each of its sub-issues is done or dropped and its own acceptance is then checked against the whole\njarl\.mjs show 1\njarl\.mjs set "<ids>" "<status>" "<why>" --by "<who>"\n$/);
   const odin = () => jarl(root, 'next', '--as', 'odin');
-  assert.match(odin(), /^- 2 the csv writer: ready to start, raise a worker — jarl\.mjs set 2 in-progress --branch "<branch>" --worker "<name>" --model "<model-id>" · holds up 1$/m, 'a sub-issue is in its parent\'s slice, and holds the parent up');
+  assert.match(odin(), /^- 2 the csv writer: ready to start, raise a worker — jarl\.mjs set 2 in-progress --branch "<branch>" --worker "<name>" --model "<model-id>" --by odin · holds up 1$/m, 'a sub-issue is in its parent\'s slice, and holds the parent up');
   assert.match(jarl(root, 'next', '--as', 'odin', '--all'), /^- 1 the export: waits on odin via 2, 3$/m);
   assert.match(jarl(root, 'resume'), /^## Waiting on their sub-issues \(1\)\n- 1 the export \(sub-issues 2, 3 not closed\)$/m);
   assert.doesNotMatch(jarl(root, 'resume'), /^## Held/m, 'a parent waiting on its sub-issues is not held by a file');
@@ -237,7 +237,7 @@ test('a parent whose sub-issues are all closed holds the ball on its coordinator
   finish(root, '2');
   finish(root, '3');
   // The whole is complete: the parent is on its coordinator, in next --as, status and resume.
-  assert.match(odin(), /^- 1 the export: its sub-issues are closed \(2 done, 3 done\): check its own acceptance against the whole, and record what the check ran and printed — jarl\.mjs evidence 1 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by "<who>"$/m);
+  assert.match(odin(), /^- 1 the export: its sub-issues are closed \(2 done, 3 done\): check its own acceptance against the whole, and record what the check ran and printed — jarl\.mjs evidence 1 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by odin$/m);
   assert.deepEqual(json(root, 'next', '--as', 'jarl').rows.map((r) => r.id), [], 'the check is the coordinator\'s, not the jarl\'s');
   assert.match(jarl(root, 'status'), /^parent 1 · sub-issues 2 done, 3 done · odin checks its own acceptance against the whole and records the check$/m);
   assert.match(jarl(root, 'resume'), /^## Parents whose sub-issues are closed \(1\)\n- 1 the export · sub-issues 2 done, 3 done\n {2}→ odin checks its own acceptance against the whole and records the check$/m);
@@ -246,7 +246,7 @@ test('a parent whose sub-issues are all closed holds the ball on its coordinator
   assert.match(odin(), /^- 1 the export: checked against the whole, no verdict; raise a reviewer — jarl\.mjs review 1 "<verdict>" --by "<reviewer>" --model "<model-id>" "<text>"$/m);
   assert.match(refuses(root, 'set', '1', 'done', 'finished'), /^1 has no approving review newer than its last round or reopen, nor one since its last sub-issue, 3, closed/m, 'the approve from before the whole does not count');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
-  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1 the export: approved; close it — jarl\.mjs set 1 done "<text>"$/m);
+  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1 the export: approved; close it — jarl\.mjs set 1 done "<text>" --by jarl$/m);
   jarl(root, 'set', '1', 'done', 'the whole holds');
   assert.equal(json(root, 'show', '1').status, 'done');
 });

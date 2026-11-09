@@ -45,7 +45,7 @@ const git = (cwd, ...args) => {
   const r = spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', timeout: SPAWN_TIMEOUT });
   assert.equal(r.status, 0, `git ${args.join(' ')}: ${r.stderr}`);
 };
-// A loop opened with a profile that names an external scheduler (a composer runs it), in a repository with a repository
+// A loop opened with a profile, in a repository with a repository
 // beside it that an issue may name. The first issue names finding-1.
 export function composed() {
   const parent = realpathSync.native(mkdtempSync(join(tmpdir(), 'jarl-atomic-composed-')));

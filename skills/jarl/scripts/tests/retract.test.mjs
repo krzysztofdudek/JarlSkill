@@ -12,7 +12,7 @@ import { SPAWN_TIMEOUT, jarl, refuses, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
-// Issues are filed with three digits and no key (fileThreeDigits), so each loop stays format 1 until a retraction.
+// Issues are filed with three digits and no key (fileThreeDigits).
 const R = await import('../record.mjs');
 
 const loop = () => makeLoop({ prefix: 'jarl-retract-', goal: 'a goal', via: 'cli' });
@@ -394,10 +394,10 @@ test('the lines of retracted notes, over every sequence of notes that open alike
   const id = started(root);
   const f = L.findIssue(root, id).file;
   const logFile = join(root, '.jarl', 'log.md');
-  // The first retraction raises the record format; each history then starts from the issue and the log of before it.
+  // One retraction first; each history then starts from the issue and the log of before it.
   const [baseFile, baseLog] = [file(root, id), log(root)];
-  jarl(root, 'evidence', id, 'raises the format');
-  jarl(root, 'retract', id, 'note-1', '--by', 'jarl', 'raises the format once');
+  jarl(root, 'evidence', id, 'the first note');
+  jarl(root, 'retract', id, 'note-1', '--by', 'jarl', 'taken back once');
   const POOL = ['same', 'same\nwith more', '- same', '# same', '<<<<<<< same', '~~same', '### Notes', "same (+1 more lines, whole text in the issue's Evidence section)"];
   const logged = (t) => { const ls = t.split('\n'); return ls.length > 1 ? `${ls[0]} (+${ls.length - 1} more lines, whole text in the issue's Evidence section)` : ls[0]; };
   const words = (n) => (n === 0 ? [[]] : words(n - 1).flatMap((w) => POOL.map((p) => [...w, p])));

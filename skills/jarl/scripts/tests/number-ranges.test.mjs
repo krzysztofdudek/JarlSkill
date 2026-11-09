@@ -1,8 +1,7 @@
 // A goal line "Range (<name>): <from-to>" declares the numbers of a series of issues, and new --range <name> files under
 // the next free number of that series. Every other filing takes its number outside every declared range, stepped past a
 // range it would fall in, so a series never moves the count of another, and a hand-made file with a high number moves
-// only the count of the series it falls in. A number from a range is a line of record format 3: its first filing raises
-// declares no range numbers as it always does.
+// only the count of the series it falls in.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';

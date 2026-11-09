@@ -114,12 +114,12 @@ function baseNote(cmd, field) {
 // to the fields and the types of its tool.
 const EXAMPLES = {
   evidence: {
-    ran: 'One command per row, a list of strings. Row n pairs with the text at place n of saw. Example: {"ids": "12", "ran": ["npm test"], "saw": ["# pass 4 # fail 0"]}',
-    saw: 'What each command of ran printed, a list of strings in the same order. Example: {"ids": "12", "ran": ["npm test"], "saw": ["# pass 4 # fail 0"]}',
+    ran: 'One command per row, a list of strings. Row n pairs with the text at place n of saw. Example: {"ids": "12", "ran": ["npm test"], "saw": ["# pass 4 # fail 0"], "by": "w-12"}',
+    saw: 'What each command of ran printed, a list of strings in the same order. Example: {"ids": "12", "ran": ["npm test"], "saw": ["# pass 4 # fail 0"], "by": "w-12"}',
   },
   review: {
-    verdict: 'approve or changes: the verdict of this reviewer on each issue. Example: {"ids": "12", "verdict": "approve", "by": "rev-12", "text": "Read the diff and the acceptance: every line holds."}',
-    text: 'What the reviewer read and found, at least three words, also when nothing is wrong. Example: {"ids": "12", "verdict": "approve", "by": "rev-12", "text": "Read the diff and the acceptance: every line holds."}',
+    verdict: 'approve or changes: the verdict of this reviewer on each issue. Example: {"ids": "12", "verdict": "approve", "by": "rev-12", "model": "a-model-id", "text": "Read the diff and the acceptance: every line holds."}',
+    text: 'What the reviewer read and found, at least three words, also when nothing is wrong. Example: {"ids": "12", "verdict": "approve", "by": "rev-12", "model": "a-model-id", "text": "Read the diff and the acceptance: every line holds."}',
   },
   decide: {
     supersedes: 'The slug of the ruling this one replaces, which the record then marks as superseded. Example: {"slug": "subagents-again", "text": "Use fresh reviewers again.", "by": "jarl", "supersedes": "no-subagents"}',
@@ -128,8 +128,8 @@ const EXAMPLES = {
     live: 'true lists only the rulings still in force, those no later ruling supersedes. Example: {"live": true}',
   },
   field: {
-    add: 'true adds the items of value to a list field, or value after what a section holds. Example: {"ids": "12", "name": "Acceptance", "value": "the new line", "add": true}',
-    remove: 'true takes the items of value off a list field. Example: {"ids": "12", "name": "Tags", "value": "docs", "remove": true}',
+    add: 'true adds the items of value to a list field, or value after what a section holds. Example: {"ids": "12", "name": "Acceptance", "value": "the new line", "add": true, "by": "w-12"}',
+    remove: 'true takes the items of value off a list field. Example: {"ids": "12", "name": "Tags", "value": "docs", "remove": true, "by": "w-12"}',
   },
 };
 function fieldNote(cmd, field) {

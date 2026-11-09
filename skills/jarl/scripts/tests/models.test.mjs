@@ -366,6 +366,29 @@ function leased(goalLines, kind) {
   return { root, id };
 }
 
+// An issue whose log holds `count` round lines with no standing, as a conversion carries them over.
+function roundsWithNoStanding(goalLines, count, text = (k) => `red ${k}`) {
+  const { root, id } = leased(goalLines, 'docs');
+  const file = join(root, '.jarl', 'log.md');
+  const key = / key (\S+) by [^·]+· filed /.exec(readFileSync(file, 'utf8'))?.[1];
+  for (let k = 1; k <= count; k += 1) appendFileSync(file, `- 2026-11-08 12:0${k}${key ? ` key ${key}` : ''} by unrecorded · ${id} round ${k} · ${text(k)}\n`);
+  return { root, id };
+}
+
+test('round lines with no standing count as the takeover at every round from the third, so the first round after one starts a new count', () => {
+  const three = roundsWithNoStanding(null, 3);
+  assert.deepEqual([4, 5, 6].map((k) => R.addRound(three.root, three.id, `red ${k}`)).map((r) => [r.round, r.takeover, r.since]), [[4, false, 1], [5, false, 2], [6, true, 3]]);
+  const six = roundsWithNoStanding(null, 6);
+  assert.match(cli(six.root, 'round', six.id, 'red 7').stdout, /round 7: 1 of 3 before a takeover/);
+  const two = roundsWithNoStanding(null, 2);
+  assert.equal(R.addRound(two.root, two.id, 'red 3').takeover, true, 'two rounds with no standing, then the third reaches three');
+  const lowered = roundsWithNoStanding('Takeover (docs): 2', 4);
+  assert.deepEqual([5, 6].map((k) => R.addRound(lowered.root, lowered.id, `red ${k}`)).map((r) => [r.takeover, r.since, r.limit]), [[false, 1, 2], [true, 2, 2]], 'the rounds with no standing took over at the third and the fourth');
+  const typed = roundsWithNoStanding(null, 1, () => 'takeover · typed by hand');
+  assert.deepEqual([R.addRound(typed.root, typed.id, 'red 2')].map((r) => [r.takeover, r.since]), [[false, 2]], 'text that opens like a mark in a round with no standing is no takeover');
+  assert.match(readFileSync(join(two.root, '.jarl', 'log.md'), 'utf8'), /· 001 round 3 \(takeover 3 of 3\) · red 3$/m);
+});
+
 test('a goal line sets the red rounds after which a kind of issue takes over, and the other kinds keep three', () => {
   const { root, id } = leased('Takeover (docs): 2', 'docs');
   const first = R.addRound(root, id, 'red one');
@@ -414,7 +437,7 @@ test('init says once, on the command line, that a goal with no Model line places
   const bare = fresh();
   const said = cli(bare, 'init', 'a goal with no model');
   assert.equal(said.status, 0, said.stderr);
-  assert.match(said.stderr, /^note: the goal declares no Model line \("Model \(<tier>\): <model-id>"\), so models places no model and ranks none until it does — add one for each tier: jarl\.mjs goal --set "<machine-line>" --root /m);
+  assert.match(said.stderr, /^note: the goal declares no Model line \("Model \(<tier>\): <model-id>"\), so models places no model and ranks none until it does — add one for each tier: jarl\.mjs goal --set "<machine-line>" --by "<who>" --root /m);
   const named = fresh();
   assert.doesNotMatch(cli(named, 'init', `a goal${LINES}`).stderr, /Model line/);
   const lib = fresh();

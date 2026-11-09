@@ -1,6 +1,5 @@
 // The writer of a write: every command whose --by is not part of what it records takes one per call and writes it into
-// each log line of the call, right after the stamp, under record format 3. A call that names nobody writes no writer and
-// raises nothing; a view shows an unnamed lease as unnamed where coordinators may lease; no server keeps a name of its own.
+// each log line of the call, right after the stamp. A library call that names nobody writes unrecorded; a view shows an unnamed lease as unnamed where coordinators may lease; no server keeps a name of its own.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -26,7 +25,7 @@ test('every command whose --by is not what it records takes one, and the table h
 
 test('a named write puts its writer after the stamp of every line it writes', () => {
   const root = loop();
-  // Filed with no key (filePlain), which would raise the loop to 3 by itself.
+  // Filed with no key (filePlain).
   filePlain(root, 'one', { files: 'a.mjs' });
   jarl(root, 'log', 'nobody named');
   assert.match(logOf(root), new RegExp(`^- ${STAMP} by test-writer · nobody named$`, 'm'), 'the writer of the call is in its place');

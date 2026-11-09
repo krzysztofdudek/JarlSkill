@@ -29,7 +29,7 @@ test('the hint for an empty Found by is the field call that writes it, and that 
   const { file } = JSON.parse(jarl(root, 'new', 'bare', '--acceptance', '[read] it works', '--json'));
   writeFileSync(file, readFileSync(file, 'utf8').replace(/^\*\*Found by:\*\*.*$/m, '**Found by:**'));
   const hint = describeNew(file).empty.find((e) => e.field === 'found by');
-  assert.equal(hint.fill, "jarl.mjs field 1 'Found by' \"<who>\"");
+  assert.equal(hint.fill, "jarl.mjs field 1 'Found by' \"<who>\" --by \"<who>\"");
   assert.equal(jarl(root, 'field', '1', 'Found by', 'rev-a'), '1 Found by: rev-a');
   assert.equal(describeNew(file).empty.find((e) => e.field === 'found by'), undefined);
 });
@@ -326,7 +326,7 @@ test('status moves only with a log line; done needs evidence; dropped needs a re
   assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
   assert.match(refuses(root, 'set', '1', 'dropped'), /needs a reason/);
   // A reason of blanks is no reason: the refusal ends with the form that gives one, and the issue stays open.
-  for (const blank of ['', ' ', '  \t ']) assert.equal(refuses(root, 'set', '1', 'dropped', blank).trim(), 'dropped needs a reason: jarl.mjs set "<id>" dropped "<text>"\njarl.mjs set "<ids>" "<status>" "<text>" --by "<who>"');
+  for (const blank of ['', ' ', '  \t ']) assert.equal(refuses(root, 'set', '1', 'dropped', blank).trim(), 'dropped needs a reason: jarl.mjs set "<id>" dropped "<text>" --by "<who>"\njarl.mjs set "<ids>" "<status>" "<text>" --by "<who>"');
   assert.match(refuses(root, 'set', '1', 'deferred', ' '), /^deferred needs a reason: /);
   assert.match(jarl(root, 'show', '1'), /open/);
   jarl(root, 'set', '1', 'in-progress', 'worker raised');
@@ -1627,7 +1627,6 @@ test('a committed loop names the loop files git has not committed in status, han
   sh('git add -A && git commit -qm loop');
   assert.equal(JSON.parse(jarl(root, 'status', '--json')).uncommitted, 0);
   assert.doesNotMatch(jarl(root, 'status'), /not committed/);
-  // Filed by the library: the issue's key raises the loop to the format that holds it, so the profile file is written too.
   (await import(new URL('../record.mjs', import.meta.url).href)).newIssue(root, 'one');
   assert.match(jarl(root, 'status'), /^2 loop file\(s\) not committed — commit \.jarl\/ in the loop's repository$/m);
   assert.match(jarl(root, 'resume'), /^## Loop files not committed \(2\) — commit \.jarl\/\n- \.jarl\/issues\/001-one\.md\n- \.jarl\/log\.md$/m);

@@ -154,8 +154,6 @@ export const lineDigests = (text) => (text ? text.split(', ') : []);
 // The mark a row that names `lines` adds after "ran" in the issue file and after "evidence row" in its log line: none for
 // a row that names no line.
 export const rowLinesText = (lines) => (lines && lines.length ? ` (line ${lines.join(', ')})` : '');
-// The mark of a row that names no line, written by a conversion: it counts for no line.
-export const HISTORY_ROW_MARK = ' (history)';
 // The head of a row's log line, `<id> evidence row (line a1b2c3d4e5f6) · `, before the row's command: the id as the line
 // writes it, the head's length and the digests of the lines it names. No text of the command reaches the head. Null for any
 // other line.

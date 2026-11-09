@@ -44,7 +44,7 @@ test('a lease with no commit, row or log line for longer than 30 minutes is idle
     assert.match(statusText(root), new RegExp(`^stale 001 · ${idle.replace(/[()]/g, '\\$&')}$`, 'm'));
     assert.match(resumeText(root), /^- 001 one · worker w1 · model not recorded · since 2026-06-01 10:00 · STALE: idle 31m \(threshold 30m\)/m);
     const list = nextAs(root, 'jarl');
-    assert.match(list, /^- 001 one: with worker w1 since 2026-06-01 10:00, no commit, row or log line for 31m \(threshold 30m\): ask the worker whether it waits on a prompt or a lock, or hand the lease over — jarl\.mjs set 001 in-progress "<why-the-worker-changed>" --worker "<the-new-worker>" --model "<model-id>" --handover$/m);
+    assert.match(list, /^- 001 one: with worker w1 since 2026-06-01 10:00, no commit, row or log line for 31m \(threshold 30m\): ask the worker whether it waits on a prompt or a lock, or hand the lease over — jarl\.mjs set 001 in-progress "<why-the-worker-changed>" --worker "<the-new-worker>" --model "<model-id>" --handover --by jarl$/m);
     assert.equal(L.cmdNextAs(root, { as: 'jarl' }).rows[0].what, 'idle');
   });
 });
@@ -329,8 +329,9 @@ test('resume, status and next --as show a lease idle for 45 minutes at the defau
   writeFileSync(log, readFileSync(log, 'utf8').replace(/^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}/gm, `- ${back}`));
   assert.match(jarl(root, 'resume'), /^- 1 one · .*STALE: idle 4[56]m \(threshold 30m\)/m);
   assert.match(jarl(root, 'status'), /^stale 1 · idle 4[56]m \(threshold 30m\)/m);
-  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1 one: with worker w1 since \S+ \S+, no commit, row or log line for 4[56]m \(threshold 30m\): .* — jarl\.mjs set 1 in-progress "<why-the-worker-changed>" --worker "<the-new-worker>" --model "<model-id>" --handover$/m);
+  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1 one: with worker w1 since \S+ \S+, no commit, row or log line for 4[56]m \(threshold 30m\): .* — jarl\.mjs set 1 in-progress "<why-the-worker-changed>" --worker "<the-new-worker>" --model "<model-id>" --handover --by jarl$/m);
   jarl(root, 'goal', '--set', 'Liveness: 60');
   assert.doesNotMatch(jarl(root, 'resume'), /STALE/);
   assert.match(jarl(root, 'status', '--stale-hours', '0.5'), /^stale 1 · idle 4[56]m \(threshold 30m\)/m);
 });
+

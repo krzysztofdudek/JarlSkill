@@ -59,7 +59,7 @@ test('init with a profile that names models opens the loop and says the goal pla
   const root = mkdtempSync(join(tmpdir(), 'jarl-ceiling-init-'));
   const r = run(root, ['init', 'goal', '--profile', profileFile({ models: { ceiling: 'm-std' } })]);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stderr, /note: the profile names models, and the goal places none yet: add a Model line for each tier, then check the profile — jarl\.mjs goal --set "<machine-line>", then jarl\.mjs profile/);
+  assert.match(r.stderr, /note: the profile names models, and the goal places none yet: add a Model line for each tier, then check the profile — jarl\.mjs goal --set "<machine-line>" --by "<who>", then jarl\.mjs profile/);
 });
 
 test('a lease and a verdict on a model the profile does not allow are recorded, with a note that refuses nothing', () => {

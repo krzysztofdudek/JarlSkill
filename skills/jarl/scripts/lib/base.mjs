@@ -174,7 +174,17 @@ export function globalWords(k, v, spelt, shell = 'posix') {
   if (!rootPrintable(v, shell)) return ['--root', hole('<loop-root>')];
   return spelt === '=' ? [`--root=${v}`] : ['--root', v];
 }
-export function printCommand(words, { globals = current().globals, shell = current().shell } = {}) {
+// The commands that write the record. goal writes only when it is given --set.
+export const MUTATING = new Set(['init', 'new', 'renumber', 'import', 'set', 'field', 'split', 'base', 'merged', 'evidence', 'retract', 'review', 'round', 'tick', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close', 'extend']);
+export const writes = (words) => MUTATING.has(words[1]) && !(words[1] === 'goal' && !words.some((w) => w === '--set' || String(w).startsWith('--set=')));
+// A printed write names its writer: the words of a command with --by added where they name none, before a bare --.
+export function signedWords(words, by = hole('<who>')) {
+  const end = words.indexOf('--') === -1 ? words.length : words.indexOf('--');
+  if (!writes(words) || words.slice(0, end).some((w) => w === '--by' || String(w).startsWith('--by='))) return words;
+  return [...words.slice(0, end), '--by', by, ...words.slice(end)];
+}
+export function printCommand(given, { globals = current().globals, shell = current().shell } = {}) {
+  const words = given[0] === 'jarl.mjs' ? signedWords(given) : given;
   const w = words.map((x) => (x === undefined || x === null ? hole('<value>') : String(x)));
   let all = w;
   if (w[0] === 'jarl.mjs') {
