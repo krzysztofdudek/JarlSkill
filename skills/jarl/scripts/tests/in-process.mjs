@@ -25,17 +25,32 @@ const UNDER_LIMIT = new vm.Script("globalThis[Symbol.for('jarl.in-process.call')
 // Jarl starts every child through execFileSync (a live binding, so this reaches it). Outside a call it is left as it is.
 let childLimit = null;
 let childOverran = false;
+// A walk's copies of a loop hold the same repository call after call, and starting git is what costs on Windows: given a
+// memo, a call asks git once for each question that only reads, per directory. Any other git command empties the memo.
+let gitMemo = null;
+const READS = new Set(['rev-parse', 'for-each-ref', 'cat-file', 'merge-base', 'rev-list', 'log', 'show-ref', 'diff']);
+const onlyReads = (args) => READS.has(args[0]) || (args[0] === 'worktree' && args[1] === 'list');
 const execFileSyncAlone = childProcess.execFileSync;
 childProcess.execFileSync = (file, args, options) => {
   if (childLimit === null || options?.timeout !== undefined) return execFileSyncAlone(file, args, options);
-  try { return execFileSyncAlone(file, args, { ...options, timeout: childLimit }); } catch (e) {
-    if (e.code === 'ETIMEDOUT') childOverran = true;
-    throw e;
-  }
+  const start = () => {
+    try { return execFileSyncAlone(file, args, { ...options, timeout: childLimit }); } catch (e) {
+      if (e.code === 'ETIMEDOUT') childOverran = true;
+      throw e;
+    }
+  };
+  if (gitMemo === null || file !== 'git') return start();
+  if (!onlyReads(args)) { gitMemo.clear(); return start(); }
+  if (options?.input !== undefined) return start();
+  const key = `${options?.cwd}\0${args.join('\0')}`;
+  if (!gitMemo.has(key)) { try { gitMemo.set(key, { out: start() }); } catch (error) { gitMemo.set(key, { error }); } }
+  const { out, error } = gitMemo.get(key);
+  if (error) throw error;
+  return out;
 };
 syncBuiltinESMExports();
 
-export function runInProcess(words, { cwd, timeout = LIMIT_MS, main = cliMain } = {}) {
+export function runInProcess(words, { cwd, timeout = LIMIT_MS, main = cliMain, memo = null } = {}) {
   const out = [];
   const err = [];
   const saved = { log: console.log, error: console.error, exit: process.exit, stdout: process.stdout.write, stderr: process.stderr.write, here: process.cwd() };
@@ -49,6 +64,7 @@ export function runInProcess(words, { cwd, timeout = LIMIT_MS, main = cliMain } 
   let overran = false;
   childLimit = timeout;
   childOverran = false;
+  gitMemo = memo;
   globalThis[CALL] = () => main(words.map(String));
   try {
     UNDER_LIMIT.runInThisContext({ timeout });
@@ -58,6 +74,7 @@ export function runInProcess(words, { cwd, timeout = LIMIT_MS, main = cliMain } 
     else { err.push(`${e?.stack ?? e}\n`); status = 1; }   // an exception nothing caught: a process prints it and exits with 1
   } finally {
     childLimit = null;
+    gitMemo = null;
     delete globalThis[CALL];
     console.log = saved.log;
     console.error = saved.error;
