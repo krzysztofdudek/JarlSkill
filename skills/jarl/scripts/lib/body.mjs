@@ -93,7 +93,7 @@ export function rowsLostNote(issue, was, now) {
 
 // The old text a body line quotes. It is the record's own text, and the closing quotation mark bodyLine puts after it
 // would turn an honest "on the owner's word." into the shape of the owner's quote.
-const quotedOldText = (line) => line.match(/ body · [^·]+ · was (".*")/)?.[1];
+const quotedOldText = (line) => line.match(/ body · [^·]+ · was ("[^·]*")(?: \(\d+ characters\))?(?: · by .*)?$/)?.[1];
 
 // The lines of a description change that are not null, appended in one write; nothing when every part was unchanged.
 export function logChanges(root, lines) {

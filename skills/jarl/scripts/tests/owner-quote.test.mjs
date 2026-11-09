@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { jarl, refuses, loop, run } from './helpers.mjs';
 import { loadDecisions } from '../lib/journal.mjs';
+import { logChanges } from '../lib/body.mjs';
 import * as R from '../record.mjs';
 import * as L from '../jarl-lib.mjs';
 
@@ -335,6 +336,15 @@ test('a part whose old text ends in the owner\'s word is changed like any other,
   assert.match(log, /1 body · acceptance · was "\[read\] Published first, on the owner's word\."/);
   assert.match(refuses(root, 'field', '1', 'What', 'The owner\'s word: "yes, ship it"'), REFUSED);
   assert.match(refuses(root, 'field', '1', 'Title', 'the owner\'s word "yes"'), REFUSED);
+});
+
+test('the old text a body line carries ends at its closing quotation mark, so a name after it is still checked', () => {
+  const root = loop({ via: 'cli' });
+  const line = (rest) => `1 body · title · was "Published first, on the owner's word."${rest}`;
+  logChanges(root, [line('')]);
+  logChanges(root, [line(' (37 characters) · by someone')]);
+  assert.throws(() => logChanges(root, [line(' · by The owner\'s words: "ship it')]), REFUSED);
+  assert.throws(() => logChanges(root, [line(' (37 characters) · by The owner\'s word "ship it')]), REFUSED);
 });
 
 test('the library keeps the author of a ruling as the one name the owner has, and refuses a name that holds his', () => {
