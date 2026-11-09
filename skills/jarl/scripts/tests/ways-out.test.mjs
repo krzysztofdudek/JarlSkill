@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join, relative } from 'node:path';
 import { FINDINGS } from './findings.mjs';
 import { SPAWN_TIMEOUT, gitRepo, jarl, loop as makeLoop, refuses, run, skillText } from './helpers.mjs';
 import { NO_EXCLUDES } from './portable.mjs';
@@ -222,4 +222,60 @@ test('a permanent loop keeps its record, so close takes it with its questions op
   const root = closableWithQuestions(['--permanent']);
   jarl(root, 'close', '--by', 'jarl');
   assert.ok(existsSync(join(root, '.jarl', 'asks.md')), 'the questions stay on record');
+});
+
+// An issue that names two repositories, one lease, a commit on its branch in each that `works` names, and a fresh approve.
+function twoRepositories({ works = ['a', 'b'] } = {}) {
+  const a = gitRepo({ prefix: 'jarl-ways-a-', branch: 'main' });
+  const b = gitRepo({ prefix: 'jarl-ways-b-', branch: 'main' });
+  jarl(a.dir, 'init', 'one issue, two repositories');
+  jarl(a.dir, 'new', 'across both', '--acceptance', '[read] it works', '--repo', `${relative(a.dir, b.dir)},.`, '--tier', 'light');
+  jarl(a.dir, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-two', '--worker', 'w', '--model', 'm', '--by', 'jarl');
+  for (const [name, r] of [['a', a], ['b', b]]) {
+    r.g('branch', 'jarl/1-two');
+    if (!works.includes(name)) continue;
+    r.g('checkout', '-q', 'jarl/1-two');
+    writeFileSync(join(r.dir, `${name}.txt`), 'work\n');
+    r.g('add', '-A'); r.g('commit', '-qm', `the work in ${name}`);
+    r.g('checkout', '-q', 'main');
+  }
+  jarl(a.dir, 'review', '1', 'approve', FINDINGS, '--by', 'rev', '--model', 'm2');
+  return { a, b };
+}
+const landIn = (r) => { r.g('merge', '-q', '--no-ff', '--no-edit', 'jarl/1-two'); return r.g('rev-parse', 'HEAD').trim(); };
+const merged = (a, sha, ...more) => jarl(a.dir, 'merged', '1', '--sha', sha, '--ran', 'node a.mjs', '--saw', 'pass', '--keep', ...more, '--by', 'muninn');
+const queued = (a) => json(a.dir, 'resume').queue.repos.flatMap((q) => q.rows.map((row) => [q.repo, row.branch]));
+
+test('an issue that names two repositories is done only when its branch has landed in each repository where it has work', () => {
+  const { a, b } = twoRepositories();
+  merged(a, landIn(a));
+  const refused = refuses(a.dir, 'set', '1', 'done', 'landed', '--by', 'jarl');
+  assert.match(refused, new RegExp(`no recorded merge lands its work in ${basename(b.dir)}`));
+  assert.deepEqual(queued(a), [[basename(b.dir), 'jarl/1-two']], 'the queue keeps the repository not landed, and only it');
+  assert.ok(json(a.dir, 'next', '--as', 'jarl', '--all').rows.some((r) => r.what === 'merge' && r.id === '1'), 'the merge is still the next move');
+  assert.equal(json(a.dir, 'status').inFlightRows.find((r) => r.id === '1').mark, 'approved');
+  merged(a, landIn(b), '--repo', relative(a.dir, b.dir));
+  assert.deepEqual(queued(a), []);
+  jarl(a.dir, 'set', '1', 'done', 'landed in both', '--by', 'jarl');
+  assert.deepEqual(json(a.dir, 'status').closedGate ?? [], []);
+});
+
+test('a repository the issue names where its branch has no work needs no landing', () => {
+  const { a } = twoRepositories({ works: ['a'] });
+  merged(a, landIn(a));
+  jarl(a.dir, 'set', '1', 'done', 'landed where the work is', '--by', 'jarl');
+  assert.equal(json(a.dir, 'show', '1').status, 'done');
+});
+
+test('the merger of a loop over several repositories is told one merge per repository with work, and one done after the last', () => {
+  const { a } = twoRepositories();
+  assert.match(jarl(a.dir, 'brief', '--role', 'merger'), /a green merge, one per repository where the branch has work, each with --repo, and done after the last:/);
+});
+
+test('report --metrics prints the lines by method and the count per stage, as status does', () => {
+  const root = makeLoop({ prefix: 'jarl-ways-', via: 'cli', dotGit: false });
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works');
+  const page = jarl(root, 'report', '--metrics');
+  assert.match(page, /^lines: 0 test · 0 check · 0 compare · 1 read · 0 owner \(/m);
+  assert.match(page, /^stages: 1 open · /m);
 });
