@@ -30,7 +30,13 @@ function fields(dir, id, values) {
 }
 // A journal written by hand, so every stamp is known: the log the commands would have written, at chosen times.
 function journal(dir, lines) {
-  writeFileSync(join(dir, '.jarl', 'log.md'), `# Log\n\n${lines.map((l) => `- ${l}`).join('\n')}\n`);
+  const file = join(dir, '.jarl', 'log.md');
+  const keys = new Map([...readFileSync(file, 'utf8').matchAll(/ key (\S+) by [^·]+· filed (\d+) /g)].map((m) => [m[2], m[1]]));
+  const placed = lines.map((l) => {
+    const m = l.match(/^(\S+ \S+) · (?:filed )?(\d+)\b/);
+    return m && keys.has(m[2]) ? l.replace(`${m[1]} · `, `${m[1]} key ${keys.get(m[2])} by unrecorded · `) : l.replace(/^(\S+ \S+) · /, '$1 by unrecorded · ');
+  });
+  writeFileSync(file, `# Log\n\n${placed.map((l) => `- ${l}`).join('\n')}\n`);
 }
 
 test('a loop whose merges carry no check row is marked in status and report; a Check line in goal.md only names the command', () => {

@@ -1,15 +1,13 @@
 // A loop whose goal declares no Model line is offered the lines by the lease that raises its first agent, once: the answer
 // of that lease names the tier of the jarl (strong) and of the coordinators (standard) and ends with the form of the goal
 // line that adds them, and one log line remembers it. No view holds the offer. A lease that records no model raises nobody
-// and says nothing, a loop run by an external scheduler places its models in its composer, a note in the shape of the
-// remembering line does nothing, and the pinned frozen readers read every loop as before.
+// and says nothing, and a note in the shape of a line the lease writes is refused.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as R from '../record.mjs';
-import { fileAsBefore, formatTwoJarl, formatTwoJarlIsPinned, oldJarl, oldJarlIsPinned } from './old-jarl.mjs';
 import { jarl, refuses, run, loop as makeLoop } from './helpers.mjs';
 
 const loop = () => makeLoop({ prefix: 'jarl-offer-', goal: 'a goal', via: 'cli', dotGit: false });
@@ -18,13 +16,14 @@ const log = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
 const count = (root, word) => log(root).split('\n').filter((l) => l.includes(` · ${word} · `)).length;
 const offers = (root) => count(root, 'models offered');
 const closes = (root) => count(root, 'models offer closed');
-const OFFER = /^note: \S+ is leased with a model and the goal declares no Model line, so no model is placed and none ranked; add one line for each tier: Model \(strong\): <model-id> for the jarl, Model \(standard\): <model-id> for the coordinators — jarl\.mjs goal --set "<machine-line>"$/m;
+const OFFER = /^note: \S+ is leased with a model and the goal declares no Model line, so no model is placed and none ranked; add one line for each tier: Model \(strong\): <model-id> for the jarl, Model \(standard\): <model-id> for the coordinators — jarl\.mjs goal --set "<machine-line>" --by "<who>"$/m;
 let seq = 0;
 // A lease through the command line; `model` is the model of the agent raised for it.
 const lease = (root, { model = 'some-model' } = {}) => {
   seq += 1;
   const id = JSON.parse(jarl(root, 'new', `change ${seq}`, '--acceptance', '[read] it works', '--files', `f${seq}.mjs`, '--json')).id;
-  const args = ['set', id, 'in-progress', 'go', '--worker', `w${seq}`, '--branch', `jarl/${id}-x`, ...(model ? ['--model', model] : [])];
+  if (!model) { R.setStatus(root, id, 'in-progress', 'go', { worker: `w${seq}`, branch: `jarl/${id}-x`, by: 'jarl' }); return { stderr: '' }; }
+  const args = ['set', id, 'in-progress', 'go', '--worker', `w${seq}`, '--branch', `jarl/${id}-x`, '--model', model];
   return run(root, args);
 };
 
@@ -85,47 +84,15 @@ test('the lines added close the offer at the next lease, and the offer is made a
   assert.doesNotMatch(lease(root).stderr, /Model \(strong\)/);
 });
 
-test('a loop run by an external scheduler is offered nothing and nothing is written', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'jarl-offer-sched-'));
-  mkdirSync(join(dir, '.git'));
-  const profile = join(dir, 'composer.json');
-  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: { queued: ['dispatchable'], running: ['lease'], merged: ['settles-dependents', 'terminal', 'closes-record'], dropped: ['terminal', 'needs-reason'] }, initial: 'queued', 'external-scheduler': 'composer-x tick' }));
-  const root = join(dir, 'composed');
-  mkdirSync(root);
-  mkdirSync(join(root, '.git'));
-  jarl(root, 'init', 'a composed goal', '--profile', profile);
-  const id = JSON.parse(jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--json')).id;
-  const r = run(root, ['set', id, 'running', 'go', '--worker', 'w1', '--branch', 'composer-x/1', '--model', 'some-model']);
-  assert.equal(r.status, 0, r.stderr);
-  assert.doesNotMatch(r.stderr, /Model \(strong\)/);
-  assert.equal(offers(root) + closes(root), 0);
-});
-
 test('a note in the shape of a line the lease or the path note writes is refused, so it opens and closes nothing', () => {
   const root = loop();
   for (const text of ['models offered · the goal declares no Model line at a lease', 'models offer closed · the goal declares a Model line at a lease', 'repo path ./inner noted · elsewhere']) {
     const said = refuses(root, 'log', text);
     assert.match(said, /^log writes a note, and ".*" has the shape of a line (a lease|a filing or a field call) writes to remember what it said: /, text);
-    assert.match(said, /\njarl\.mjs (set "<ids>" "<status>" "<why>"|field "<id>" Repo "<name-or-path>")\n$/, text);
+    assert.match(said, /\njarl\.mjs (set "<ids>" "<status>" "<why>"|field "<id>" Repo "<name-or-path>") --by "<who>"\n$/, text);
   }
   assert.equal(offers(root) + closes(root), 0);
   assert.equal(log(root).includes('repo path'), false);
   assert.match(lease(root).stderr, OFFER, 'the first real lease still offers');
-  assert.equal(R.loadProfile(root).format >= 1, true);
   assert.throws(() => R.appendLog(root, 'models offered · typed by hand'), /has the shape of a line a lease writes/, 'a composer\'s free note is refused the same way');
-});
-
-test('the frozen readers of the earlier formats read a loop that carries the offer, and the format stays', () => {
-  assert.ok(oldJarlIsPinned() && formatTwoJarlIsPinned());
-  const root = makeLoop({ prefix: 'jarl-offer-old-', goal: 'a goal' });
-  const id = fileAsBefore(root, 'a thing', { acceptance: 'it works' });
-  const r = run(root, ['set', id, 'in-progress', 'go', '--worker', 'w-a', '--branch', `jarl/${id}-a`, '--model', 'some-model']);
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stderr, OFFER);
-  assert.equal(offers(root), 1);
-  for (const [version, reader] of [['6.1.0', oldJarl], ['6.2.0', formatTwoJarl]]) {
-    for (const command of ['list', 'status', 'next', 'queue']) assert.equal(reader(root, command, {}).ok, true, `${version} ${command}`);
-  }
-  assert.equal(existsSync(join(root, '.jarl', 'profile.json')), false, 'no marker: the format stays');
-  assert.equal(R.loadProfile(root).format, 1);
 });

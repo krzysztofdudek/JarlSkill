@@ -68,7 +68,7 @@ test('a refusal of the keys of a findings file says nothing was filed on import 
   const root = loop();
   const file = findingsFile([{ id: 'F1', title: 'a', clam: 'x' }]);
   const imported = refuses(root, 'import', file, '--source', 'r');
-  assert.match(imported, / — nothing was filed\njarl\.mjs import "<findings\.json>" --dry-run\n$/);
+  assert.match(imported, / — nothing was filed\njarl\.mjs import "<findings\.json>" --dry-run --by "<who>"\n$/);
   const listed = refuses(root, 'sources', file, '--source', 'r');
   assert.doesNotMatch(listed, /nothing was filed/);
   assert.match(listed, /\njarl\.mjs sources "<findings\.json>"\n$/);

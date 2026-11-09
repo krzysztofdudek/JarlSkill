@@ -4,6 +4,7 @@
 // review, make it ready. Under the default rule the model never holds a branch back.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as R from '../record.mjs';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -36,7 +37,7 @@ function leased(dir, n) {
   sh(dir, `git worktree add -q -b jarl/${n}-change ${wt} feature`);
   sh(wt, `echo change >> src/a${n}.mjs && git add -A && git commit -qm "work on ${n}"`);
 }
-const approve = (dir, n, ...model) => jarl(dir, 'review', String(n), 'approve', '--by', `rev-${n}`, ...model, FOUND);
+const approve = (dir, n, ...model) => (model.length ? jarl(dir, 'review', String(n), 'approve', '--by', `rev-${n}`, ...model, FOUND) : R.review(dir, String(n), 'approve', FOUND, { by: `rev-${n}` }));
 const rowsOf = (dir) => Object.fromEntries(JSON.parse(jarl(dir, 'resume', '--json')).queue.repos[0].rows.map((r) => [r.branch, r]));
 
 for (const [rule, refusedModel, label] of [['other-model', 'm-strong', 'the model of its worker'], ['model-rank', 'm-light', 'a model ranked below its worker\'s']]) {

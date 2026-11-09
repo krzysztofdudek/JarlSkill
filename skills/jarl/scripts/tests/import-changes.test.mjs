@@ -8,7 +8,6 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, writeFil
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { jarl, loop as makeLoop, refuses } from './helpers.mjs';
-import { oldJarl } from './old-jarl.mjs';
 
 const loop = () => makeLoop({ prefix: 'jarl-import-changes-', via: 'cli', dotGit: false });
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
@@ -236,41 +235,40 @@ test('an import stopped before its closing line leaves every issue it filed comp
   assert.deepEqual(importing(root, findingsFile(written(rewritten))).changed.map((c) => c.finding), ['T-1', 'T-2', 'T-3', 'T-4', 'T-5', 'T-6']);
 });
 
-// Two copies of a loop written by a Jarl whose lines carry no key: one imports T-1, the other files an issue by hand under
-// T-2 with the Found by an import writes, and both take number 001; the union merge of the two copies keeps both files and
-// both filed lines. The number decides nothing: before one file is given a free number and after either is.
-const older = () => {
-  const root = mkdtempSync(join(tmpdir(), 'jarl-import-older-'));
+// Two copies of a loop: one imports T-1, the other files an issue by hand under T-2 with the Found by an import writes, and
+// both take number 1; the union merge of the two copies keeps both files and both filed lines. The number decides nothing:
+// before one file is given a free number and after either is.
+const copy = () => {
+  const root = mkdtempSync(join(tmpdir(), 'jarl-import-copy-'));
   mkdirSync(join(root, '.git'));
-  assert.equal(oldJarl(root, 'init', {}, ['an older loop', {}]).ok, true);
+  jarl(root, 'init', 'one of two copies');
   return root;
 };
 function mergedCopies() {
-  const a = older();
-  const imported = oldJarl(a, 'import', {}, [findingsFile(written([finding()])), { source: SOURCE }]);
-  assert.equal(imported.ok, true, imported.error);
-  const b = older();
-  assert.equal(oldJarl(b, 'new', {}, ['Print by hand', { acceptance: 'it works', source: `${SOURCE}#T-2`, 'found-by': `research ${SOURCE}`, what: 'Our own words about printing.' }]).ok, true);
+  const a = copy();
+  jarl(a, 'import', findingsFile(written([finding()])), '--source', SOURCE);
+  const b = copy();
+  jarl(b, 'new', 'Print by hand', '--acceptance', '[read] it works', '--source', `${SOURCE}#T-2`, '--found-by', `research ${SOURCE}`, '--what', 'Our own words about printing.', '--why', 'because');
   const [byHand] = readdirSync(join(b, '.jarl', 'issues'));
   writeFileSync(join(a, '.jarl', 'issues', byHand), readFileSync(join(b, '.jarl', 'issues', byHand), 'utf8'));
-  writeFileSync(logFile(a), `${readFileSync(logFile(a), 'utf8')}${readFileSync(logFile(b), 'utf8').match(/^.*· filed 001 · .*\n/m)[0]}`);
+  writeFileSync(logFile(a), `${readFileSync(logFile(a), 'utf8')}${readFileSync(logFile(b), 'utf8').match(/^.*· filed 1 · .*\n/m)[0]}`);
   const files = readdirSync(join(a, '.jarl', 'issues')).sort();
-  assert.deepEqual(files.map((f) => f.slice(0, 4)), ['001-', '001-'], 'two files carry one number');
+  assert.deepEqual(files.map((f) => f.slice(0, 2)), ['1-', '1-'], 'two files carry one number');
   return { root: a, imported: files.find((f) => f !== byHand), byHand };
 }
 function renumber(root, file, to) {
   const dir = join(root, '.jarl', 'issues');
-  writeFileSync(join(dir, file), readFileSync(join(dir, file), 'utf8').replace(/^# 001 ·/, `# ${to} ·`));
-  renameSync(join(dir, file), join(dir, `${to}${file.slice(3)}`));
+  writeFileSync(join(dir, file), readFileSync(join(dir, file), 'utf8').replace(/^# 1 ·/, `# ${to} ·`));
+  renameSync(join(dir, file), join(dir, `${to}${file.slice(1)}`));
 }
 
 test('two merged copies with one number on two issues: the hand-filed one stays silent and the imported one is reported, before and after either file gets a free number', () => {
   const unchanged = [finding(), finding({ id: 'T-2', title: 'Print', claim: 'Users can print a report.' })];
   const changed = [finding({ claim: 'Users can export a report as xlsx.' }), finding({ id: 'T-2', title: 'Print', claim: 'Users can print a report.' })];
-  for (const [given, imported] of [[null, '001'], ['hand', '001'], ['imported', '002']]) {
+  for (const [given, imported] of [[null, '1'], ['hand', '1'], ['imported', '2']]) {
     const { root, imported: importedFile, byHand } = mergedCopies();
-    if (given === 'hand') renumber(root, byHand, '002');
-    if (given === 'imported') renumber(root, importedFile, '002');
+    if (given === 'hand') renumber(root, byHand, '2');
+    if (given === 'imported') renumber(root, importedFile, '2');
     for (const more of [['--dry-run'], []]) {
       const quiet = importing(root, findingsFile(written(unchanged)), ...more);
       assert.deepEqual(quiet.already.map((a) => a.finding), ['T-1', 'T-2']);

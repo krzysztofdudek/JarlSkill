@@ -8,7 +8,7 @@ import { jarl, loop as makeLoop } from './helpers.mjs';
 
 const loop = () => makeLoop({ prefix: 'jarl-lone-', via: 'cli', dotGit: false });
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
-const ASK = "jarl.mjs ask 'start a fresh session to review issues 1, 2'";
+const ASK = "jarl.mjs ask 'start a fresh session to review issues 1, 2' --by jarl";
 
 // 1 and 2 carry code (a branch) and have proof with no verdict; 3 has no branch and proof with no verdict; 4 waits on 1.
 function loneLoop() {
@@ -33,7 +33,7 @@ test('proofs of code with no verdict are one line on the jarl: one fresh reviewe
   assert.deepEqual(group.holdsUp, ['4']);
   assert.deepEqual(o.rows.filter((r) => r.what === 'review').map((r) => r.id), ['1', '3'], 'the proof of the issue without code keeps its own line');
   const text = jarl(root, 'next', '--as', 'jarl', '--all');
-  assert.match(text, new RegExp(`^- 1, 2: proof recorded, no verdict; raise one fresh reviewer per unit: 1 · 2; if you cannot raise agents, ask the owner to start a fresh session \\(1 first change, worker me; 2 second change, worker me\\) — jarl\\.mjs review "<ids>" "<verdict>" --by "<reviewer>" "<text>", or ${ASK.replace(/[.\\"]/g, '\\$&')} · holds up 4$`, 'm'));
+  assert.match(text, new RegExp(`^- 1, 2: proof recorded, no verdict; raise one fresh reviewer per unit: 1 · 2; if you cannot raise agents, ask the owner to start a fresh session \\(1 first change, worker me; 2 second change, worker me\\) — jarl\\.mjs review "<ids>" "<verdict>" --by "<reviewer>" --model "<model-id>" "<text>", or ${ASK.replace(/[.\\"]/g, '\\$&')} · holds up 4$`, 'm'));
   assert.match(text, /^- 3 a note: proof recorded, no verdict; raise a reviewer \(worker me\) — jarl\.mjs review 3 /m);
   assert.deepEqual(json(root, 'next', '--as', 'owner', '--all').rows, []);
 });
@@ -95,7 +95,7 @@ test('a question about one issue reads "issue", and a question whose issues all 
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'me', '--branch', 'jarl/1');
   jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'green');
   const row = json(root, 'next', '--as', 'jarl').rows[0];
-  assert.ok(row.command.endsWith("jarl.mjs ask 'start a fresh session to review issue 1'"), row.command);
+  assert.ok(row.command.endsWith("jarl.mjs ask 'start a fresh session to review issue 1' --by jarl"), row.command);
   assert.match(row.says, /raise a fresh reviewer for 1;/);
   jarl(root, 'ask', 'start a fresh session to review issue 1');
   assert.deepEqual(json(root, 'next', '--as', 'owner').rows.map((r) => [r.reviewing, r.holdsUp]), [[['1'], ['2']]]);

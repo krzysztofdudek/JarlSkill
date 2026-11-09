@@ -16,7 +16,7 @@ import { issuesFor } from './shared.mjs';
 // writes the file once. Reads only.
 export function cmdChangelog(root, rawIds, flags = {}) {
   need(rawIds !== undefined, 'changelog requires <ids> — the issues whose fragments to print, e.g. 284,288 or 203-206', () => ({ arg: 0, value: '<ids>' }));
-  const issues = issuesFor(root, rawIds, true);
+  const issues = issuesFor(root, rawIds);
   // --repo is matched by the repository itself (its resolved root), never by its directory name alone.
   const only = flags.repo !== undefined ? topOf(repoFromInput(root, flags.repo).main) : null;
   const byRepo = {};

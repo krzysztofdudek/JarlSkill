@@ -29,7 +29,7 @@ if (args[0] === '--version') { console.log('6.1.0'); process.exit(0); }
 if (mode === 'writer') {
   // Another writer of the loop while the type log is being written: it must not find the loop's lock held.
   const { spawnSync } = await import('child_process');
-  const r = spawnSync(process.execPath, [${JSON.stringify(SCRIPT)}, 'log', 'meanwhile', '--root', process.env.JARL_TEST_ROOT], { encoding: 'utf8', env: { ...process.env, JARL_LOCK_WAIT_MS: '300' }, timeout: 120000 });
+  const r = spawnSync(process.execPath, [${JSON.stringify(SCRIPT)}, 'log', 'meanwhile', '--by', 'jarl', '--root', process.env.JARL_TEST_ROOT], { encoding: 'utf8', env: { ...process.env, JARL_LOCK_WAIT_MS: '300' }, timeout: 120000 });
   appendFileSync(${JSON.stringify(join(dir, 'calls.jsonl'))}, JSON.stringify({ args: ['meanwhile'], status: r.status, stderr: r.stderr }) + '\\n');
 }
 if (mode === 'refuse') { console.error("error[type-not-found]: node type '" + args[3] + "' is not defined"); process.exit(1); }

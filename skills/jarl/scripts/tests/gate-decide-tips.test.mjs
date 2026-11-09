@@ -69,9 +69,9 @@ test('review: an approve needs --by, a self-approve by the worker is refused, an
   // A changes verdict needs --by too, and may come from the worker: it is recorded, not refused.
   jarl(root, 'review', '1', 'changes', '--by', 'opus-worker-3', 'Important: a self-check found a hole');
   assert.match(refuses(root, 'review', '1', 'changes', 'Important: no reviewer named'), /a verdict needs --by/);
-  const next = (id) => `the merger merges the branch and records it with one call — jarl.mjs merged ${id} --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" — then jarl.mjs set ${id} done "<why>", once every line has what its method asks (the merge check is the merger's and proves no line but one on the declared check); a worker never sets done`;
+  const next = (id) => `the merger merges the branch and records it with one call — jarl.mjs merged ${id} --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" --by "<who>" — then jarl.mjs set ${id} done "<why>" --by "<who>", once every line has what its method asks (the merge check is the merger's and proves no line but one on the declared check); a worker never sets done`;
   assert.equal(jarl(root, 'review', '1,2', 'approve', '--by', 'fresh-opus', FINDINGS), `1 review approve by fresh-opus (fresh) · acceptance: [read] it works · next: ${next('1')}\n2 review approve by fresh-opus (fresh) · acceptance: [read] it works · next: ${next('2')}`);
-  assert.match(log(), /1 review approve · by fresh-opus \(fresh\) · batch \S+ · read the diff, nothing found/, 'one verdict on two issues carries its batch id after the standing');
+  assert.match(log(), /1 review approve · by fresh-opus \(fresh\) · (?:model test-model · )?batch \S+ · read the diff, nothing found/, 'one verdict on two issues carries its batch id after the standing');
   assert.match(jarl(root, 'review', '2', 'approve', '--by', 'jarl', FINDINGS), /by jarl \(coordinator\)/);
   // The worker is found from the lease line too once the Worker field is gone.
   jarl(root, 'evidence', '1', '--line', '1', '--ran', 't', '--saw', 'ok');
@@ -142,11 +142,11 @@ test('done: an issue the journal does not know (a hand-made file) closes on what
   const dir = join(root, '.jarl', 'issues');
   const f = readdirSync(dir).find((x) => x.startsWith('1-'));
   writeFileSync(join(dir, f.replace('1-', '2-')), readFileSync(join(dir, f), 'utf8').replace('# 1 ·', '# 2 ·').replace(/## Evidence\n/, '## Evidence\nold proof\n'));
-  appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 · 2 review approve · legacy approve\n');
+  appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 key 20260101T0000-tstk by a-writer · 2 review approve · legacy approve\n');
   // A read line needs an approve and no row, so the hand-made file closes on the approve its log holds.
   assert.equal(jarl(root, 'set', '2', 'done', 'legacy'), '2 → done');
   jarl(root, 'evidence', '1', '--line', '1', '--ran', 'x', '--saw', 'y');
-  appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 · 1 review approve · by w (self) · hand-written\n');
+  appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 key 20260101T0000-tstk by a-writer · 1 review approve · by w (self) · hand-written\n');
   assert.match(refuses(root, 'set', '1', 'done', 'x'), /self-approve does not count/);
 });
 
@@ -156,7 +156,7 @@ test('status and report show who reviewed the done work', () => {
   jarl(root, 'evidence', '1-3', '--line', '1', '--ran', 't', '--saw', 'ok');
   jarl(root, 'review', '1', 'approve', '--by', 'fresh-opus', FINDINGS);
   jarl(root, 'review', '2', 'approve', '--by', 'jarl', FINDINGS);
-  appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 · 3 review approve · an approve from before --by\n');
+  appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 key 20260101T0000-tstk by a-writer · 3 review approve · an approve from before --by\n');
   jarl(root, 'set', '1-3', 'done', 'ok');
   assert.match(jarl(root, 'status'), /^done reviewed by: fresh 1 · coordinator 1 · self 0 · unrecorded 1$/m);
   assert.match(jarl(root, 'report'), /## Done \(3\)\nReviewed by: fresh 1 · coordinator 1 · self 0 · unrecorded 1/);

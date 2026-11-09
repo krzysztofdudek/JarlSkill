@@ -20,7 +20,7 @@ import { handoffAge, handoffPath, unsettledRulings, unsettledText } from './ques
 import { answeredLines } from './journal.mjs';
 import { loopRules, ruleLines, rulesFor, withUnder } from './rules.mjs';
 import { jarlDir, today } from './where.mjs';
-import { IN_FLIGHT_MARKS, closedGateFlags, leaseWriter, retractedNotesText, leasedByText, modelText, nextRows, resourceAgeText, schedulerNote, statusOf, subsText, uncommittedLoopFiles } from './evidence.mjs';
+import { IN_FLIGHT_MARKS, closedGateFlags, leaseWriter, retractedNotesText, leasedByText, modelText, nextRows, resourceAgeText, statusOf, subsText, uncommittedLoopFiles } from './evidence.mjs';
 import { cmdQueue, renderQueue } from './queue.mjs';
 import { countsLine } from './import.mjs';
 
@@ -119,8 +119,7 @@ export function cmdResume(root, flags = {}) {
     ...(holds(i) ? { branch: i.fields.branch || null, worker: i.fields.worker || null, model: i.fields.model || null, since: i.fields.since || null, stale: stale.get(i.id) || [] } : {}),
   }));
   const asks = loop.asks.filter((a) => a.state === 'open' && (slice === null || (a.issue && inScope.has(a.issue)) || sameSlice(a.slice ?? null, slice)));
-  const scheduled = profile.scheduler !== null;
-  const next = scheduled ? [] : nextRows(root, slice === null ? {} : { slice });
+  const next = nextRows(root, slice === null ? {} : { slice });
   const ready = next.filter((r) => r.ready);
   // Open, not waiting on After, and still not offered: a file it declares is taken by work in flight (or by a ready
   // issue ahead of it), or an open question names it. Ready, held and kept together are the open count on the status line.
@@ -138,8 +137,7 @@ export function cmdResume(root, flags = {}) {
     goal: status.goal, opened: status.opened, lastActivity: status.lastActivity, archived: status.archived, status, ...(slice !== null ? { slice } : {}),
     rulings, unsettled: unsettledRulings(loop), rules, inFlight, waiting,
     questions: asks.filter((a) => a.kind !== 'ratify' && a.kind !== 'escalation' && a.kind !== 'rule' && askHolder(loop, a) === OWNER_HOLDER), ...toDirectorKey(loop, asks), escalations: asks.filter((a) => a.kind === 'escalation'), proposed: asks.filter((a) => a.kind === 'rule'), ratify: asks.filter((a) => a.kind === 'ratify'),
-    held, kept: keptRows, next: ready.slice(0, readyN).map((r) => ({ id: r.id, title: r.title, priority: r.priority, ...(r.noAcceptance ? { noAcceptance: true } : {}), ...(r.model ? { model: r.model } : {}), ...declared(byId.get(r.id)) })), readyTotal: scheduled ? null : ready.length,
-    ...(scheduled ? { scheduler: profile.scheduler } : {}),
+    held, kept: keptRows, next: ready.slice(0, readyN).map((r) => ({ id: r.id, title: r.title, priority: r.priority, ...(r.noAcceptance ? { noAcceptance: true } : {}), ...(r.model ? { model: r.model } : {}), ...declared(byId.get(r.id)) })), readyTotal: ready.length,
     queue: cmdQueue(root, { repo: flags.repo, base: flags.base }), merged, tips: cmdTips(root, { ci: flags.gh === true || flags.ci === true, repo: flags.repo }),
     uncommitted: uncommittedLoopFiles(root),
     ...(status.disagreements ? { disagreements: status.disagreements } : {}),
@@ -193,10 +191,8 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null, asked = 
     ...sec(`To ratify (${o.ratify.length})`, o.ratify.map((a) => `- a-${a.id}${a.issue ? ` (issue ${a.issue})` : ''} · ${fieldText(a.question)}`)),
     ...sec(`Held — files in flight (${o.held.length})`, o.held.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.questions ? `open question ${x.questions.map((q) => `a-${q}`).join(', ')}` : `${[...x.files, ...(x.resources || []).map((n) => `resource ${n}`)].join(', ')} held by ${x.heldBy.join(', ')}${resourceAgeText(x)}`})`)),
     ...sec(`Promises and waits (${o.kept.length})`, o.kept.map((x) => `- ${x.id}  P${x.priority}  ${short(x.title)} (${x.kind === 'promise' ? `promised by ${x.by || 'nobody named'}` : x.came ? `came from ${x.person || 'nobody named'}, proof recorded; the jarl reviews and closes it` : `waits on ${x.person || 'nobody named'}, check when ${x.checkWhen || 'not said'}`})`)),
-    ...(o.scheduler ? sec('Next ready and merge queue', [`- ${schedulerNote(o.scheduler)}`]) : [
-      ...sec(`Next ready (${o.next.length} of ${o.readyTotal})`, o.next.map((r) => `- ${r.id}  P${r.priority}  ${short(r.title)}${shownFields(r)}${r.noAcceptance ? '  (no acceptance yet)' : ''}${modelText(r.model)}`), '- (nothing ready)'),
-      ...sec('Merge queue', queue, '- (nothing approved waits to be merged)'),
-    ]),
+    ...sec(`Next ready (${o.next.length} of ${o.readyTotal})`, o.next.map((r) => `- ${r.id}  P${r.priority}  ${short(r.title)}${shownFields(r)}${r.noAcceptance ? '  (no acceptance yet)' : ''}${modelText(r.model)}`), '- (nothing ready)'),
+    ...sec('Merge queue', queue, '- (nothing approved waits to be merged)'),
     ...sec(`Merged, CI pending or red (${o.merged.length})`, o.merged.map((m) => `- ${m.id} ${m.sha}${m.repo ? ` in ${m.repo}` : ''} · CI ${m.ci}`)),
     ...sec(`Merged, waiting for its check (${(o.status.checkWaiting || []).length})`, (o.status.checkWaiting || []).map((w) => `- ${checkWaitingText(w)}`)),
     ...sec(`Tips${o.tips.ci ? '' : ' (CI not asked — --gh asks gh)'}`, tips),

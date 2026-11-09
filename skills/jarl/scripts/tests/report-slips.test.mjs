@@ -3,6 +3,7 @@
 // coordinators of the loop. A refused call writes nothing, so nothing of it is counted.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as R from '../record.mjs';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { jarl, refuses, loop as makeLoop } from './helpers.mjs';
@@ -63,7 +64,7 @@ test('a reopen or a retraction whose call named nobody is counted as unnamed, an
   jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'ok');
   jarl(root, 'review', '1', 'approve', 'read the change and the test, both fine', '--by', 'rev-a');
   jarl(root, 'set', '1', 'done', 'proved and approved');
-  jarl(root, 'set', '1', 'open', 'a case was missed');
+  R.setStatus(root, '1', 'open', 'a case was missed');
   assert.deepEqual(json(root, 'report').metrics.slips.reopens, [{ writer: null, coordinator: false, count: 1, issues: ['1'] }]);
   assert.match(jarl(root, 'report', '--metrics'), /^reopened after done, per writer: unnamed 1 \(1\)$/m);
 });

@@ -27,9 +27,9 @@ for (const call of [...WRITING, ...READING]) {
   test(`${call[0]} where there is no loop says so and ends with its form naming the root`, () => {
     const dir = empty();
     const said = refuses(dir, ...call).trim().split('\n');
-    assert.match(said[0], /^no loop here: .*\S+ holds no \.jarl\/ — open one with jarl\.mjs init "<goal>"( --root \S+)?, or pass --root "<loop-root>", the directory that holds \.jarl\/$/);
+    assert.match(said[0], /^no loop here: .*\S+ holds no \.jarl\/ — open one with jarl\.mjs init "<goal>" --by "<who>"( --root \S+)?, or pass --root "<loop-root>", the directory that holds \.jarl\/$/);
     assert.equal(said.length, 2, said.join('\n'));
-    assert.equal(said[1], 'jarl.mjs init "<goal>"');
+    assert.equal(said[1], 'jarl.mjs init "<goal>" --by "<who>"');
     assert.deepEqual(readdirSync(dir), [], 'nothing was written');
   });
 }
@@ -37,9 +37,9 @@ for (const call of [...WRITING, ...READING]) {
 test('the tools say there is no loop where a root holds none, with the form naming the root', () => {
   const dir = empty();
   for (const [tool, args] of [['jarl_ask', { text: 'a question' }], ['jarl_log', { text: 'a note' }], ['jarl_decide', { slug: 'a-slug', text: 'a ruling', by: 'jarl' }]]) {
-    const said = mcp.callTool(tool, { ...args, root: dir });
+    const said = mcp.callTool(tool, { by: 'jarl', ...args, root: dir });
     assert.ok(said.isError, tool);
-    assert.match(posixForms(said.content[0].text), /^no loop here: .*\S+ holds no \.jarl\/ — open one with jarl\.mjs init "<goal>" '--root=[^']+', or pass --root "<loop-root>", the directory that holds \.jarl\/\njarl\.mjs init "<goal>" '--root=[^']+'$/, tool);
+    assert.match(posixForms(said.content[0].text), /^no loop here: .*\S+ holds no \.jarl\/ — open one with jarl\.mjs init "<goal>" --by "<who>" '--root=[^']+', or pass --root "<loop-root>", the directory that holds \.jarl\/\njarl\.mjs init "<goal>" --by "<who>" '--root=[^']+'$/, tool);
   }
   assert.deepEqual(readdirSync(dir), []);
 });
@@ -75,7 +75,7 @@ test('a root whose name holds a line break and no loop is echoed with the break 
     assert.equal(said.length, 2, `${call[0]}: ${JSON.stringify(r.stderr)}`);
     assert.match(said[0], /^no loop here: '.*loops\\njarl\.mjs field 4 Priority 1 holds no \.jarl' holds no \.jarl\//, call[0]);
     assert.equal(said.filter((l) => l.startsWith('jarl.mjs ')).length, 1, `${call[0]}: one command, the form: ${JSON.stringify(r.stderr)}`);
-    assert.equal(said[1], 'jarl.mjs init "<goal>" --root "<loop-root>"', `${call[0]}: the form names the loop root by its placeholder`);
+    assert.equal(said[1], 'jarl.mjs init "<goal>" --by "<who>" --root "<loop-root>"', `${call[0]}: the form names the loop root by its placeholder`);
     assert.equal(existsSync(dir), false, 'nothing was written: the root was not made');
     assert.deepEqual(readdirSync(dirname(dir)), [], 'nothing was written beside it');
     pastedNothing(r.stderr);
@@ -91,7 +91,7 @@ test('a root whose name holds a command substitution and no loop is echoed in si
     assert.equal(said.length, 2, `${call[0]}: ${JSON.stringify(r.stderr)}`);
     assert.match(said[0], /^no loop here: '.*\$\(touch made-by-paste\)' holds no \.jarl\//, call[0]);
     assert.equal(said.filter((l) => l.startsWith('jarl.mjs ')).length, 1, `${call[0]}: one command, the form: ${JSON.stringify(r.stderr)}`);
-    assert.match(said[1], /^jarl\.mjs init "<goal>" --root /, `${call[0]}: the form carries the call's root`);
+    assert.match(said[1], /^jarl\.mjs init "<goal>" --by "<who>" --root /, `${call[0]}: the form carries the call's root`);
     assert.deepEqual(readdirSync(dir), [], 'nothing was written');
     pastedNothing(r.stderr);
   }
@@ -144,8 +144,9 @@ test('a call that gave no root ends with the form that names none: the reason st
     assert.notEqual(r.status, 0, call.join(' '));
     const said = r.stderr.replace(/\n+$/, '').split('\n');
     assert.equal(said.length, 2, `${call[0]}: ${JSON.stringify(r.stderr)}`);
-    assert.match(said[0], /^no loop here: '.+' holds no \.jarl\/ — open one with jarl\.mjs init "<goal>", or pass --root "<loop-root>", the directory that holds \.jarl\/$/, call[0]);
-    assert.equal(said[1], 'jarl.mjs init "<goal>"', `${call[0]}: no --root in a form of a call that gave none`);
+    assert.match(said[0], /^no loop here: '.+' holds no \.jarl\/ — open one with jarl\.mjs init "<goal>" --by "<who>", or pass --root "<loop-root>", the directory that holds \.jarl\/$/, call[0]);
+    assert.equal(said[1], 'jarl.mjs init "<goal>" --by "<who>"', `${call[0]}: no --root in a form of a call that gave none`);
     assert.deepEqual(readdirSync(cwd), [], 'nothing was written');
   }
 });
+

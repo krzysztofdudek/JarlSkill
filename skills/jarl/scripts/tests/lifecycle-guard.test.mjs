@@ -50,7 +50,6 @@ function snapshot(dir) {
 const COMMAND = 'composer-x.mjs done <composed-loop>, then composer-x.mjs archive <composed-loop>';
 const COMPOSER = {
   'jarl-profile': 1,
-  format: 1,
   name: 'composer-x',
   statuses: {
     proposed: { flags: [], 'set-by': 'record' },
@@ -59,7 +58,6 @@ const COMPOSER = {
     merged: { flags: ['settles-dependents', 'terminal', 'closes-record'], 'set-by': 'record' },
     dropped: ['settles-dependents', 'terminal', 'needs-reason'],
   },
-  'external-scheduler': 'composer-x.mjs tick',
   'done-gate': { approve: 'none', 'requires-merged': true },
   lifecycle: { close: 'record', archive: 'record', command: COMMAND },
 };
@@ -136,14 +134,14 @@ test('lifecycle record: the MCP tools refuse as the command line does — jarl_c
   R.setStatus(root, '001', 'dropped', 'out of scope');
   const before = snapshot(join(root, '.jarl'));
   for (const [tool, input] of [['jarl_close', {}], ['jarl_close', { force: true }], ['jarl_close', { batch: true, json: true }], ['jarl_archive', { slug: 'old' }], ['jarl_archive', { slug: 'old', json: true }]]) {
-    const r = MCP.callTool(tool, { ...input, root });
+    const r = MCP.callTool(tool, { by: 'jarl', ...input, root });
     assert.equal(r.isError, true, `${tool} ${JSON.stringify(input)} is refused`);
     assert.match(r.content[0].text, /by the tool that runs it, never by jarl (close|archive).*run: composer-x\.mjs done <composed-loop>/);
   }
-  assert.throws(() => CLI.dispatch(root, 'close', [], {}), /never by jarl close/);
-  assert.throws(() => CLI.dispatch(root, 'archive', ['old'], {}), /never by jarl archive/);
+  assert.throws(() => CLI.dispatch(root, 'close', [], { by: 'jarl' }), /never by jarl close/);
+  assert.throws(() => CLI.dispatch(root, 'archive', ['old'], { by: 'jarl' }), /never by jarl archive/);
   // A caller flag handed to dispatch (as an MCP input cannot, but a host might try) does not let the command line through.
-  assert.throws(() => CLI.dispatch(root, 'close', [], { caller: 'record' }), /never by jarl close/);
+  assert.throws(() => CLI.dispatch(root, 'close', [], { caller: 'record', by: 'jarl' }), /never by jarl close/);
   assert.deepEqual(snapshot(join(root, '.jarl')), before);
 });
 

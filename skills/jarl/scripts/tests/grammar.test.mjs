@@ -82,11 +82,11 @@ test('a tool call that names a retraction through evidence or review is refused,
   const root = loop();
   const id = worked(root);
   const said = (r) => posixForms(r.content.map((c) => c.text).join('\n'));
-  assert.throws(() => mcp.callTool('jarl_evidence', { ids: id, retract: '1', by: 'jarl', text: 'the row was wrong', root }), /"retract" is not a field of this tool — a row or a note is taken back with jarl_retract, and by names who takes it back: jarl_retract \{"id":"<id>","entry":"<n-or-note-n>","by":"<who>","text":"<why>","root":"[^"]+"\}$/);
-  const review = mcp.callTool('jarl_review', { ids: id, verdict: 'retract', by: 'jarl', text: 'the verdict was wrong', root });
+  assert.throws(() => mcp.callTool('jarl_evidence', { by: 'test-writer', ids: id, retract: '1', by: 'jarl', text: 'the row was wrong', root }), /"retract" is not a field of this tool — a row or a note is taken back with jarl_retract, and by names who takes it back: jarl_retract \{"id":"<id>","entry":"<n-or-note-n>","by":"<who>","text":"<why>","root":"[^"]+"\}$/);
+  const review = mcp.callTool('jarl_review', { by: 'test-writer', ids: id, verdict: 'retract', by: 'jarl', text: 'the verdict was wrong', root, model: 'test-model' });
   assert.ok(review.isError);
   assert.match(said(review), /a verdict is taken back with retract, not with review retract\njarl\.mjs retract "<id>" review "<why>" --by "<who>" '--root=[^']+'$/);
-  const verb = mcp.callTool('jarl_retract', { id, entry: 'review', by: 'jarl', text: 'a second try at the verdict', root });
+  const verb = mcp.callTool('jarl_retract', { by: 'test-writer', id, entry: 'review', by: 'jarl', text: 'a second try at the verdict', root });
   assert.ok(!verb.isError, said(verb));
 });
 
@@ -100,31 +100,31 @@ test('field writes Resources and the fields a profile declares; set takes status
   assert.match(refuses(root, 'field', '1', 'Bogus', 'x'), /Bogus is not a part of the description, which field writes: Title, Priority, Tier, Kind, Found by, Tags, Files, Repo, After, Parent, Source, Where, Resources, Person, Check when, Area, Note, What, Why, Acceptance, Changelog;/);
   assert.match(refuses(root, 'field', '1', 'open', 'x'), /open is not a part of the description/);
   assert.match(refuses(root, 'field', '1', 'Note', 'x', '--worker', 'w'), /unknown flag --worker for field/);
-  assert.equal(refuses(root, 'set', '1', 'Note', 'x', '--worker', 'w').trim(), "Note is a field, not a status: field writes it\njarl.mjs field \"<ids>\" Note \"<value>\"");
-  assert.equal(refuses(root, 'set', '1', 'Files', 'x').trim(), 'Files is a field, not a status: field writes it\njarl.mjs field "<ids>" Files "<paths>"');
+  assert.equal(refuses(root, 'set', '1', 'Note', 'x', '--worker', 'w').trim(), "Note is a field, not a status: field writes it\njarl.mjs field \"<ids>\" Note \"<value>\" --by \"<who>\"");
+  assert.equal(refuses(root, 'set', '1', 'Files', 'x').trim(), 'Files is a field, not a status: field writes it\njarl.mjs field "<ids>" Files "<paths>" --by "<who>"');
   assert.match(refuses(root, 'set', '1', 'bogus', 'x'), /status must be one of: /);
-  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Resources · gate, db · was \(none\)\n.*· 2 field Resources · gate, db · was \(none\)\n/);
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Resources · gate, db · was \(none\) · by test-writer\n.*· 2 field Resources · gate, db · was \(none\) · by test-writer\n/);
 });
 
 test('set given a field is refused with the field call that writes it, on the command line and through the tool, and writes nothing', () => {
   const a = fieldedLoop();
   const before = logText(a);
-  assert.equal(refuses(a, 'set', '1,2', 'resources', 'gate').trim(), "resources is a field, not a status: field writes it\njarl.mjs field \"<ids>\" resources \"<resource-name>\"");
-  assert.equal(refuses(a, 'set', '1', 'Note', 'a note').trim(), "Note is a field, not a status: field writes it\njarl.mjs field \"<ids>\" Note \"<value>\"");
-  for (const blank of ['', ' ']) assert.equal(refuses(a, 'set', '2', 'Note', blank).trim(), "Note is a field, not a status: field writes it\njarl.mjs field \"<ids>\" Note --clear");
-  const said = mcp.callTool('jarl_set', { ids: '3', status: 'resources', text: 'gate', root: a });
+  assert.equal(refuses(a, 'set', '1,2', 'resources', 'gate').trim(), "resources is a field, not a status: field writes it\njarl.mjs field \"<ids>\" resources \"<resource-name>\" --by \"<who>\"");
+  assert.equal(refuses(a, 'set', '1', 'Note', 'a note').trim(), "Note is a field, not a status: field writes it\njarl.mjs field \"<ids>\" Note \"<value>\" --by \"<who>\"");
+  for (const blank of ['', ' ']) assert.equal(refuses(a, 'set', '2', 'Note', blank).trim(), "Note is a field, not a status: field writes it\njarl.mjs field \"<ids>\" Note --clear --by \"<who>\"");
+  const said = mcp.callTool('jarl_set', { by: 'test-writer', ids: '3', status: 'resources', text: 'gate', root: a });
   assert.ok(said.isError);
-  assert.match(posixForms(said.content[0].text), /^resources is a field, not a status: field writes it\njarl\.mjs field "<ids>" resources "<resource-name>" '--root=[^']+'$/);
+  assert.match(posixForms(said.content[0].text), /^resources is a field, not a status: field writes it\njarl\.mjs field "<ids>" resources "<resource-name>" --by "<who>" '--root=[^']+'$/);
   assert.equal(logText(a), before);
   assert.equal(field(a, '3', 'resources') || '', '');
-  const toolField = mcp.callTool('jarl_field', { ids: '3', name: 'Note', value: 'through field', root: a });
+  const toolField = mcp.callTool('jarl_field', { by: 'test-writer', ids: '3', name: 'Note', value: 'through field', root: a });
   assert.ok(!toolField.isError, toolField.content[0].text);
   assert.equal(toolField.content.length, 1);
   assert.equal(field(a, '3', 'note'), 'through field');
-  const cleared = mcp.callTool('jarl_field', { ids: '3', name: 'Note', clear: true, root: a });
+  const cleared = mcp.callTool('jarl_field', { by: 'test-writer', ids: '3', name: 'Note', clear: true, root: a });
   assert.ok(!cleared.isError, cleared.content[0].text);
   assert.equal(field(a, '3', 'note') || '', '');
-  assert.ok(mcp.callTool('jarl_field', { ids: '3', name: 'Note', value: ' ', root: a }).isError);
+  assert.ok(mcp.callTool('jarl_field', { by: 'test-writer', ids: '3', name: 'Note', value: ' ', root: a }).isError);
 });
 
 test('set given a header field of the tool is refused with the field call that writes it, and writes nothing', () => {
@@ -134,13 +134,13 @@ test('set given a header field of the tool is refused with the field call that w
   const text = issueText(root, '1');
   const forms = { Priority: '"<prio>"', Tier: '"<tier>"', Kind: '"<kind>"', Tags: '"<tag>"', Files: '"<paths>"', Repo: '"<name-or-path>"', After: '"<ids-it-waits-on>"', Source: '"<report-dir#finding-id>"', Where: '"<text>"', Title: '"<title>"' };
   for (const [name, hole] of Object.entries(forms)) {
-    assert.equal(refuses(root, 'set', '1', name, '1').trim(), `${name} is a field, not a status: field writes it\njarl.mjs field "<ids>" ${name} ${hole}`, name);
+    assert.equal(refuses(root, 'set', '1', name, '1').trim(), `${name} is a field, not a status: field writes it\njarl.mjs field "<ids>" ${name} ${hole} --by "<who>"`, name);
   }
   assert.equal(refuses(root, 'set', '1', 'tags', 'x', '--by', 'w').trim(), 'tags is a field, not a status: field writes it\njarl.mjs field "<ids>" tags "<tag>" --by "<who>"');
-  assert.equal(refuses(root, 'set', '1', 'Found by', 'someone').trim(), 'Found by is a field, not a status: field writes it\njarl.mjs field "<ids>" \'Found by\' "<who>"');
-  const said = mcp.callTool('jarl_set', { ids: '1', status: 'Priority', text: '1', root });
+  assert.equal(refuses(root, 'set', '1', 'Found by', 'someone').trim(), 'Found by is a field, not a status: field writes it\njarl.mjs field "<ids>" \'Found by\' "<who>" --by "<who>"');
+  const said = mcp.callTool('jarl_set', { by: 'test-writer', ids: '1', status: 'Priority', text: '1', root });
   assert.ok(said.isError);
-  assert.match(posixForms(said.content[0].text), /^Priority is a field, not a status: field writes it\njarl\.mjs field "<ids>" Priority "<prio>" '--root=[^']+'$/);
+  assert.match(posixForms(said.content[0].text), /^Priority is a field, not a status: field writes it\njarl\.mjs field "<ids>" Priority "<prio>" --by "<who>" '--root=[^']+'$/);
   assert.equal(logText(root), before);
   assert.equal(issueText(root, '1'), text);
   assert.throws(() => L.cmdSet(root, '1', 'Files', 'x'), /Files is a field, not a status: field writes it/);
@@ -179,7 +179,7 @@ test('one idiom empties every field: --clear on After, Repo, Resources and a pro
   // field writes them as their own commands do, and empties them the same way.
   assert.equal(jarl(root, 'field', '1', 'Files', 'a.txt'), '1 Files: a.txt');
   assert.equal(field(root, '1', 'files'), 'a.txt');
-  assert.match(refuses(root, 'field', '1', 'Note', ''), /field Note needs a value, or --clear to empty it\njarl\.mjs field "<ids>" Note "<value>"$/m);
+  assert.match(refuses(root, 'field', '1', 'Note', ''), /field Note needs a value, or --clear to empty it\njarl\.mjs field "<ids>" Note "<value>" --by "<who>"$/m);
   assert.match(refuses(root, 'field', '1', 'Note', 'x', '--clear'), /either a value or --clear, not both/);
 });
 
@@ -197,7 +197,7 @@ test('field and round take a comma list with a range: every id changes, or none'
   const afterLog = logText(root);
   assert.match(refuses(root, 'field', '1,3-4', 'After', '2'), /no such|cannot wait|cycle/);
   assert.equal(logText(root), afterLog);
-  assert.match(refuses(root, 'field', '1-2,4', 'After', '4'), /4 cannot wait on itself — nothing was written\njarl\.mjs field "<ids>" After "<another-id>"$/m);
+  assert.match(refuses(root, 'field', '1-2,4', 'After', '4'), /4 cannot wait on itself — nothing was written\njarl\.mjs field "<ids>" After "<another-id>" --by "<who>"$/m);
   assert.equal(field(root, '1', 'after'), '4');
   assert.equal(jarl(root, 'field', '1-3', 'After', '--clear'), '1 After: (cleared)\n2 After: (cleared)\n3 After: (cleared)');
   jarl(root, 'field', '2', 'After', '4');

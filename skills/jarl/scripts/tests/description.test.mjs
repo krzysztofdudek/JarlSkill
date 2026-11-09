@@ -1,13 +1,12 @@
 // An issue is its description and its history. Every part of the description is changed by a command, and each change
 // writes one log line with who changed it and what the part held before; field refuses any other name, naming the ones it
-// writes; the history has no edit command. The pinned frozen reader reads a loop so changed as before.
+// writes; the history has no edit command.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { appendFileSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { jarl, refuses, loop as makeLoop, skillText } from './helpers.mjs';
-import { oldJarl } from './old-jarl.mjs';
 import * as R from '../record.mjs';
 
 const L = await import('../jarl-lib.mjs');
@@ -25,7 +24,7 @@ function profiledLoop() {
   jarl(root, 'new', 'third', '--acceptance', '[read] it works', '--tier', 'light');
   return root;
 }
-const logLines = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').map((l) => l.replace(/^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)? · /, ''));
+const logLines = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').map((l) => l.replace(/^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)? by [^·]+ · /, ''));
 const lastLine = (root) => logLines(root).filter(Boolean).at(-1);
 const show = (root, id) => JSON.parse(jarl(root, 'show', id, '--json'));
 
@@ -53,7 +52,7 @@ test('field writes every header field of the description, each with a log line n
     else assert.equal(lastLine(root), `1 field ${name} · ${name === 'Tags' ? 'a, b' : value} · was ${was} · by w-one`, name);
   }
   jarl(root, 'field', '1', 'Tier', 'light');
-  assert.equal(lastLine(root), '1 field Tier · light · was strong', 'a write that names nobody carries no author');
+  assert.equal(lastLine(root), '1 field Tier · light · was strong · by test-writer', 'a write that names nobody carries no author');
   const count = logLines(root).length;
   jarl(root, 'field', '1', 'Tier', 'light', '--by', 'w-one');
   jarl(root, 'field', '1', 'Priority', '1');
@@ -106,10 +105,10 @@ test('a change of Where logs at most the first 120 characters of what it held, w
   jarl(root, 'field', '1', 'Where', 'a short place', '--by', 'w-one');
   assert.equal(lastLine(root), `1 field Where · a short place · was ${long.slice(0, 120)}… (${long.length} characters) · by w-one`);
   jarl(root, 'field', '1', 'Where', 'another place');
-  assert.equal(lastLine(root), '1 field Where · another place · was a short place', 'a short value is kept whole');
+  assert.equal(lastLine(root), '1 field Where · another place · was a short place · by test-writer', 'a short value is kept whole');
   jarl(root, 'field', '1', 'Where', long);
   jarl(root, 'field', '1', 'Where', '--clear');
-  assert.equal(lastLine(root), `1 field Where · (cleared) · was ${long.slice(0, 120)}… (${long.length} characters)`, 'a cleared one too');
+  assert.equal(lastLine(root), `1 field Where · (cleared) · was ${long.slice(0, 120)}… (${long.length} characters) · by test-writer`, 'a cleared one too');
 });
 
 test('a change of Where logs at most the first 120 characters of the new value too, with its length when it is longer', () => {
@@ -120,10 +119,10 @@ test('a change of Where logs at most the first 120 characters of the new value t
   jarl(root, 'field', '1', 'Where', long, '--by', 'w-one');
   assert.equal(lastLine(root), `1 field Where · ${long.slice(0, 120)}… (${long.length} characters) · was a short place · by w-one`);
   jarl(root, 'field', '1', 'Where', longer);
-  assert.equal(lastLine(root), `1 field Where · ${longer.slice(0, 120)}… (${longer.length} characters) · was ${long.slice(0, 120)}… (${long.length} characters)`, 'both values are bounded');
+  assert.equal(lastLine(root), `1 field Where · ${longer.slice(0, 120)}… (${longer.length} characters) · was ${long.slice(0, 120)}… (${long.length} characters) · by test-writer`, 'both values are bounded');
   const exact = 'x'.repeat(120);
   jarl(root, 'field', '1', 'Where', exact);
-  assert.equal(lastLine(root), `1 field Where · ${exact} · was ${longer.slice(0, 120)}… (${longer.length} characters)`, 'a value of exactly 120 characters is kept whole');
+  assert.equal(lastLine(root), `1 field Where · ${exact} · was ${longer.slice(0, 120)}… (${longer.length} characters) · by test-writer`, 'a value of exactly 120 characters is kept whole');
   assert.equal(lastLine(root).includes(longer.slice(130)), false, 'the rest of a long value is not in the log');
 });
 
@@ -158,17 +157,17 @@ test('field logs each section it replaces by the first line and the length of wh
     '1 body · changelog · was "- Fixed: old entry" (18 characters) · by w-two',
   ]);
   jarl(root, 'field', '1', 'Why', 'third why');
-  assert.equal(lastLine(root), '1 body · why · was "new" (7 characters)', 'a section is kept by its first line and its length');
+  assert.equal(lastLine(root), '1 body · why · was "new" (7 characters) · by test-writer', 'a section is kept by its first line and its length');
   const long = `${'x'.repeat(300)}\nsecond line`;
   jarl(root, 'field', '1', 'What', long);
   jarl(root, 'field', '1', 'What', 'short');
-  assert.equal(lastLine(root), `1 body · what · was "${'x'.repeat(120)}…" (${long.length} characters)`, 'the first line is cut, so the line stays short');
+  assert.equal(lastLine(root), `1 body · what · was "${'x'.repeat(120)}…" (${long.length} characters) · by test-writer`, 'the first line is cut, so the line stays short');
   jarl(root, 'field', '1', 'Title', 'a · dotted title');
   jarl(root, 'field', '1', 'Title', 'plain');
-  assert.equal(lastLine(root), '1 body · title · was "a ∙ dotted title"', 'the log\'s separator in a value is written as its stand-in');
+  assert.equal(lastLine(root), '1 body · title · was "a ∙ dotted title" · by test-writer', 'the log\'s separator in a value is written as its stand-in');
   jarl(root, 'field', '1', 'Found by', 'x · y');
   jarl(root, 'field', '1', 'Found by', 'owner');
-  assert.equal(lastLine(root), '1 field Found by · owner · was x ∙ y');
+  assert.equal(lastLine(root), '1 field Found by · owner · was x ∙ y · by test-writer');
   assert.equal(R.findIssue(root, '1').sections.why.trim(), 'third why');
 });
 
@@ -176,24 +175,24 @@ test('field --add adds to a section after what it holds, and logs the line a rep
   const root = profiledLoop();
   jarl(root, 'field', '1', 'What', 'more what', '--add');
   assert.equal(R.findIssue(root, '1').sections.what.trim(), 'old what\n\nmore what', 'the new text follows the text the section held, as its own paragraph');
-  assert.equal(lastLine(root), '1 body · what · was "old what" (8 characters)', 'the line says what the section held before the append');
+  assert.equal(lastLine(root), '1 body · what · was "old what" (8 characters) · by test-writer', 'the line says what the section held before the append');
   jarl(root, 'field', '1', 'Why', 'more why', '--add', '--by', 'w-two');
   assert.equal(lastLine(root), '1 body · why · was "old why" (7 characters) · by w-two');
   jarl(root, 'field', '1', 'Acceptance', '[read] line b', '--add');
   assert.equal(R.findIssue(root, '1').sections.acceptance.trim(), '- [read] old line\n- [read] line b', 'the new line joins the list the section held');
-  assert.equal(lastLine(root), '1 body · acceptance · was "[read] old line"');
+  assert.equal(lastLine(root), '1 body · acceptance · was "[read] old line" · by test-writer');
   jarl(root, 'field', '1', 'Changelog', 'Added: new entry', '--add');
   assert.equal(R.findIssue(root, '1').sections.changelog.trim(), '- Fixed: old entry\n- Added: new entry');
-  assert.equal(lastLine(root), '1 body · changelog · was "- Fixed: old entry" (18 characters)');
+  assert.equal(lastLine(root), '1 body · changelog · was "- Fixed: old entry" (18 characters) · by test-writer');
   jarl(root, 'field', '1', 'Design', 'more design', '--add');
   assert.equal(R.findIssue(root, '1').sections.design.trim(), 'old design\n\nmore design');
-  assert.equal(lastLine(root), '1 body · Design · was "old design" (10 characters)');
+  assert.equal(lastLine(root), '1 body · Design · was "old design" (10 characters) · by test-writer');
   jarl(root, 'field', '2', 'What', 'first what', '--add');
   assert.equal(R.findIssue(root, '2').sections.what.trim(), 'first what', 'a section that holds nothing takes the text alone');
-  assert.equal(lastLine(root), '2 body · what · was (none)');
+  assert.equal(lastLine(root), '2 body · what · was (none) · by test-writer');
   assert.match(refuses(root, 'field', '1', 'Title', 'x', '--add'), /Title holds one value, so it is replaced, never added to or taken from/, 'the title is replaced, never appended to');
   assert.match(refuses(root, 'field', '1', 'Where', 'x', '--add'), /Where holds one value/);
-  assert.match(refuses(root, 'field', '1', 'Why', '', '--add'), /^field Why needs a value, or --clear to empty it\njarl\.mjs field "<ids>" Why "<text>" --add\n$/);
+  assert.match(refuses(root, 'field', '1', 'Why', '', '--add'), /^field Why needs a value, or --clear to empty it\njarl\.mjs field "<ids>" Why "<text>" --by "<who>" --add\n$/);
   jarl(root, 'field', '1', 'What', 'replaced');
   assert.equal(R.findIssue(root, '1').sections.what.trim(), 'replaced', 'without --add a section is replaced');
 });
@@ -225,38 +224,4 @@ test('the help has one command for the description, and the reference says the h
   assert.match(record, /## The description and the history/);
   assert.match(record, /Evidence, verdicts, merges, rulings and answers have no edit command at all/);
   assert.match(record, /No reader takes a description line as state: `log` writes a hand-written line of the `field` shape as a note/);
-});
-
-test('a loop whose description was changed by every command is read by the pinned frozen reader as before', () => {
-  const root = mkdtempSync(join(tmpdir(), 'jarl-description-old-'));
-  mkdirSync(join(root, '.git'));
-  jarl(root, 'init', 'a goal');
-  // Two issues as the frozen reader writes them: three-digit ids, each filed in the log.
-  for (const id of ['001', '002']) {
-    writeFileSync(join(root, '.jarl', 'issues', `${id}-old-${id}.md`), L.renderIssue({ id, title: `old ${id}`, kind: 'gap', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
-    appendFileSync(join(root, '.jarl', 'log.md'), `- 2026-01-01 00:00 · filed ${id} · old ${id}\n`);
-  }
-  const before = oldJarl(root, 'status', {});
-  assert.equal(before.ok, true);
-  jarl(root, 'field', '001', 'Tier', 'strong', '--by', 'coord');
-  jarl(root, 'field', '001', 'Kind', 'bug');
-  jarl(root, 'field', '001', 'Found by', 'owner');
-  jarl(root, 'field', '001', 'Title', 'a better title');
-  jarl(root, 'field', '001', 'Priority', '1');
-  jarl(root, 'field', '001', 'Tags', '--add', 'x');
-  jarl(root, 'field', '001', 'Files', 'a.mjs');
-  jarl(root, 'field', '001', 'Source', 'r/x#1');
-  jarl(root, 'field', '001', 'After', '002');
-  for (const [part, value] of [['What', 'w'], ['Why', 'y'], ['Acceptance', '[read] a'], ['Where', 'here']]) jarl(root, 'field', '001', part, value);
-  jarl(root, 'field', '001', 'Resources', 'gate');
-  const list = oldJarl(root, 'list', { all: true });
-  assert.equal(list.ok, true, list.error);
-  const one = list.value.find((i) => i.id === '001');
-  assert.deepEqual([one.title, one.tier, one.kind, one.priority, one.tags, one.files, one.after], ['a better title', 'strong', 'bug', '1', ['x'], ['a.mjs'], ['002']]);
-  const after = oldJarl(root, 'status', {});
-  assert.equal(after.ok, true, after.error);
-  for (const k of ['open', 'in-progress', 'done', 'dropped', 'deferred']) assert.equal(after.value[k], before.value[k], k);
-  assert.equal(after.value.waiting, 1, 'the After it was given is read');
-  const verify = L.cmdVerify(root);
-  assert.equal(verify.ok, true, renderVerify(verify));
 });

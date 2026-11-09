@@ -27,8 +27,8 @@ const partsOf = (said) => partsOfRaw(posixForms(said));
 test('the check of a refusal catches what a form may not be: a composed call that runs, two calls joined, a placeholder outside the registry, a dropped --root, a reason that names no wrong word, a line that writes when pasted', () => {
   const check = (args, line, wrong = 'Deferred', reason = 'status must be one of: open, deferred (got "Deferred")', loop = PLAIN) => formProblems(args, `${reason}\n${line}`, loop, {}, wrong);
   // A form that holds.
-  assert.deepEqual(check(['set', '1', 'Deferred', 'later'], "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\""), []);
-  assert.deepEqual(check(['set', '--root', ROOT_ARG, '1', 'Deferred', 'later'], `jarl.mjs set "<ids>" "<status>" "<why>" --root ${ROOT_ARG}`, 'Deferred', undefined, ROOTED), []);
+  assert.deepEqual(check(['set', '1', 'Deferred', 'later'], "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --by \"<who>\""), []);
+  assert.deepEqual(check(['set', '--root', ROOT_ARG, '1', 'Deferred', 'later'], `jarl.mjs set "<ids>" "<status>" "<why>" --by "<who>" --root ${ROOT_ARG}`, 'Deferred', undefined, ROOTED), []);
   // The call corrected and composed for the caller: it runs when pasted.
   assert.ok(check(['set', '1', 'Deferred', 'later'], 'jarl.mjs set 1 deferred later').some((p) => /no placeholder/.test(p)));
   // A step and the call joined, the call after it.
@@ -36,11 +36,11 @@ test('the check of a refusal catches what a form may not be: a composed call tha
   // A placeholder outside the registry, which pasted would be recorded as a value.
   assert.ok(check(['set', '1', 'Deferred', 'later'], "jarl.mjs set \"<ids>\" '<a-status-of-yours>' \"<why>\"").some((p) => /no placeholder of the registry/.test(p)));
   // The --root the call gave dropped: pasted, the line reaches another loop.
-  assert.ok(check(['set', '--root', ROOT_ARG, '1', 'Deferred', 'later'], "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\"", 'Deferred', undefined, ROOTED).some((p) => /drops --root/.test(p)));
+  assert.ok(check(['set', '--root', ROOT_ARG, '1', 'Deferred', 'later'], "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --by \"<who>\"", 'Deferred', undefined, ROOTED).some((p) => /drops --root/.test(p)));
   // A reason that does not name the word that was wrong.
-  assert.ok(check(['set', '1', 'Deferred', 'later'], "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\"", 'Deferred', 'a status is wrong').some((p) => /does not name/.test(p)));
+  assert.ok(check(['set', '1', 'Deferred', 'later'], "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --by \"<who>\"", 'Deferred', 'a status is wrong').some((p) => /does not name/.test(p)));
   // A placeholder inside a text, which pasted is a text like any other: it writes, and is not refused.
-  const writes = check(['log', 'a note'], "jarl.mjs log 'see <id> later'", null);
+  const writes = check(['log', 'a note'], "jarl.mjs log 'see <id> later' --by jarl", null);
   assert.ok(writes.some((p) => /it writes/.test(p)) && writes.some((p) => /not refused for its placeholder/.test(p)), writes.join('\n'));
   // A refusal that ends with a view, or with a value Jarl chose, in place of the form of the call.
   assert.ok(check(['set', '1', 'Deferred', 'later'], 'jarl.mjs next').some((p) => /neither the command called nor a step/.test(p)));
@@ -51,11 +51,11 @@ test('the check of a refusal catches what a form may not be: a composed call tha
   // A step that writes and was given the net's placeholder as one more argument, which no filling makes a call.
   assert.ok(check(['field', '1', 'Tags', 'slice:b', '--add'], "jarl.mjs field 1 Tags slice:a --remove \"<as-the-reason-says>\"", null, 'a reason').some((p) => /given one by the net/.test(p)));
   // A reason that, pasted whole into a shell, makes a file: a pipe and a redirection outside quotes.
-  assert.ok(check(['set', '1', 'Deferred', 'later'], "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\"", null, 'the value <x|y> is a placeholder').some((p) => /makes a file/.test(p)));
+  assert.ok(check(['set', '1', 'Deferred', 'later'], "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --by \"<who>\"", null, 'the value <x|y> is a placeholder').some((p) => /makes a file/.test(p)));
   // A pipe of the reason's own, which makes no file but pipes when pasted; and a word of the caller echoed bare with a >.
-  assert.ok(check(['set', '1', 'Deferred', 'later'], "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\"", null, 'answer it with --option carry|law').some((p) => /prints \| outside a placeholder/.test(p)));
-  assert.ok(check(['field', '1', 'a>b', 'x'], "jarl.mjs field \"<ids>\" \"<a-part-of-the-description>\" \"<value>\"", null, 'a>b is not a part').some((p) => /prints > outside a placeholder/.test(p)));
-  assert.deepEqual(check(['field', '1', 'a>b', 'x'], "jarl.mjs field \"<ids>\" \"<a-part-of-the-description>\" \"<value>\"", 'a>b', "'a>b' is not a part, and \"<b>\" is quoted"), []);
+  assert.ok(check(['set', '1', 'Deferred', 'later'], "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --by \"<who>\"", null, 'answer it with --option carry|law').some((p) => /prints \| outside a placeholder/.test(p)));
+  assert.ok(check(['field', '1', 'a>b', 'x'], "jarl.mjs field \"<ids>\" \"<a-part-of-the-description>\" \"<value>\" --by \"<who>\"", null, 'a>b is not a part').some((p) => /prints > outside a placeholder/.test(p)));
+  assert.deepEqual(check(['field', '1', 'a>b', 'x'], "jarl.mjs field \"<ids>\" \"<a-part-of-the-description>\" \"<value>\" --by \"<who>\"", 'a>b', "'a>b' is not a part, and \"<b>\" is quoted"), []);
 });
 
 // ---- calls named one by one ------------------------------------------------------------------------------------------
@@ -74,33 +74,33 @@ function refusal(args, { loop = SIBLING, wrong = null, ...opts } = {}) {
 
 test('a removed command, given words it does not read or a value twice, ends with the form of the command that replaces it and drops or picks nothing', () => {
   const cases = [
-    [['tag', '4', '+x', 'bug'], "jarl.mjs field \"<ids>\" Tags \"<tag>\" --add"],
-    [['prio', '4', '2', '3'], "jarl.mjs field \"<ids>\" Priority \"<prio>\""],
-    [['after', '3', '4', '--clear'], "jarl.mjs field \"<ids>\" After --clear"],
-    [['body', '4', '--what', 'A', '--what', 'B'], "jarl.mjs field \"<ids>\" What \"<text>\""],
-    [['repo', 'tool', 'develop', '--base', 'main'], "jarl.mjs base \"<name>\" \"<branch>\""],
-    [['body', '4', '--what', 'T', '--why'], "jarl.mjs field \"<ids>\" \"<part>\" \"<value>\""],
-    [['tag', '1', '-core', '+"quoted"'], "jarl.mjs field \"<ids>\" Tags \"<tag>\" --add"],
-    [['body', '1', '--title', 'X', '--section', 'Design=x'], "jarl.mjs field \"<ids>\" \"<part>\" \"<value>\""],
-    [['tag', '1', '-core'], "jarl.mjs field \"<ids>\" Tags \"<tag>\" --remove"],
+    [['tag', '4', '+x', 'bug'], "jarl.mjs field \"<ids>\" Tags \"<tag>\" --add --by \"<who>\""],
+    [['prio', '4', '2', '3'], "jarl.mjs field \"<ids>\" Priority \"<prio>\" --by \"<who>\""],
+    [['after', '3', '4', '--clear'], "jarl.mjs field \"<ids>\" After --clear --by \"<who>\""],
+    [['body', '4', '--what', 'A', '--what', 'B'], "jarl.mjs field \"<ids>\" What \"<text>\" --by \"<who>\""],
+    [['repo', 'tool', 'develop', '--base', 'main'], "jarl.mjs base \"<name>\" \"<branch>\" --by \"<who>\""],
+    [['body', '4', '--what', 'T', '--why'], "jarl.mjs field \"<ids>\" \"<part>\" \"<value>\" --by \"<who>\""],
+    [['tag', '1', '-core', '+"quoted"'], "jarl.mjs field \"<ids>\" Tags \"<tag>\" --add --by \"<who>\""],
+    [['body', '1', '--title', 'X', '--section', 'Design=x'], "jarl.mjs field \"<ids>\" \"<part>\" \"<value>\" --by \"<who>\""],
+    [['tag', '1', '-core'], "jarl.mjs field \"<ids>\" Tags \"<tag>\" --remove --by \"<who>\""],
   ];
   for (const [args, form] of cases) assert.equal(refusal(args, { wrong: args[0] }).ready, form, args.join(' '));
   // A part given to body with no value of its own takes the next word: the form is the field call of that part, its value
   // a placeholder, and nothing is written.
-  assert.match(refusal(['body', '4', '--where', '--what', 'x'], { wrong: 'body' }).ready, /^jarl\.mjs field "<ids>" Where "<text>"$/);
+  assert.match(refusal(['body', '4', '--where', '--what', 'x'], { wrong: 'body' }).ready, /^jarl\.mjs field "<ids>" Where "<text>" --by "<who>"$/);
 });
 
 test('a value of a closed set, in another case or outside it, ends with the form of the call and a reason that lists the values: nothing is fixed for the caller', () => {
   const leased = refusal(['set', '2', 'Done', 'all merged'], { wrong: 'Done' });
-  assert.equal(leased.ready, "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\"");
+  assert.equal(leased.ready, "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --by \"<who>\"");
   assert.match(leased.reason, /open, in-progress, done, dropped, deferred/);
-  assert.equal(refusal(['new', 't', '--tier', 'Strong'], { wrong: 'Strong' }).ready, "jarl.mjs new \"<title>\" --tier \"<tier>\"");
+  assert.equal(refusal(['new', 't', '--tier', 'Strong'], { wrong: 'Strong' }).ready, "jarl.mjs new \"<title>\" --by \"<who>\" --tier \"<tier>\"");
   assert.equal(refusal(['answer', 'a-2', '--by', 'b', '--option', 'b'], { wrong: 'b' }).ready, "jarl.mjs answer \"<question>\" --by \"<who>\" --option \"<option>\"");
-  assert.equal(refusal(['mode', 'PERMANENT'], { wrong: 'PERMANENT' }).ready, "jarl.mjs mode \"<mode>\"");
-  assert.equal(refusal(['goal', '--set', 'Model (huge): opus'], { wrong: 'huge' }).ready, "jarl.mjs goal --set \"<machine-line>\"");
+  assert.equal(refusal(['mode', 'PERMANENT'], { wrong: 'PERMANENT' }).ready, "jarl.mjs mode \"<mode>\" --by \"<who>\"");
+  assert.equal(refusal(['goal', '--set', 'Model (huge): opus'], { wrong: 'huge' }).ready, "jarl.mjs goal --by \"<who>\" --set \"<machine-line>\"");
   // base names a repository as the loop declares it: another spelling ends with the form of base, the reason naming them.
   const base = refusal(['base', 'Tool', 'develop'], { wrong: 'Tool' });
-  assert.equal(base.ready, "jarl.mjs base \"<name>\" \"<branch>\"");
+  assert.equal(base.ready, "jarl.mjs base \"<name>\" \"<branch>\" --by \"<who>\"");
   assert.match(base.reason, /it declares tool/);
 });
 
@@ -109,19 +109,19 @@ test('a step the call needs first is its own command on its own line, never join
   assert.equal(close.ready, "jarl.mjs ask \"<question-for-the-owner>\" --by jarl");
   assert.equal(close.commands.length, 1);
   const wait = refusal(['field', '1', 'Kind', 'wait'], { loop: PLAIN, wrong: 'wait' });
-  assert.deepEqual(wait.commands, ["jarl.mjs field \"<ids>\" Person \"<name>\"", "jarl.mjs field \"<ids>\" 'Check when' \"<date-or-event>\"", "jarl.mjs field \"<ids>\" Kind \"<kind>\""]);
+  assert.deepEqual(wait.commands, ["jarl.mjs field \"<ids>\" Person \"<name>\" --by \"<who>\"", "jarl.mjs field \"<ids>\" 'Check when' \"<date-or-event>\" --by \"<who>\"", "jarl.mjs field \"<ids>\" Kind \"<kind>\" --by \"<who>\""]);
   for (const line of wait.commands) assert.equal(printedCalls(line).length, 1, line);
   const opened = refusal(['init', 'g'], { loop: PLAIN });
-  assert.equal(opened.ready, "jarl.mjs archive \"<slug>\"");
+  assert.equal(opened.ready, "jarl.mjs archive \"<slug>\" --by \"<who>\"");
   // A loop that declares no repository takes the step that declares one before any base is changed.
   const undeclared = refusal(['base', 'tool', 'main'], { loop: PLAIN, wrong: 'tool' });
-  assert.deepEqual(undeclared.commands, ["jarl.mjs field \"<id>\" Repo \"<name-or-path>\"", "jarl.mjs base \"<name>\" \"<branch>\""]);
+  assert.deepEqual(undeclared.commands, ["jarl.mjs field \"<id>\" Repo \"<name-or-path>\" --by \"<who>\"", "jarl.mjs base \"<name>\" \"<branch>\" --by \"<who>\""]);
 });
 
 test('a part field does not write ends with the form whose part is a placeholder, never the part given, so filled it is a call that runs', () => {
   for (const part of ['Notes', 'Status', 'Evidence', 'Reviews', 'Branch', 'Merged', 'Worker', 'Bogus']) {
     const r = refusal(['field', '1', part, 'x'], { loop: PLAIN, wrong: part });
-    assert.equal(r.ready, "jarl.mjs field \"<ids>\" \"<a-part-of-the-description>\" \"<value>\"", part);
+    assert.equal(r.ready, "jarl.mjs field \"<ids>\" \"<a-part-of-the-description>\" \"<value>\" --by \"<who>\"", part);
   }
   const dir = copy(PLAIN);
   assert.equal(run(dir, ['field', '1', 'What', 'a value']).status, 0, 'filled with a part field writes, the form is a call that runs');
@@ -129,33 +129,33 @@ test('a part field does not write ends with the form whose part is a placeholder
 
 test('a form holds every flag its command needs beside the ones the call gave, and the value an argument takes where no flag stands in for it: filled, it is not refused for a part it left out', () => {
   const cases = [
-    [['review', '1', 'approve'], "jarl.mjs review \"<ids>\" \"<verdict>\" \"<what-was-read-and-found>\" --by \"<who>\""],
+    [['review', '1', 'approve'], "jarl.mjs review \"<ids>\" \"<verdict>\" \"<what-was-read-and-found>\" --model \"<model-id>\" --by \"<who>\""],
     [['retract', '1'], "jarl.mjs retract \"<id>\" \"<review-n-or-note-n>\" \"<why>\" --by \"<who>\""],
     [['decide', 's1'], "jarl.mjs decide \"<slug>\" \"<a-ruling>\" --by \"<who>\""],
     [['answer'], "jarl.mjs answer \"<question>\" \"<text>\" --by \"<who>\""],
     [['answer', 'a-1', '--option', 'A', '--by', 'owner'], "jarl.mjs answer \"<question>\" \"<text>\" --by \"<who>\""],
-    [['field', '1'], "jarl.mjs field \"<ids>\" \"<part>\" \"<value>\""],
-    [['renumber', '99'], "jarl.mjs renumber \"<id>\" --key \"<key>\""],
-    [['merged'], "jarl.mjs merged \"<ids>\" --sha \"<sha>\""],
-    [['merged', '1', '--ran', 'npm test'], "jarl.mjs merged \"<ids>\" --ran \"<command>\" --saw \"<what-it-printed>\" --sha \"<sha>\""],
-    [['evidence', '1', '--slot', 'y'], "jarl.mjs evidence \"<ids>\" --slot \"<slot>\" --file \"<path-under-the-loop-root>\""],
-    [['new', 't', '--tier', 'light', '--person', 'someone'], "jarl.mjs new \"<title>\" --tier \"<tier>\" --person \"<name>\" --kind \"<kind>\" --check-when \"<date-or-event>\""],
-    [['ask', 'which?', '--until'], "jarl.mjs ask \"<text>\" --until \"<date-or-id>\" --applies-to \"<selectors>\" --kind \"<ask-kind>\""],
+    [['field', '1'], "jarl.mjs field \"<ids>\" \"<part>\" \"<value>\" --by \"<who>\""],
+    [['renumber', '99'], "jarl.mjs renumber \"<id>\" --by \"<who>\" --key \"<key>\""],
+    [['merged'], "jarl.mjs merged \"<ids>\" --by \"<who>\" --sha \"<sha>\""],
+    [['merged', '1', '--ran', 'npm test'], "jarl.mjs merged \"<ids>\" --by \"<who>\" --ran \"<command>\" --saw \"<what-it-printed>\" --sha \"<sha>\""],
+    [['evidence', '1', '--slot', 'y'], "jarl.mjs evidence \"<ids>\" --by \"<who>\" --slot \"<slot>\" --file \"<path-under-the-loop-root>\""],
+    [['new', 't', '--tier', 'light', '--person', 'someone'], "jarl.mjs new \"<title>\" --by \"<who>\" --tier \"<tier>\" --person \"<name>\" --kind \"<kind>\" --check-when \"<date-or-event>\""],
+    [['ask', 'which?', '--until'], "jarl.mjs ask \"<text>\" --by \"<who>\" --until \"<date-or-id>\" --applies-to \"<selectors>\" --kind \"<ask-kind>\""],
     [['decide', 's1', 'a ruling', '--by', 'jarl', '--reach'], "jarl.mjs decide \"<slug>\" \"<a-ruling>\" --by \"<who>\" --reach \"<number-of-files>\" --area \"<type>\""],
-    [['round', '1', 'x', '--findings'], "jarl.mjs round \"<id>\" \"<what-failed>\" --findings \"<count>\""],
+    [['round', '1', 'x', '--findings'], "jarl.mjs round \"<id>\" \"<what-failed>\" --by \"<who>\" --findings \"<count>\""],
   ];
   for (const [args, form] of cases) assert.equal(refusal(args, { loop: PLAIN }).ready, form, args.join(' '));
   // A row's --ran and --saw as one pair for each row the call gave, and no part that another stands in for: rows or a note,
   // an option or words, a value or --clear; goal with no --set is the goal read.
   const pairs = [
-    [['evidence', '1', '--line', '1', '--ran', 'a', '--ran', 'b', '--saw', 'c'], 'jarl.mjs evidence "<ids>" --line "<line-number>" --ran "<command>" --saw "<what-it-printed>" --ran "<command>" --saw "<what-it-printed>"'],
-    [['merged', '1', '--sha', 'abc1234', '--ran', 'a', '--saw', 'b', '--saw', 'c'], 'jarl.mjs merged "<ids>" --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" --ran "<command>" --saw "<what-it-printed>"'],
-    [['evidence', '1', 'a note', '--ran', 'a', '--saw', 'b'], 'jarl.mjs evidence "<ids>" --ran "<command>" --saw "<what-it-printed>"'],
+    [['evidence', '1', '--line', '1', '--ran', 'a', '--ran', 'b', '--saw', 'c'], 'jarl.mjs evidence "<ids>" --by "<who>" --line "<line-number>" --ran "<command>" --saw "<what-it-printed>" --ran "<command>" --saw "<what-it-printed>"'],
+    [['merged', '1', '--sha', 'abc1234', '--ran', 'a', '--saw', 'b', '--saw', 'c'], 'jarl.mjs merged "<ids>" --by "<who>" --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" --ran "<command>" --saw "<what-it-printed>"'],
+    [['evidence', '1', 'a note', '--ran', 'a', '--saw', 'b'], 'jarl.mjs evidence "<ids>" --by "<who>" --ran "<command>" --saw "<what-it-printed>"'],
     [['goal', 'x'], 'jarl.mjs goal'],
   ];
   for (const [args, form] of pairs) assert.equal(refusal(args, { loop: PLAIN }).ready, form, args.join(' '));
   // Through the tools, a field the tool does not take ends with the call written there, the author it requires in it.
-  for (const [tool, input] of [['jarl_review', { ids: '1', verdict: 'approve', findings: 'read it all here', by: 'rev' }], ['jarl_answer', { id: 'a-1', answer: 'this way', by: 'owner' }], ['jarl_decide', { slug: 's9', ruling: 'a ruling', by: 'jarl' }]]) {
+  for (const [tool, input] of [['jarl_review', { ids: '1', verdict: 'approve', findings: 'read it all here', by: 'rev', model: 'test-model' }], ['jarl_answer', { id: 'a-1', answer: 'this way', by: 'owner' }], ['jarl_decide', { slug: 's9', ruling: 'a ruling', by: 'jarl' }]]) {
     let said = '';
     try { MCP.callTool(tool, { ...input, root: copy(PLAIN) }); } catch (e) { said = e.message; }
     assert.match(said, /"by":"<who>"/, `${tool}: ${said}`);
@@ -187,10 +187,10 @@ test('done refused names the step its cause asks for, never an act of someone el
   const proved = [['evidence', '3', '--line', '1', '--ran', 'npm test', '--saw', 'all pass']];
   const approved = [...proved, ['review', '3', 'approve', '--by', 'rev-fresh', 'read the diff and the tests, all fine']];
   const cases = [
-    ['no proof and no approve on a read line', {}, "jarl.mjs review \"<ids>\" \"<verdict>\" \"<what-was-read-and-found>\" --by \"<a-fresh-reviewer>\""],
-    ['no approve', { pre: proved }, "jarl.mjs review \"<ids>\" \"<verdict>\" \"<what-was-read-and-found>\" --by \"<a-fresh-reviewer>\""],
-    ['an owner line not ticked', { pre: approved }, "jarl.mjs ask \"<question-for-the-owner>\" --issue \"<id>\""],
-    ['no merge', { pre: approved, profile: merging }, "jarl.mjs merged \"<ids>\" --sha \"<sha>\""],
+    ['no proof and no approve on a read line', {}, "jarl.mjs review \"<ids>\" \"<verdict>\" \"<what-was-read-and-found>\" --by \"<a-fresh-reviewer>\" --model \"<model-id>\""],
+    ['no approve', { pre: proved }, "jarl.mjs review \"<ids>\" \"<verdict>\" \"<what-was-read-and-found>\" --by \"<a-fresh-reviewer>\" --model \"<model-id>\""],
+    ['an owner line not ticked', { pre: approved }, "jarl.mjs ask \"<question-for-the-owner>\" --issue \"<id>\" --by \"<who>\""],
+    ['no merge', { pre: approved, profile: merging }, "jarl.mjs merged \"<ids>\" --sha \"<sha>\" --by \"<who>\""],
   ];
   for (const [cause, opts, step] of cases) {
     const r = refusal(['set', '3', 'done', 'all done'], { loop: PLAIN, ...opts });
@@ -200,10 +200,10 @@ test('done refused names the step its cause asks for, never an act of someone el
   }
   // A retraction the log cannot place: verify shows it, and the form of the move comes after.
   const dir = copy(PLAIN, { pre: approved });
-  appendFileSync(join(dir, '.jarl', 'log.md'), '- 2026-10-18 20:00 · 3 evidence retract · row 7 · by jarl · a row that is not there\n');
+  appendFileSync(join(dir, '.jarl', 'log.md'), '- 2026-10-18 20:00 key 20260101T0000-tstk by a-writer · 3 evidence retract · row 7 · by jarl · a row that is not there\n');
   const said = run(dir, ['set', '3', 'done', 'all done']).stderr;
   assert.match(said, /retraction of evidence row 7/);
-  assert.deepEqual(partsOf(said).commands, ['jarl.mjs verify', "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\""]);
+  assert.deepEqual(partsOf(said).commands, ['jarl.mjs verify', "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --by \"<who>\""]);
 });
 
 test('a reason echoes a word of the call that holds a line break or a character a shell acts on in single quotes, its line breaks escaped: no word starts a line, none runs when the message is pasted', () => {
@@ -234,37 +234,37 @@ test('a --root that holds a line break is named by its placeholder in the form, 
   const r = run(top, ['set', '1', 'Deferred', 'later', '--root', `${ROOT_ARG}\n`]);
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /the --root given holds a line break/);
-  assert.equal(lastLine(r.stderr), "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --root \"<loop-root>\"");
+  assert.equal(lastLine(r.stderr), "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --by \"<who>\" --root \"<loop-root>\"");
 });
 
 test('a form through the tools carries the root of the call, so filled it reaches the loop the call named', () => {
   const dir = copy(PLAIN);
-  const r = MCP.callTool('jarl_field', { ids: '1', name: 'Notes', value: 'x', root: dir });
+  const r = MCP.callTool('jarl_field', { by: 'test-writer', ids: '1', name: 'Notes', value: 'x', root: dir });
   assert.equal(r.isError, true);
   const form = lastLine(r.content[0].text);
-  assert.equal(form, `jarl.mjs field "<ids>" "<a-part-of-the-description>" "<value>" ${L.shellWord(`--root=${dir}`)}`);
+  assert.equal(form, `jarl.mjs field "<ids>" "<a-part-of-the-description>" "<value>" --by "<who>" ${L.shellWord(`--root=${dir}`)}`);
 });
 
 test('a text that starts with dashes is refused with a reason that says it goes after a bare --, and the form puts the arguments there', () => {
   const r = refusal(['new', '--looks like a title', '--tier', 'light'], { loop: PLAIN, wrong: '--looks like a title' });
   assert.match(r.reason, /after a bare --/);
-  assert.equal(r.ready, "jarl.mjs new --tier \"<tier>\" -- \"<title>\"");
+  assert.equal(r.ready, "jarl.mjs new --by \"<who>\" --tier \"<tier>\" -- \"<title>\"");
   // Filled, the form runs and records the title as given.
   const dir = copy(PLAIN);
-  const filled = r.ready.replace("\"<tier>\"", 'light').replace("\"<title>\"", "'--looks like a title'");
+  const filled = r.ready.replace("\"<who>\"", 'jarl').replace("\"<tier>\"", 'light').replace("\"<title>\"", "'--looks like a title'");
   assert.equal(runPrinted(dir, filled).status, 0, filled);
   assert.ok(L.loadIssues(dir).some((i) => i.title === '--looks like a title'));
 });
 
 test('a --root, a --json or another flag written after a bare -- is named in the reason as a flag that goes before it, and the form carries it there', () => {
   const cases = [
-    [['evidence', '1', '--', '--json prints ok', '--root', ROOT_ARG], `jarl.mjs evidence --root ${ROOT_ARG} -- "<ids>" "<text>"`],
-    [['set', '1', 'deferred', '--', 'later', '--root', ROOT_ARG], `jarl.mjs set --root ${ROOT_ARG} -- "<ids>" "<status>" "<why>"`],
-    [['review', '1', 'approve', '--by', 'rev', '--', 'read it all, fine', `--root=${ROOT_ARG}`], `jarl.mjs review --by "<who>" '--root=${ROOT_ARG}' -- "<ids>" "<verdict>" "<what-was-read-and-found>"`],
-    [['field', '1', 'What', '--', 'x', '--json', '--root', ROOT_ARG], `jarl.mjs field --json --root ${ROOT_ARG} -- "<ids>" What "<text>"`],
-    [['new', '--', 't', '--tier', 'light', '--root', ROOT_ARG], `jarl.mjs new --tier "<tier>" --root ${ROOT_ARG} -- "<title>"`],
+    [['evidence', '1', '--', '--json prints ok', '--root', ROOT_ARG], `jarl.mjs evidence --by "<who>" --root ${ROOT_ARG} -- "<ids>" "<text>"`],
+    [['set', '1', 'deferred', '--', 'later', '--root', ROOT_ARG], `jarl.mjs set --by "<who>" --root ${ROOT_ARG} -- "<ids>" "<status>" "<why>"`],
+    [['review', '1', 'approve', '--by', 'rev', '--', 'read it all, fine', `--root=${ROOT_ARG}`], `jarl.mjs review --model "<model-id>" --by "<who>" '--root=${ROOT_ARG}' -- "<ids>" "<verdict>" "<what-was-read-and-found>"`],
+    [['field', '1', 'What', '--', 'x', '--json', '--root', ROOT_ARG], `jarl.mjs field --by "<who>" --json --root ${ROOT_ARG} -- "<ids>" What "<text>"`],
+    [['new', '--', 't', '--tier', 'light', '--root', ROOT_ARG], `jarl.mjs new --by "<who>" --tier "<tier>" --root ${ROOT_ARG} -- "<title>"`],
     // Two of them, before and after the --, leave which loop was meant to the caller.
-    [['set', '--root', 'releases/r2', '1', 'deferred', '--', 'later', '--root', ROOT_ARG], "jarl.mjs set --root \"<loop-root>\" -- \"<ids>\" \"<status>\" \"<why>\""],
+    [['set', '--root', 'releases/r2', '1', 'deferred', '--', 'later', '--root', ROOT_ARG], "jarl.mjs set --by \"<who>\" --root \"<loop-root>\" -- \"<ids>\" \"<status>\" \"<why>\""],
   ];
   for (const [args, form] of cases) {
     const r = refusal(args, { loop: ROOTED });
@@ -274,7 +274,7 @@ test('a --root, a --json or another flag written after a bare -- is named in the
   }
   // Filled with the values of the call and run where the call was made, the form writes the loop the call named alone.
   const top = copy(ROOTED);
-  const filled = `jarl.mjs evidence --root ${ROOT_ARG} -- 1 '--json prints ok'`;
+  const filled = `jarl.mjs evidence --by jarl --root ${ROOT_ARG} -- 1 '--json prints ok'`;
   assert.equal(runPrinted(top, filled).status, 0, filled);
   assert.match(readFileSync(join(top, ROOT_ARG, '.jarl', 'log.md'), 'utf8'), /1 evidence · --json prints ok/);
   assert.deepEqual(L.loadIssues(top).map((i) => i.id), ['1'], 'the loop of the working directory is untouched');
@@ -282,11 +282,11 @@ test('a --root, a --json or another flag written after a bare -- is named in the
 });
 
 test('a form filled where the call was made reaches the loop the call named: --root as given, both spellings and --root . from inside', () => {
-  const fill = (line) => line.replace("\"<ids>\"", '1').replace("\"<status>\"", 'deferred').replace("\"<why>\"", 'later');
+  const fill = (line) => line.replace("\"<ids>\"", '1').replace("\"<status>\"", 'deferred').replace("\"<why>\"", 'later').replace("\"<who>\"", 'jarl');
   for (const root of [['--root', ROOT_ARG], [`--root=${ROOT_ARG}`]]) {
     const said = run(copy(ROOTED), ['set', ...root, '1', 'Deferred', 'later']).stderr;
     const ready = lastLine(said);
-    assert.equal(ready, `jarl.mjs set "<ids>" "<status>" "<why>" ${root.length === 2 ? `--root ${ROOT_ARG}` : `'--root=${ROOT_ARG}'`}`);
+    assert.equal(ready, `jarl.mjs set "<ids>" "<status>" "<why>" --by "<who>" ${root.length === 2 ? `--root ${ROOT_ARG}` : `'--root=${ROOT_ARG}'`}`);
     for (const sh of SHELLS) {
       const top = copy(ROOTED);
       assert.equal(runPrinted(top, fill(ready), sh).status, 0, `${sh}: ${fill(ready)}`);
@@ -296,13 +296,13 @@ test('a form filled where the call was made reaches the loop the call named: --r
   }
   const inner = join(copy(ROOTED), ROOT_ARG);
   const ready = lastLine(run(inner, ['set', '1', 'Deferred', 'later', '--root', '.']).stderr);
-  assert.equal(ready, "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --root .");
+  assert.equal(ready, "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --by \"<who>\" --root .");
   assert.equal(runPrinted(inner, fill(ready)).status, 0);
   assert.equal(L.findIssue(inner, '1').status, 'deferred');
 });
 
 test('a composer\'s loop is closed and archived by the composer\'s command, which a refusal of close or archive ends with', () => {
-  const composer = { 'jarl-profile': 1, format: 3, name: 'composer', statuses: { open: ['dispatchable'], 'in-progress': ['lease'], done: ['settles-dependents', 'terminal', 'closes-record'], dropped: ['settles-dependents', 'terminal', 'needs-reason'], deferred: ['terminal', 'needs-reason'] }, lifecycle: { close: 'record', archive: 'record', command: 'composer done' } };
+  const composer = { 'jarl-profile': 1, name: 'composer', statuses: { open: ['dispatchable'], 'in-progress': ['lease'], done: ['settles-dependents', 'terminal', 'closes-record'], dropped: ['settles-dependents', 'terminal', 'needs-reason'], deferred: ['terminal', 'needs-reason'] }, lifecycle: { close: 'record', archive: 'record', command: 'composer done' } };
   for (const args of [['close', '--force'], ['archive', 'old']]) {
     const r = run(copy(SIBLING, { profile: composer }), args);
     assert.equal(lastLine(r.stderr), 'composer done', args.join(' '));
@@ -369,11 +369,11 @@ test('every global flag that takes a value is checked for a placeholder: --root 
   // The form of init given --root with no value, pasted as printed, opens no loop in a directory named for its placeholder.
   const empty = copy(EMPTY);
   const ready = lastLine(run(empty, ['init', 'a goal', '--root']).stderr);
-  assert.equal(ready, "jarl.mjs init \"<goal>\" --root \"<loop-root>\"");
+  assert.equal(ready, "jarl.mjs init \"<goal>\" --by \"<who>\" --root \"<loop-root>\"");
   // Given twice, the --root of the form is its placeholder too, the reason naming both.
   const twice = run(copy(ROOTED), ['set', '1', 'Deferred', 'later', '--root', ROOT_ARG, '--root', 'releases/r2']).stderr;
   assert.match(twice, /--root given twice \("releases\/r1" and "releases\/r2"\)/);
-  assert.equal(lastLine(twice), "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --root \"<loop-root>\"");
+  assert.equal(lastLine(twice), "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --by \"<who>\" --root \"<loop-root>\"");
   for (const sh of SHELLS) {
     assert.notEqual(runPrinted(empty, ready, sh).status, 0, sh);
     assert.deepEqual(readdirSync(empty), ['.git'], sh);
@@ -520,17 +520,17 @@ test('a form is written for the shell of its platform: a POSIX shell on macOS an
   for (const [root, posix, windows] of cases) {
     const onLinux = refused(root, 'linux');
     const onWindows = refused(root, 'win32');
-    assert.equal(onLinux.split('\n').at(-1), `jarl.mjs set "<ids>" "<status>" "<why>" ${posix}`, JSON.stringify(root));
-    assert.equal(onWindows.split('\n').at(-1), `jarl.mjs set "<ids>" "<status>" "<why>" ${windows}`, JSON.stringify(root));
+    assert.equal(onLinux.split('\n').at(-1), `jarl.mjs set "<ids>" "<status>" "<why>" --by "<who>" ${posix}`, JSON.stringify(root));
+    assert.equal(onWindows.split('\n').at(-1), `jarl.mjs set "<ids>" "<status>" "<why>" --by "<who>" ${windows}`, JSON.stringify(root));
     assert.deepEqual(windowsShellProblems(onWindows.split('\n').at(-1)), [], onWindows);
     const said = windowsArgs(onWindows.split('\n').at(-1));
     assert.deepEqual(said.slice(0, 5), ['jarl.mjs', 'set', '<ids>', '<status>', '<why>']);
-    assert.equal(said[6], windows.includes('<loop-root>') ? '<loop-root>' : root, JSON.stringify(root));
+    assert.equal(said[8], windows.includes('<loop-root>') ? '<loop-root>' : root, JSON.stringify(root));
     if (windows.includes('<loop-root>') && !root.includes('\n')) assert.match(onWindows, /\(the --root given holds a character that cmd and PowerShell read apart, or ends with a backslash a program reads as an escape: the form names the loop root by its placeholder\)/);
   }
   // A step and a form of another word that shell cannot carry: the placeholder, and the reason says why.
   const step = J.refusalFor(new L.Refusal('a reason', [{ first: ['jarl.mjs', 'field', '1', 'Owner', '100%'] }, { retry: true }]), { cmd: 'set', args: ['1', 'x'], flags: [] }, 'win32').message;
-  assert.equal(step.split('\n').at(-2), 'jarl.mjs field 1 Owner "<value>"');
+  assert.equal(step.split('\n').at(-2), 'jarl.mjs field 1 Owner "<value>" --by "<who>"');
   assert.match(step, /a word of the form holds a character that cmd and PowerShell read apart: the form names it by its placeholder/);
 });
 
@@ -542,7 +542,7 @@ test('the walk pastes every line into sh and zsh on macOS and Linux, and on Wind
   if (process.platform === 'win32') assert.deepEqual(SHELLS, ['bash']);
   else { assert.equal(SHELLS[0], '/bin/sh'); assert.ok(SHELLS.every((s) => ['/bin/sh', '/bin/zsh'].includes(s))); }
   // A Windows form pasted into bash is read as cmd and PowerShell read it: placeholders and quoted words alike.
-  for (const line of ['jarl.mjs set "<ids>" "<status>" "<why>" --root releases/r1', 'jarl.mjs field "<ids>" "Check when" "<date-or-event>"']) assert.deepEqual(printedCalls(line)[0], windowsArgs(line).slice(1), line);
+  for (const line of ['jarl.mjs set "<ids>" "<status>" "<why>" --by "<who>" --root releases/r1', 'jarl.mjs field "<ids>" "Check when" "<date-or-event>"']) assert.deepEqual(printedCalls(line)[0], windowsArgs(line).slice(1), line);
 });
 
 // ---- the sources -----------------------------------------------------------------------------------------------------
@@ -678,8 +678,8 @@ test('every command Jarl prints is built by printCommand, which carries the call
   assert.deepEqual(commandStringProblems('lib/x.mjs', "const x = '.jarl/.lock is held by another jarl.mjs (pid 7)';\nconst y = jarlLine('list', '--all');"), []);
   assert.deepEqual(commandStringProblems('lib/x.mjs', "const x = 'a retraction takes a row number, not a new --ran/--saw row; close --force removes the loop';"), [], 'a flag or a command named in prose is no command line');
   // A view and a note print through it with the root of the loop they describe: the command of a note carries --root.
-  const said = J.dispatch(copy(PLAIN), 'field', ['3', 'What', 'relies on issue 1 for its data'], { root: 'r', json: true });
-  assert.ok(said.warn.some((w) => w.endsWith('jarl.mjs field 3 After "<ids-it-waits-on>" --add --root r')), said.warn.join('\n'));
+  const said = J.dispatch(copy(PLAIN), 'field', ['3', 'What', 'relies on issue 1 for its data'], { root: 'r', json: true, by: 'jarl' });
+  assert.ok(said.warn.some((w) => w.endsWith('jarl.mjs field 3 After "<ids-it-waits-on>" --add --by "<who>" --root r')), said.warn.join('\n'));
 });
 
 // The commands SKILL.md and the references show (a code span or a line of a fenced block that starts with a command of
@@ -801,8 +801,8 @@ test('every ready part of the sources is a shape of the call, a form or step tha
   assert.deepEqual(readyProblems('x', "need(a, 'r', ['jarl.mjs', 'list', '--all']);\nneed(b, 'r', () => ['jarl.mjs', 'ask', hole(\"<question-for-the-owner>\")]);"), []);
   // And the command line gives a form that writes and holds no placeholder one of its own, so it is refused when pasted.
   const said = J.refusalFor(new L.Refusal('a reason', ['jarl.mjs', 'close']), { cmd: 'close', args: [], flags: [] }).message;
-  assert.equal(lastLine(said), "jarl.mjs close \"<as-the-reason-says>\"");
-  assert.equal(lastLine(J.refusalFor(new L.Refusal('a reason', { arg: 1, value: 'done' }), { cmd: 'set', args: ['1', 'Done'], flags: [] }).message), "jarl.mjs set \"<ids>\" \"<status>\"");
+  assert.equal(lastLine(said), "jarl.mjs close --by \"<who>\"");
+  assert.equal(lastLine(J.refusalFor(new L.Refusal('a reason', { arg: 1, value: 'done' }), { cmd: 'set', args: ['1', 'Done'], flags: [] }).message), "jarl.mjs set \"<ids>\" \"<status>\" --by \"<who>\"");
 });
 test('every refusal of the sources is built by refuse or need with its ready part; no other error of any class is made or thrown', async () => {
   const problems = [];

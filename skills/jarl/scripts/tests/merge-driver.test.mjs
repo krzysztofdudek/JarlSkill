@@ -13,6 +13,7 @@ import { mergeDecisionsTexts, decisionsDriverCommand, mergeFlags, JARL_GITATTRIB
 import { NO_EXCLUDES, bashBin } from './portable.mjs';
 import { SPAWN_TIMEOUT } from './helpers.mjs';
 
+const J = await import('../jarl.mjs');
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const ruling = (date, slug, text, ...meta) => `## ${date} · ${slug}\n${text}\n${meta.length ? `\n${meta.join('\n')}\n` : ''}`;
 const file = (...blocks) => `# Decisions\n\n${blocks.join('\n')}`;
@@ -71,7 +72,7 @@ function repo() {
   const g = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT }).trim();
   g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@t'); g('config', 'user.name', 't'); g('config', 'core.excludesFile', NO_EXCLUDES);
   // The command line needs an author on a ruling: this helper names the coordinator when a call of the test names none.
-  const jarl = (...args) => execFileSync(process.execPath, [SCRIPT, ...args, ...(args[0] === 'decide' && !args.includes('--by') ? ['--by', 'coordinator'] : []), '--root', dir], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT }).trim();
+  const jarl = (...args) => execFileSync(process.execPath, [SCRIPT, ...args, ...(args[0] === 'decide' && !args.includes('--by') ? ['--by', 'coordinator'] : []), ...(J.MUTATING.has(args[0]) && args[0] !== 'decide' && !args.includes('--by') ? ['--by', 'jarl'] : []), '--root', dir], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT }).trim();
   const commit = (m) => { g('add', '-A'); g('commit', '-qm', m); };
   const merge = (branch, settings = []) => spawnSync('git', [...settings, 'merge', '--no-edit', branch], { cwd: dir, encoding: 'utf8', timeout: SPAWN_TIMEOUT });
   return { dir, g, jarl, commit, merge, done: () => rmSync(dir, { recursive: true, force: true }) };

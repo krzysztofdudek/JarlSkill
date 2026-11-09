@@ -13,7 +13,7 @@ import { tipLinesOf } from './repositories.mjs';
 import { FIELD_NAMES } from './disagreements.mjs';
 import { gateOf, worksInPlace } from './gate.mjs';
 import { readLoop } from './loop.mjs';
-import { limitNote, modelLines, modelValue, modelOfferAtLease, spellingNote } from './models.mjs';
+import { limitNote, modelValue, modelOfferAtLease, spellingNote } from './models.mjs';
 import { REASON_TEXT, SET_CALLERS, doneReady, issuesFor, nothingWritten, oneOrMany, reasonWord, refiled, setRoute } from './shared.mjs';
 import { cmdField } from './field.mjs';
 import { leaseFlagsGiven, leaseValueProblem, needLeaseHolds, needTreeHolds, needWorktreeOfLease } from './leases.mjs';
@@ -51,7 +51,7 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // ready and the review words are views, not statuses: say which view answers the question the worker was asking.
   need(profile.statuses.includes(status) || !/^(ready|review|in[-_ ]?review|ready[-_ ]for[-_ ]review|reviewing)$/i.test(String(status ?? '')), `${status} is a view here, not a status: next lists the issues ready to start, and status and resume mark each in-flight issue with what the record says (no evidence rows yet; rows and no verdict, so it waits for a reviewer; changes requested; approved and queued). Nothing needs setting: record the rows with evidence, and the reviewer's verdict with review. A loop that wants an explicit review status can declare one in its profile. Statuses here: ${profile.statuses.join(', ')}; the issues ready to start: ${jarlLine('next')}`, () => ({ arg: 1, value: hole('<status>') }));
   need(profile.statuses.includes(status), `status must be one of: ${profile.statuses.join(', ')} (got "${status}")`, () => [...(rawIds === undefined ? [{ arg: 0, value: '<ids>' }] : []), { arg: 1, value: hole('<status>') }]);
-  need(caller !== 'cli' || profile.setBy(status) !== 'record', `${status} is set by the record only — this loop's profile (${profile.name}) marks it "set-by": "record", so jarl set and the MCP tools cannot move an issue into it; the tool that runs the loop does${profile.scheduler ? ` (${profile.scheduler})` : ''}`, () => ({ arg: 1, value: hole('<status>') }));
+  need(caller !== 'cli' || profile.setBy(status) !== 'record', `${status} is set by the record only — this loop's profile (${profile.name}) marks it "set-by": "record", so jarl set and the MCP tools cannot move an issue into it; the tool that runs the loop does`, () => ({ arg: 1, value: hole('<status>') }));
   const holds = profile.is(status, 'holds-claim');
   const lease = leaseFlagsGiven(flags);
   need(!lease.length || holds, `--${lease[0]} goes with ${profile.with('holds-claim').join(' or ')} only, not with ${status} — it records who works on the issue and where`, () => ({ arg: 1, value: hole('<status>') }));
@@ -67,15 +67,24 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const issues = issuesFor(root, rawIds);
   need(!profile.is(status, 'needs-reason') || fieldText(why ?? ''), REASON_TEXT[status]?.() || `${status} needs a reason: ${jarlLine('set', '<id>', status, '<text>')}`, () => ({ arg: 2, value: '<text>' }));
   const nothing = issues.length > 1 ? ' — nothing was written' : '';
+  // A lease says who holds it, and on the command line and in the tools what model it was raised on: a move that names
+  // neither keeps the worker and the model the issue's lease already has.
+  if (holds) {
+    for (const issue of issues) {
+      const held = profile.is(issue.status, 'holds-claim') ? fieldText(issue.fields.worker) : '';
+      need(flags.worker !== undefined || held, `${issue.id} would be leased with no worker: a lease names who holds it with --worker${nothing}`, () => ({ flag: '--worker', value: hole('<the-new-worker>') }));
+      need(caller !== 'cli' || flags.model !== undefined || (flags.worker === undefined && issue.fields.model), `${issue.id} would be leased with no model: a lease names the model its worker runs on with --model${nothing}`, () => ({ flag: '--model', value: hole('<model-id>') }));
+    }
+  }
   needTreeHolds(profile, issues, status, nothing);
   if (holds) needLeaseHolds(root, profile, issues, status, why, flags, handover, nothing);
   // An issue worked in place is leased with no branch, on the files it declares, which keep two such issues apart.
-  for (const issue of holds ? issues.filter((i) => worksInPlace(profile, i)) : []) {
+  for (const issue of holds ? issues.filter((i) => worksInPlace(i)) : []) {
     const given = ['branch', 'worktree'].filter((k) => flags[k] !== undefined);
     need(!given.length, `${issue.id} is worked in place: its worker writes the files it declares in the checkout of their repository, as it is checked out, with no branch and no worktree of its own${nothing}`, () => given.map((k) => ({ drop: `--${k}` })));
     need(issue.files.length, `${issue.id} is worked in place and declares no files: it names the files it writes before it is leased, so that next keeps two issues off one file${nothing}`, () => ['jarl.mjs', 'field', issue.id, 'Files', hole('<paths>')]);
   }
-  // base: the branch the composer landed the merge into, for the done gate's requires-merged (else the branch checked
+  // base: the branch a library caller landed the merge into, for the done gate's requires-merged (else the branch checked
   // out). A library call only: the command line has no --base, and dispatch never passes one through.
   need(flags.base === undefined || caller === 'record', 'base is named by a library call through record.mjs only — the command line checks against the branch checked out', () => ({ rename: '--base', to: hole('<no-flag-here>') }));
   need(flags.base === undefined || (typeof flags.base === 'string' && fieldText(flags.base) !== '' && !flags.base.startsWith('-')), 'base names a branch or ref — the one the merge landed in', () => ({ rename: '--base', to: hole('<no-flag-here>') }));
@@ -91,8 +100,6 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   // library accepts the key and stores nothing.
   const since = stamp();
   if (holds && flags.worktree !== undefined && caller === 'cli') for (const issue of issues) needWorktreeOfLease(root, issue, flags.branch !== undefined ? fieldText(flags.branch) : fieldText(issue.fields.branch), resolve(root, fieldText(flags.worktree)));
-  // Each issue's change is applied to its file as it stands after the log line: the call's first line may raise the record
-  // format (its --by), and a raise from format 1 writes every bare Repo path of the loop again, this issue's too.
   const writes = issues.map((issue) => ({ issue, edit: (read) => {
     let text = setField(read, 'Status', status);
     if (holds) {
@@ -147,13 +154,11 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const offered = holds && leaseNote ? modelOfferAtLease(root, model) : null;
   const modelOffer = caller === 'cli' ? offered : null;
   for (const w of writes) writeAtomic(w.issue.file, w.edit(readText(w.issue.file)));
-  // Said on the command line only, and only in a loop that declares model lines: a lease with no model (once per call).
-  const leaseNoModel = caller === 'cli' && holds && model === undefined && modelLines(root).declared ? 'no --model on this lease — the loop declares its models, and a model that is not recorded can never be recovered' : null;
   const worktreeNote = caller === 'cli' && holds && flags.worktree !== undefined ? '--worktree was checked and is not recorded — the worktree of a lease is found through its branch' : null;
   const limit = caller === 'cli' && holds ? limitNote(root, model) : null;
   // Each note is a line of its own: the command line prints every line after the issue's id, which is the subject the
   // offer reads after, whichever note comes before it.
-  const leaseNotes = [leaseNoModel, worktreeNote, spelling, limit, modelOffer].filter(Boolean).join('\n');
+  const leaseNotes = [worktreeNote, spelling, limit, modelOffer].filter(Boolean).join('\n');
   return oneOrMany(rawIds, issues.map((issue, n) => ({ id: issue.id, status, ...(handover ? { handover: true } : {}), ...(holds ? { since, ...(flags.branch !== undefined ? { branch: fieldText(flags.branch) } : {}), ...(flags.worker !== undefined ? { worker: fieldText(flags.worker) } : {}), ...(model !== undefined ? { model } : {}) } : {}), ...(profile.is(status, 'closes-record') ? doneNote(issue, root) : {}), ...(leaseNotes && n === 0 ? { note: leaseNotes } : {}) })));
 }
 

@@ -1,80 +1,77 @@
-// A view is read by agents who paste what it prints: a command it prints that records state, or an act that is the
-// owner's, must hold a placeholder of the registry where the fact or the person only the reader knows goes, so a line
-// pasted as printed is refused and writes nothing.
+// A write names its writer, so every write the tool prints for someone to run carries --by: the writer's name where the
+// record holds who runs it, and the placeholder where it does not.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { FINDINGS } from './findings.mjs';
-import { jarl, commandSpans, loop as makeLoop } from './helpers.mjs';
-import * as J from '../jarl.mjs';
-import * as L from '../jarl-lib.mjs';
+import { jarl, loop } from './helpers.mjs';
+import { MUTATING } from '../jarl.mjs';
+import { TOOL_OPTIONS } from '../jarl-mcp.mjs';
+import { jarlLine } from '../lib/base.mjs';
 
-const OWNER_LINE = '[owner] the cut reads well · material: renders/cut.txt · check: the pacing of the opening';
+const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
+// The printed writes of a text that name no writer, each cut at the end of its line.
+function unsigned(text) {
+  return text.split('jarl.mjs ').slice(1).map((s) => s.split('\n')[0]).filter((s) => {
+    const cmd = s.split(/[\s"]/)[0];
+    return MUTATING.has(cmd) && !(cmd === 'goal' && !/--set/.test(s)) && !/--by[ =]/.test(s);
+  });
+}
+const writesIn = (text) => text.split('jarl.mjs ').slice(1).filter((s) => MUTATING.has(s.split(/[\s"]/)[0])).length;
 
-// One loop with an open thing of every kind a view lists: an issue at every step of the work, a merge whose CI is not
-// green, a closed issue whose gate does not hold, an acceptance line only the owner ticks, a ruling that settles work
-// nobody holds, a note that two issues are unordered, and a question of each kind.
-function richLoop() {
-  const root = makeLoop({ prefix: 'jarl-printed-writes-', via: 'cli' });
-  appendFileSync(join(root, '.jarl', 'goal.md'), '\nCheck: npm test\nCoordinators: odin\n');
-  mkdirSync(join(root, 'renders'));
-  writeFileSync(join(root, 'renders', 'cut.txt'), 'the cut\n');
-  const titles = ['ready one', 'leased one', 'proof no verdict', 'changes asked', 'approved', 'merged, CI pending', 'a dropped one with a merge', 'owner line'];
-  titles.forEach((t, n) => jarl(root, 'new', t, '--files', `f${n + 1}.mjs`, '--acceptance', n === 7 ? OWNER_LINE : '[read] it works'));
-  jarl(root, 'new', 'waits on the ready one', '--acceptance', '[read] it works', '--after', '1', '--files', 'f9.mjs', '--what', 'relies on issue 5 for its data');
-  for (const id of ['2', '3', '4', '5', '6', '8']) jarl(root, 'set', id, 'in-progress', 'go', '--worker', `w${id}`, '--branch', `jarl/${id}`);
-  for (const id of ['3', '4', '5', '6', '8']) jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'green');
-  jarl(root, 'review', '4', 'changes', '--by', 'rev', 'Important: the empty list is not handled');
-  jarl(root, 'review', '5', 'approve', '--by', 'rev', FINDINGS);
-  jarl(root, 'review', '6', 'approve', '--by', 'rev', FINDINGS);
-  jarl(root, 'merged', '6', '--sha', 'abc1234', '--ci', 'pending');
-  jarl(root, 'set', '7', 'dropped', 'not needed');
-  jarl(root, 'merged', '7', '--sha', 'def5678', '--ran', 'npm test', '--saw', 'pass');
-  jarl(root, 'ask', 'which way?', '--kind', 'stuck', '--issue', '1');
-  jarl(root, 'ask', 'ratify the naming', '--kind', 'ratify');
-  jarl(root, 'ask', 'reports name their branch', '--kind', 'rule', '--applies-to', 'loop', '--to', 'owner');
-  jarl(root, 'ask', 'reviewers run the suite', '--kind', 'rule', '--applies-to', 'role reviewer');
-  jarl(root, 'ask', 'the slice cannot go on', '--kind', 'escalation', '--slice', 'odin');
-  jarl(root, 'decide', 'orphan', 'A ruling that settles work nobody holds.', '--by', 'jarl', '--settles', '7');
+// A loop with an issue in each state a printed write is offered for.
+function busy() {
+  const root = loop({ prefix: 'jarl-printed-', via: 'cli' });
+  for (const t of ['ready', 'flight', 'approved', 'red']) jarl(root, 'new', t, '--acceptance', '[read] it works', '--files', `${t}.mjs`);
+  jarl(root, 'set', '2', 'in-progress', 'go', '--branch', 'jarl/2', '--worker', 'w2');
+  jarl(root, 'set', '3', 'in-progress', 'go', '--branch', 'jarl/3', '--worker', 'w3');
+  jarl(root, 'evidence', '3', '--line', '1', '--ran', 'npm test', '--saw', 'pass 3');
+  jarl(root, 'review', '3', 'approve', '--by', 'rev-a', 'read the diff and the rows, nothing found');
+  jarl(root, 'set', '4', 'in-progress', 'go', '--branch', 'jarl/4', '--worker', 'w4');
   return root;
 }
 
-const VIEWS = [['status'], ['report'], ['resume'], ['next'], ['list'], ['verify'], ['show', '5'], ['show', '7'], ['status', '--as', 'jarl'], ['status', '--as', 'owner'], ['resume', '--as', 'jarl'], ['resume', '--as', 'owner'],
-  ['next', '--as', 'jarl', '--all'], ['next', '--as', 'owner', '--all'], ['next', '--as', 'odin', '--all'], ['next', '--as', 'w3', '--all']];
-
-// Every command the views print, as the text of the command, with the view that printed it.
-function printedBy(root) {
-  return VIEWS.flatMap((view) => commandSpans(jarl(root, ...view)).map((s) => ({ view: view.join(' '), command: s.raw })));
-}
-const holdsPlaceholder = (command) => L.PLACEHOLDERS.some((h) => command.includes(h));
-
-test('a view prints no command that writes unless it holds a placeholder of the registry; a question put to the owner is the one act it prints whole', () => {
-  const printed = printedBy(richLoop());
-  const writes = printed.filter((p) => J.MUTATING.has(p.command.split(' ')[1]) && p.command.split(' ')[1] !== 'ask');
-  assert.ok(writes.length > 20, `the views print commands that write: ${writes.length}`);
-  assert.deepEqual(writes.filter((p) => !holdsPlaceholder(p.command)).map((p) => `${p.view}: ${p.command}`), []);
-  // The one command of a view that is not a form is the question that asks the owner to start a fresh session.
-  const asks = printed.filter((p) => p.command.split(' ')[1] === 'ask');
-  assert.ok(asks.length >= 1 && asks.every((p) => /^jarl\.mjs ask 'start a fresh session to review issues? [\d, ]+'/.test(p.command)), asks.map((p) => p.command).join('\n'));
+test('a write printed by the common printer carries the placeholder of its writer, a read and a read of the goal none, and a named writer stays', () => {
+  assert.equal(jarlLine('set', '<ids>', 'done', '<why>'), 'jarl.mjs set "<ids>" done "<why>" --by "<who>"');
+  assert.equal(jarlLine('round', '1', '<text>', '--by', 'jarl'), 'jarl.mjs round 1 "<text>" --by jarl');
+  assert.equal(jarlLine('list', '--all'), 'jarl.mjs list --all');
+  assert.equal(jarlLine('goal'), 'jarl.mjs goal');
+  assert.equal(jarlLine('goal', '--set', '<machine-line>'), 'jarl.mjs goal --set "<machine-line>" --by "<who>"');
+  assert.equal(jarlLine('evidence', '--', '<ids>', '<text>'), 'jarl.mjs evidence --by "<who>" -- "<ids>" "<text>"');
 });
 
-test('a view prints no act as the owner: every command of his names him with the placeholder, never --by owner', () => {
-  const printed = printedBy(richLoop());
-  assert.deepEqual(printed.filter((p) => /--by owner(\s|$)/.test(p.command)).map((p) => `${p.view}: ${p.command}`), []);
-  const owners = printed.filter((p) => p.view === 'next --as owner --all').map((p) => p.command);
-  for (const verb of ['answer a-1 ', 'answer a-2 ', 'answer a-3 ', 'tick 8 1 ']) assert.ok(owners.some((c) => c.includes(verb) && c.includes('--by "<the-owner-himself>"')), `${verb}: ${owners.join('\n')}`);
-  // The form is refused as printed, and writes nothing.
-  const root = richLoop();
-  for (const c of owners.filter((x) => x.includes('<the-owner-himself>'))) {
-    const words = c.replace(/^jarl\.mjs /, '').match(/"[^"]*"|'[^']*'|\S+/g).map((w) => w.replace(/^["']|["']$/g, ''));
-    assert.throws(() => jarl(root, ...words), /<the-owner-himself>|<yes-or-reject-first>|<option>|<text>/, c);
+test('every write next prints names its writer, and the holder of the row where the record holds one', () => {
+  const root = busy();
+  const rows = json(root, 'next', '--as', 'jarl', '--all').rows;
+  const commands = rows.map((r) => r.command).join('\n');
+  assert.ok(writesIn(commands) >= 2, commands);
+  assert.deepEqual(unsigned(commands), []);
+  const ready = rows.find((r) => r.what === 'ready');
+  assert.match(ready.command, /^jarl\.mjs set 1 in-progress --branch "<branch>" --worker "<name>" --model "<model-id>" --by jarl\b/);
+  const merge = rows.find((r) => r.what === 'merge');
+  assert.match(merge.command, /^jarl\.mjs merged 3 --sha "<sha>" .*--by jarl/);
+  assert.deepEqual(unsigned(jarl(root, 'next', '--as', 'jarl', '--all')), []);
+});
+
+test('every write a brief prints names its writer: the worker\'s, the goal\'s merger, or the placeholder', () => {
+  const root = busy();
+  const views = [jarl(root, 'brief', '2'), jarl(root, 'brief', '3', '--role', 'reviewer'), jarl(root, 'brief', '--role', 'merger')];
+  for (const text of views) assert.deepEqual(unsigned(text), [], text);
+  assert.ok(writesIn(views[2]) >= 6, views[2]);
+  assert.match(views[2], /jarl\.mjs set "<id>" done "<text>" --by "<who>"/);
+  jarl(root, 'goal', '--set', 'Merger: the-merger');
+  assert.match(jarl(root, 'brief', '--role', 'merger'), /jarl\.mjs set "<id>" done "<text>" --by the-merger/);
+});
+
+test('the replies and the views name the writer of what they offer: the jarl for the round after a changes verdict', () => {
+  const root = busy();
+  const reply = jarl(root, 'review', '4', 'changes', '--by', 'rev-a', 'Important: the case is missing');
+  assert.match(reply, /jarl\.mjs round 4 "<text>" --by jarl/);
+  for (const text of [reply, jarl(root, 'resume'), jarl(root, 'status'), jarl(root, 'show', '1')]) assert.deepEqual(unsigned(text), [], text);
+});
+
+test('every example of a writing tool names its writer, and the verdict its model', () => {
+  for (const [tool, field] of [['evidence', 'ran'], ['evidence', 'saw'], ['field', 'add'], ['field', 'remove'], ['review', 'verdict'], ['review', 'text'], ['decide', 'supersedes']]) {
+    const example = JSON.parse(TOOL_OPTIONS.fieldNote(tool, field).match(/Example: (\{.*\})/)[1]);
+    assert.equal(typeof example.by, 'string', `${tool} ${field}`);
+    if (tool === 'review') assert.equal(typeof example.model, 'string', field);
   }
-});
-
-test('the line a view prints for a CI not recorded and for a closed issue whose gate does not hold are forms: the result and the reason are the reader\'s', () => {
-  const root = richLoop();
-  assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- 6 merged, CI pending: merged, its CI not green yet; record the result.* — jarl\.mjs merged 6 --ci "<ci-state>"$/m);
-  assert.match(jarl(root, 'status'), /^closed, gate does not hold: 7 · a merge is recorded on a dropped issue — repair: jarl\.mjs set 7 open "<text>"$/m);
-  assert.match(jarl(root, 'verify'), /order the two by adding it to After, which keeps what After holds: jarl\.mjs field 9 After "<ids-it-waits-on>" --add$/m);
 });

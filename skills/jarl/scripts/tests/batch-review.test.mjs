@@ -1,13 +1,11 @@
-// One verdict given on several issues is one review: each of its lines in the log carries the same batch id, the first
-// such verdict raises the loop to record format 3 (a reader of formats 1 and 2 would count it as several reviews, so it
-// refuses the loop instead), and report shows each batch with its size and the rounds that came after it. A verdict on one
-// issue carries no batch id and raises nothing, and a loop whose format a composer keeps writes no batch id at all.
+// One verdict given on several issues is one review: each of its lines in the log carries the same batch id, and report shows each batch with its size and the rounds that came after it. A verdict on one
+// issue carries no batch id.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileAsBefore, formatTwoJarl, oldJarl } from './old-jarl.mjs';
+import { fileThreeDigits } from './helpers.mjs';
 import { jarl, loop as makeLoop } from './helpers.mjs';
 import { FINDINGS } from './findings.mjs';
 import { BUILTIN_STATUSES, gateState } from '../jarl-lib.mjs';
@@ -20,27 +18,24 @@ const formatOf = (root) => (existsSync(marker(root)) ? JSON.parse(readFileSync(m
 const verdictLines = (root) => log(root).split('\n').filter((l) => / review (approve|changes) · /.test(l));
 const batchOf = (line) => (/ · batch (\S+) · /.exec(line) || [])[1] ?? null;
 
-// Four issues filed as a loop of format 1 holds them (three digits, no key), each in progress on its own branch with a
-// proof row; nothing written so far raises the format.
+// Four issues with three digits and no key, each in progress on its own branch with a proof row.
 function fourInFlight() {
   const root = makeLoop({ prefix: 'jarl-batch-', via: 'cli' });
   for (const t of ['first', 'second', 'third', 'fourth']) {
-    const id = fileAsBefore(root, `${t} change`, { acceptance: 'it works' });
+    const id = fileThreeDigits(root, `${t} change`, { acceptance: '[read] it works' });
     jarl(root, 'set', id, 'in-progress', '--worker', `w-${t}`, '--branch', `jarl/${id}`);
     jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass 3, fail 0');
   }
   return root;
 }
 
-test('a verdict on one issue carries no batch id and leaves the record format as it was', () => {
+test('a verdict on one issue carries no batch id', () => {
   const root = fourInFlight();
   jarl(root, 'review', '001', 'approve', '--by', 'rev-a', FINDINGS);
-  assert.equal(formatOf(root), 1);
   assert.deepEqual(verdictLines(root).map(batchOf), [null]);
-  for (const read of [oldJarl, formatTwoJarl]) assert.equal(read(root, 'status', {}).ok, true, 'both readers of the lower formats still read the loop');
 });
 
-test('one verdict on several issues writes one batch id on each of its lines, raises the loop to format 3, and the readers of the lower formats refuse it', () => {
+test('one verdict on several issues writes one batch id on each of its lines', () => {
   const root = fourInFlight();
   const out = JSON.parse(jarl(root, 'review', '001,002,003', 'approve', '--by', 'rev-a', '--model', 'm-1', FINDINGS, '--json'));
   const lines = verdictLines(root);
@@ -51,12 +46,6 @@ test('one verdict on several issues writes one batch id on each of its lines, ra
   assert.match(lines[0], / review approve · by rev-a \(fresh\) · model m-1 · batch \S+ · read the diff, nothing found$/, 'the batch mark comes after the model mark and before the findings');
   assert.deepEqual(out.map((o) => o.batch), ids, 'the reply names the batch');
   assert.match(readFileSync(R.findIssue(root, '002').file, 'utf8'), new RegExp(`^- \\*\\*approve\\*\\* · by rev-a \\(fresh\\) · \\d{4}-\\d{2}-\\d{2} · model m-1 · batch ${ids[0]}$`, 'm'), 'the issue\'s Reviews entry names it too');
-  assert.equal(formatOf(root), 3);
-  for (const read of [oldJarl, formatTwoJarl]) {
-    const r = read(root, 'status', {});
-    assert.equal(r.ok, false);
-    assert.match(r.error, /written for record format 3/);
-  }
   // A second verdict on several issues is another batch.
   jarl(root, 'review', '004,001', 'changes', '--by', 'rev-b', 'Important: the edge case is not handled');
   const second = verdictLines(root).slice(3).map(batchOf);
@@ -98,21 +87,4 @@ test('a loop with no batched verdict says nothing about batches in report', () =
   jarl(root, 'review', '001', 'approve', '--by', 'rev-a', FINDINGS);
   assert.doesNotMatch(jarl(root, 'report'), /batched reviews/);
   assert.deepEqual(JSON.parse(jarl(root, 'report', '--json')).metrics.batches, { n: 0, batches: [] });
-});
-
-test('a loop whose profile names an external scheduler keeps its format: a verdict on several issues is recorded with no batch id', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'jarl-batch-composed-'));
-  mkdirSync(join(dir, '.git'));
-  const file = join(mkdtempSync(join(tmpdir(), 'jarl-batch-profile-')), 'profile.json');
-  writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }));
-  jarl(dir, 'init', 'a mission', '--profile', file);
-  for (const t of ['one', 'two']) {
-    const { id } = R.newIssue(dir, `${t} change`, { acceptance: '[read] it works' });
-    jarl(dir, 'set', id, 'in-progress', '--worker', `w-${t}`, '--branch', `jarl/${id}`);
-    jarl(dir, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass');
-  }
-  const before = readFileSync(marker(dir), 'utf8');
-  jarl(dir, 'review', '001,002', 'approve', '--by', 'rev-a', FINDINGS);
-  assert.deepEqual(verdictLines(dir).map(batchOf), [null, null]);
-  assert.equal(readFileSync(marker(dir), 'utf8'), before, 'the profile, and the format it names, are untouched');
 });

@@ -4,7 +4,7 @@ export const USAGE = `usage: jarl.mjs "<a-jarl-command>" [options]
        jarl.mjs --version                        the version of this install, the one the MCP server reports
 
 commands:
-  init "<goal>" [--committed] [--permanent] [--profile <profile.json>] [--by who]
+  init "<goal>" [--committed] [--permanent] [--profile <profile.json>] --by who
                                                  create .jarl/ with the goal; by default it also writes .jarl/.gitignore
                                                  (* and **/*) so git never sees the loop, and every role working
                                                  outside the loop root passes --root <loop-root>;
@@ -16,10 +16,10 @@ commands:
   new "<title>" [--kind k] [--prio 1|2|3] [--tier light|standard|strong] [--tags a,b] [--files p,q] [--repo <name-or-path>] [--found-by who]
       [--where "<text>"] [--what "<text>"] [--why "<text>"] [--acceptance "<line>"]... [--changelog "<changelog-entry>"]...
       [--source <report-dir#finding-id>,...] [--after <ids>] [--template <name>] [--field "<name=value>"]... [--section "<name=value>"]...
-      [--person "<name>" --check-when "<date-or-event>"] [--range <name>] [--by who]
+      [--person "<name>" --check-when "<date-or-event>"] [--range <name>] --by who
                                                  file an issue under the next free number outside every range the goal
                                                  declares, or with --range under the next free number of that range
-                                                 (a Range line of the goal; its first use raises the record format to 3);
+                                                 (a Range line of the goal);
                                                  without --tier it records
                                                  standard and says so on stderr, with what each tier is for (light: a check
                                                  or test decides; strong: unknown cause, design, record format, security);
@@ -41,13 +41,13 @@ commands:
                                                  --person (who it is held by, the name next --as answers to) and
                                                  --check-when (a date, or the event to check after); either ends when its
                                                  issue closes
-  renumber <id> --key <key> [--by who]
+  renumber <id> --key <key> --by who
                                                  of the issue files that carry one number after a merge of two copies
                                                  of the loop, give the one whose header carries --key the next free
                                                  number: its file is renamed and its first line rewritten; every log
                                                  line about it names its key, so it keeps them, and no line is
                                                  rewritten (verify names the files and their keys)
-  field <ids> <name> ["<value>"] [--add | --remove | --clear] [--by who]
+  field <ids> <name> ["<value>"] [--add | --remove | --clear] --by who
                                                  change one part of the description of every id, the one command for
                                                  it: the header fields Title (the file keeps its name), Priority (1|2|3),
                                                  Tier, Kind, Found by, Tags, Files, Repo (as --repo below), After (the
@@ -55,8 +55,7 @@ commands:
                                                  dropped), Parent (the one issue it is a sub-issue of: a parent waits on
                                                  its sub-issues, a sub-issue on its parent's After, and a sub-issue with no
                                                  slice tag is in its parent's slice; a parent that would sit under its own
-                                                 sub-issue, a wait in a circle and a finished parent are refused, and the
-                                                 first Parent raises the record format to 3), Source (<report-dir#finding-id>), Where, Resources (the exclusive resources
+                                                 sub-issue, a wait in a circle and a finished parent are refused), Source (<report-dir#finding-id>), Where, Resources (the exclusive resources
                                                  the issue holds while its lease lasts, loop-wide names; next never
                                                  offers two issues holding one), Person and Check when (whom a wait is
                                                  held by and when to check it: Kind becomes wait only once both are
@@ -79,18 +78,18 @@ commands:
                                                  retract and decide --supersedes, and the status moves only with set;
                                                  any other name is refused with the names field writes and the command
                                                  that writes it instead
-  split <id> --line "<line=id>"... [--by who]
+  split <id> --line "<line=id>"... --by who
                                                  share out the acceptance of a parent among its sub-issues in one
                                                  write: each --line <n>=<id> moves acceptance line n to issue <id>, or
                                                  keeps it on the parent when <id> is the parent's own; every line is
                                                  named once, and a line named nowhere is refused, so none is lost; each
                                                  issue a line moves to becomes a sub-issue of the parent, as field Parent
                                                  makes one, and gains the line after the ones it holds
-  base <name> <branch> [--by who]                the base branch a declared repository is held against, changed
+  base <name> <branch> --by who                the base branch a declared repository is held against, changed
                                                  with a log line that says what it was (a repository is declared
                                                  when an issue first names it; see --repo below)
   import <findings.json> [--source <report-dir>] [--kind k] [--prio 1|2|3] [--tier t] [--tags a,b] [--repo <name-or-path>]
-      [--found-by who] [--only <finding-ids>] [--adopt] [--dry-run] [--field "<name=value>"]... [--parent <id>] [--by who]
+      [--found-by who] [--only <finding-ids>] [--adopt] [--dry-run] [--field "<name=value>"]... [--parent <id>] --by who
                                                  one issue per finding, with Source: <report-dir#finding-id>; a finding
                                                  whose Source is already on an issue is skipped, so a re-run files
                                                  nothing twice, and one whose text differs from the What or Why of
@@ -104,7 +103,7 @@ commands:
                                                  --tags, --repo and --only repeat, or take a comma list
   sources [<findings.json>...] [--source <report-dir>] per report: its findings, the issues filed from them and their
                                                  status; with a findings file, the findings nobody filed too
-  evidence <ids> "<text>" | --ran "<command>" --saw "<what-it-printed>" --line <line-number> [--by who] | <id> --file <path> --slot <name> [--by who]
+  evidence <ids> "<text>" --by who | --ran "<command>" --saw "<what-it-printed>" --line <line-number> --by who | <id> --file <path> --slot <name> --by who
                                                  append a free-text note (under ### Notes), or one checkable row per --ran/--saw
                                                  pair (repeatable; under ### Proof, after the last row);
                                                  --line names the acceptance lines each row of the call proves, 1 for
@@ -124,9 +123,7 @@ commands:
                                                  number show prints before each row, counted over the whole Evidence
                                                  section) and note-<n> the n-th free-text note (show prints note-<n> before it): the row or note stays, struck
                                                  through, and show leaves a retracted note and its reason out unless --full; the done gate and the metrics
-                                                 do not count what is retracted; the first retraction of a loop raises its record format to
-                                                 2, so a reader that knows only format 1 refuses the loop instead of
-                                                 counting what was taken back; tick-<n>, --by owner alone, takes back
+                                                 do not count what is retracted; tick-<n>, --by owner alone, takes back
                                                  his tick of acceptance line n, and done waits for his tick again
   list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--match "<field=value>"]... [--all]
                                                  the issues not finished (open and in-progress) by default; --all for
@@ -158,12 +155,13 @@ commands:
                                                  its commands. Every part whole, except a finding the issue file has no
                                                  entry for: it shows as the log's line holds it, its first line and a
                                                  count of the lines left out
-  set <ids> <status> "<text>" [--branch <worker-branch>] [--worker <name>] [--model <model-id>] [--worktree <path>] [--handover] [--header] [--by who]
+  set <ids> <status> "<text>" [--branch <worker-branch>] [--worker <name>] [--model <model-id>] [--worktree <path>] [--handover] [--header] --by who
                                                  (<ids> <status-in-the-log> --header rewrites the header fields the log
                                                  renders from the log, writes no log line and is never a move)
                                                  change status; writes the log line in the same move; in-progress
-                                                 writes Since (and Branch, Worker, Model when given) — one lease
-                                                 for every id, so a package shares it; a lease holds: under the lock
+                                                 writes Since, Worker and Model (a lease names who holds it and the
+                                                 model it runs on, or restates the one it has) and Branch when
+                                                 given — one lease for every id, so a package shares it; a lease holds: under the lock
                                                  it refuses an issue another worker or branch holds and a file or
                                                  resource another lease holds (naming the holder and its slice: tag),
                                                  and, while more than one slice has an issue in play (the issues in
@@ -188,7 +186,7 @@ commands:
                                                  owner (see tick). A live approve (with no changes verdict standing, as a
                                                  changes stands until a round or a new commit) and, on an issue whose
                                                  lease records a Branch, a merge recorded (merged) are asked for too
-  merged <ids> --sha <sha> [--ran "<command>" --saw "<what-it-printed>" | --red <id>] [--ci pending|green|red|none] [--repo <name-or-path>] [--keep] [--by who] | <ids> --ci <ci-state>
+  merged <ids> --sha <sha> [--ran "<command>" --saw "<what-it-printed>" | --red <id>] [--ci pending|green|red|none] [--repo <name-or-path>] [--keep] --by who | <ids> --ci <ci-state> --by who
                                                  the merge as fields: Merged (sha, and where with --repo) and CI
                                                  (only when given; pending: a pushed commit whose CI will report;
                                                  none: no CI to wait for), and a log line. --ran/--saw record the
@@ -222,8 +220,8 @@ commands:
                                                  coordinator of an issue's slice (the jarl, for an issue in no slice) its
                                                  ready issue, its lease, a proof with no verdict and changes asked, the
                                                  proofs of code with no verdict on one line cut into units one fresh
-                                                 reviewer takes (the issues of one branch, at most four to a unit and
-                                                 named by its branch; every other issue alone); the
+                                                 reviewer takes (the issues of one branch are one unit, named by
+                                                 its branch; every other issue alone); the
                                                  holder the goal's Merger line names (else the jarl) an approve not
                                                  merged; a parent whose sub-issues are all done or dropped is its
                                                  coordinator's to check its own acceptance against the whole, a proof
@@ -237,11 +235,10 @@ commands:
                                                  flags, the verdicts, the questions and the rulings; at most seven lines,
                                                  the owner's first, then by how many issues each holds up, then how many
                                                  more; --all every line and the issues waiting on that one, "waits on X
-                                                 via N"; under an external scheduler the issues in play are left out and
-                                                 the composer's command named; --slice <coordinator> offers only the
+                                                 via N"; --slice <coordinator> offers only the
                                                  issues of that coordinator's slice: across slices only leases hold, and
                                                  an open issue reserves its files against the issues of its own slice
-  review <ids> <verdict> --by <reviewer> [--model <model-id>] [--relayed] [--bot] [--artifact <path>] [--outside "<finding-outside-the-issue>"]... [--field "<name=value>"]... "<text>"
+  review <ids> <verdict> --by <reviewer> --model <model-id> [--relayed] [--bot] [--artifact <path>] [--outside "<finding-outside-the-issue>"]... [--field "<name=value>"]... "<text>"
                                                  the reviewer's verdict; --model is the model the reviewer was raised on
                                                  (stored as given); --artifact is the render or file the verdict judged:
                                                  the value is a relative path inside the repository the work is in,
@@ -258,11 +255,10 @@ commands:
                                                  colon, a quote, a ~ or a !, a control, format or invisible character,
                                                  another space) is refused; it is stored as given, trimmed of the spaces
                                                  around it; show prints it with the verdict and report counts it; it
-                                                 gates nothing, and the first raises the record format to 3; --relayed
+                                                 gates nothing; --relayed
                                                  marks a verdict recorded by someone else in
                                                  the reviewer's name, for a reviewer that cannot be resumed to record its
-                                                 own; --bot records it as the verdict of the bot --by names (the first
-                                                 raises the record format to 3); --outside (repeatable) is a finding outside the issue: each is
+                                                 own; --bot records it as the verdict of the bot --by names; --outside (repeatable) is a finding outside the issue: each is
                                                  filed as a new issue, Found by the reviewer and Where the review, and
                                                  never turns the verdict to changes, so changes whose only Critical or
                                                  Important findings are outside is refused; --field (repeatable) is a
@@ -279,8 +275,8 @@ commands:
                                                  clears only there), and the worker's Proof row; an approve on an issue with no Proof row says so;
                                                  findings need at least three words; a verdict is taken back with retract;
                                                  a verdict on several ids is one review: each of its lines carries one
-                                                 batch id, and the first raises the record format to 3
-  round <ids> "<text>" [--findings <n>] [--by who]
+                                                 batch id
+  round <ids> "<text>" [--findings <n>] --by who
                                                  one red round on each, with the count of findings it left if given; every third round,
                                                  or every n-th where the goal's "Takeover (<kind>): <n>" line for the issue's kind
                                                  or its bare "Takeover: <n>" line says so, prints the takeover block for a fresh
@@ -290,8 +286,7 @@ commands:
   tick <id> <line-number> --by owner             the owner's tick of an acceptance line only he ticks, by its number among
                                                  the issue's acceptance lines: a line written "[owner] <line> · material:
                                                  <material> · check: <what-to-check>" (new and field refuse a
-                                                 line so marked that names no material or nothing to check, and its first
-                                                 write raises the record format to 3); done refuses while such a line is
+                                                 line so marked that names no material or nothing to check); done refuses while such a line is
                                                  not ticked; tick refuses a name other than the owner's, and a line whose
                                                  material is not there yet: no --ran/--saw row after the work was started or
                                                  sent back, or, for a path, no file under the loop's root, the issue's
@@ -328,7 +323,7 @@ commands:
                                                  acted on; read in --repo alone, else in the loop's own
                                                  repository, every repository an open or in-progress issue
                                                  names and every one where an issue not dropped records a Branch
-  ask "<text>" [--kind stop|stuck|lower|charter|ratify|escalation|rule] [--target x] [--issue 7] [--slice <coordinator>] [--option "<label:effect>"]... [--applies-to "<selectors>" [--until <date-or-id>] [--to owner]] [--by who]
+  ask "<text>" [--kind stop|stuck|lower|charter|ratify|escalation|rule] [--target x] [--issue 7] [--slice <coordinator>] [--option "<label:effect>"]... [--applies-to "<selectors>" [--until <date-or-id>] [--to owner]] --by who
                                                  a question the owner has to answer; lower needs --target; stuck with
                                                  --issue and --by the holder of its lease goes up instead, to the
                                                  director of the issue's slice (the jarl with no slice), and to the
@@ -377,7 +372,7 @@ commands:
                                                  <coordinator> keeps in flight, waiting, the questions, held and next
                                                  ready to that coordinator's slice, and the rulings, the merge queue,
                                                  the tips and the log whole
-  log "<text>" [--by who]                       append one dated note to the journal; a line that reads as a filing, a move,
+  log "<text>" --by who                       append one dated note to the journal; a line that reads as a filing, a move,
                                                  a round, a verdict, a retraction, an evidence row, a merge, a CI state or
                                                  a body change is refused, and the refusal names the command that writes it
   decide <slug> "<text>" --by <who> [--quote "<his-own-words>"] [--under <slug>] [--supersedes <slug>] [--settles <ids>] [--waives-review <ids>] [--applies-to "<selectors>" [--until <date-or-id>]] [--area <type> [--reach n] [--rule <id>]]
@@ -404,7 +399,7 @@ commands:
   decisions [--live]                             the rulings with who ruled and what superseded them; --live only
                                                  those still in force
   goal                                           the goal as goal.md holds it
-  goal --set "<machine-line>" [--by who]         one machine line of the goal set, with a log line that says what it
+  goal --set "<machine-line>" --by who         one machine line of the goal set, with a log line that says what it
                                                  was and what it is: "Check (<name>): <command>" or a bare
                                                  "Check: <command>", "Model (<tier>): <model-id>" (a tier the profile
                                                  declares), "Coordinators: <names>" (each name a coordinator, which runs the slice of
@@ -432,8 +427,7 @@ commands:
                                                  that disagrees is never believed, and status prints one "record:" line
                                                  for it, with how to write the header back or make it the record (resume
                                                  and show print it too; --json carries disagreements when there are any)
-                                                 the goal, when the loop opened and last moved, its record format (and,
-                                                 where a composer runs the loop, what is off there),
+                                                 the goal, when the loop opened and last moved,
                                                  then one line: open, in flight, waiting, done, dropped, deferred,
                                                  open questions, to ratify, merged with CI pending or red; then who
                                                  reviewed the done work (fresh, coordinator, self, unrecorded, and
@@ -448,7 +442,7 @@ commands:
                                                  repository, tag, kind, priority or a field the profile declares; --group repo
                                                  also prints where each repository is on this machine, its base and
                                                  whether its checkout is on it
-  archive "<slug>" [--by who]                    put the current loop away under .jarl/archive/yyyy.mm.dd-<slug>/,
+  archive "<slug>" --by who                    put the current loop away under .jarl/archive/yyyy.mm.dd-<slug>/,
                                                  keeping the archive, the mode markers and .jarl/templates/, so init
                                                  can open a new loop here in the same mode; refused under a profile
                                                  whose "lifecycle" keeps archive to the record (it names the command)
@@ -466,14 +460,14 @@ commands:
   changelog <ids> [--repo <name-or-path>]           print the issues' ## Changelog entries grouped by section (Added,
                                                  Changed, Deprecated, Removed, Fixed, Security), ready to paste under
                                                  [Unreleased]; per repository when they span several; reads only
-  mode permanent [--by who]                      switch an existing committed loop to the permanent mode, with a
+  mode permanent --by who                      switch an existing committed loop to the permanent mode, with a
                                                  log line; refuses a default-mode loop (out of git — a permanent
                                                  record must be committed) and an already-permanent one
   profile [<profile.json>]                       read-only: the loop's profile — its statuses and what each one means
                                                  (dispatchable, lease, settles-dependents, terminal, closes-record,
                                                  needs-reason), the status a new issue starts in, the values of Kind and
                                                  Tier, the fields and sections its issues carry and the heading of their
-                                                 acceptance, the record format beside the formats this Jarl reads; the
+                                                 acceptance; the
                                                  built-in one when the loop has none; with a file, that file checked
                                                  against the profile schema instead; a profile's "models" names the
                                                  strongest model the loop may use ("ceiling", read by its tier) and the
@@ -481,13 +475,13 @@ commands:
                                                  no usage or budget from the host; next, the takeover and the notes of the
                                                  fresh-review rule keep under it, and profile refuses a model no Model
                                                  line of the goal places
-  extend section "<name>" | extend field "<name>" [--values "<items>"] [--default "<value>"] [--required] [--by who]
+  extend section "<name>" --by who | extend field "<name>" [--values "<items>"] [--default "<value>"] [--required] --by who
                                                  add one section or one field to the profile of a live loop (a loop
                                                  with none gets one, with the built-in statuses), checked as profile
                                                  <profile.json> checks a file, with a log line; the issues already filed
                                                  are not rewritten and carry the part once field writes it, a new issue
                                                  is filed with it (a field's default when none is given); refused in a
-                                                 loop a composer runs
+                                                 loop whose profile keeps its lifecycle to the record
   use [<path>]                                   read-only: with no path, the loops under this checkout, found by a walk
                                                  at most 4 levels down that enters no hidden directory, no node_modules
                                                  or vendor, and no other checkout (a worktree, a submodule); with a path
@@ -498,15 +492,13 @@ commands:
   verify                                         read-only, with no lock and no network: the record read strictly. Each
                                                  reader lists the lines it does not place (the log, the goal, the issue
                                                  headers, the questions and the rulings), the profile is checked, a
-                                                 retraction must point at an entry the log holds, a line that needs the
-                                                 raised record format is found in a loop that is not in it (the check
-                                                 names the loop's format), a header
+                                                 retraction must point at an entry the log holds, a header
                                                  that disagrees with the log is listed, each declared repository is
                                                  checked by name and root commits, each worktree a lease holds belongs
                                                  to a repository its issue names, and an open issue that cites a
                                                  superseded ruling is listed; prints each check with its first findings,
                                                  and exits 2 when it finds something
-  close [--force] [--batch] [--by who]           refuse while anything is open or in progress, and, where it removes .jarl/,
+  close [--force] [--batch] --by who           refuse while anything is open or in progress, and, where it removes .jarl/,
                                                  while anything is deferred (the refusal names archive "<slug>", which
                                                  keeps the loop under .jarl/archive/, and --force, which removes the
                                                  loop with its open and deferred issues, keeping no copy); else remove the live
@@ -530,7 +522,7 @@ options: --json  --help  --root <loop-root>   (the directory holding .jarl/; wit
          subdirectory; a note names the loops below it, and where the root holds none and loops are below, a call
          that names none is refused with their list, init, use and profile with a file excepted)
 
-The list of what only the command line does, next to the record library, is in the skill: references/composers.md, section "What only the command line does".
+The list of what only the command line does, next to the record library, is in the skill's references, in the section "What only the command line does".
 
 git merges (not loop commands: no --root, no lock, no tool of the MCP server):
   merge-driver decisions %O %A %B                the driver git runs for .jarl/decisions.md (%O %A %B): the rulings of
@@ -547,10 +539,7 @@ all of them or on none, with one log line per issue.
 
 An issue number is a plain number: 7, 195, 1000. A number written with leading zeros (007) or with a # (#7) is the
 same issue as 7. Questions are numbered the same way (a-7, a-1000). Numbers are compared as numbers, so 999 comes
-before 1000. Jarl never raises the record format of a loop whose profile names an external scheduler: a new number
-is written there with three digits (007), which every record format reads, and a write that needs a raised format (a
-retraction, a repository given by its name alone, a number of 1000 or more) is refused, naming what it would have
-written; a repository given by its path keeps its path there.
+before 1000.
 
 Flags: a flag the command does not take is an error. A value flag takes the next argument whatever it
 starts with (--ran "--help" records a row), or inline as --flag=value. A bare -- ends the flags: put a
@@ -577,14 +566,12 @@ an item that begins or ends with a quote mark, a name (an id, a tag, a reference
 a bracket or a quote, and a path whose brackets do not pair up ([a, b]) or that is a quoted or empty list
 in brackets (["a"], []). A path whose brackets pair up is a name: [1], src/[id]/page.tsx, [...slug].
 
---by who, on every command that writes and on no other, is the author of that one call. On field and split it is who
-changed the description, on review the reviewer, on answer, decide, retract and tick who answered, ruled, retracted or
-ticked; on the rest (init, new, import, evidence, set, merged, round, ask, log, goal, base, archive, mode, close,
-renumber) it is the writer, written into every log line the call writes, right after the stamp ("- yyyy-mm-dd hh:mm by <who>
-· ..."); the first such line raises the loop's record format to 3, and where a composer keeps the format the call is
-refused with nothing written. Nothing names an author for a call that names none: no server, variable or other call
-does, and an unnamed lease shows as "(unnamed)" in a loop whose goal names coordinators. Grouping is --group (status,
-models), and --kind is the kind of what a command files or filters.
+--by who is required on every command that writes, and is written into every log line the call writes, right after the
+stamp ("- yyyy-mm-dd hh:mm by <who> · ..."); on field and split it is also who changed the description, on review the
+reviewer, on answer, decide, retract and tick who answered, ruled, retracted or ticked. A write with no --by is refused:
+every write says who made it, and the name is never read from a server, a variable or another call. A lease and a verdict
+name their model with --model, a lease its worker with --worker. Grouping is --group (status, models), and --kind is the
+kind of what a command files or filters.
 
 Writes: every command that writes holds .jarl/.lock while it runs (the holder's pid, host and time are
 inside), so parallel calls from workers, reviewers and the merger queue instead of losing each other's
@@ -599,10 +586,8 @@ checkout (beside it, under its name); on a machine laid out differently, a symli
 puts it there. The Repo field stores the name where the checkout sits at that place, and the path
 otherwise (a note on stderr says why); a path is read from the loop's root, so it means the same from
 any worktree. A name needs no path in the record: Jarl declares it once in .jarl/repos.md, with the
-repository's root commits, its origin as found and its base branch, and the loop's record format
-rises with the first name (a record carries its format, and Jarl refuses a format it does not read). In a loop of the
-raised format a Repo value that starts with . or / (or a drive letter) is a path and anything else
-a name. An issue that names a repository writes each of its files with that repository's directory
+repository's root commits, its origin as found and its base branch. A Repo value that starts with . or / (or a drive
+letter) is a path and anything else a name. An issue that names a repository writes each of its files with that repository's directory
 name first (tool/src/a.mjs for Repo tool): next then keeps the same path in two repositories apart,
 and scope matches the path after the name. An issue may name several repositories (Repo: tool, lib):
 each file then starts with the name of the one it is in (one with no such name is in the first), and

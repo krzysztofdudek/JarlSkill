@@ -10,7 +10,7 @@ import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSyn
 import { basename, join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { commandSpans, jarl, SCRIPT } from './helpers.mjs';
+import { commandSpans, jarl, SCRIPT, withNames } from './helpers.mjs';
 import { bashBin, NO_EXCLUDES } from './portable.mjs';
 
 const J = await import('../jarl.mjs');
@@ -122,7 +122,7 @@ export function drop(cwd) {
   TOPS.delete(cwd);
   rmSync(top, { recursive: true, force: true, maxRetries: 3 });
 }
-export const run = (cwd, args) => spawnSync(process.execPath, [SCRIPT, ...args], { cwd, encoding: 'utf8', timeout: 60000 });
+export const run = (cwd, args) => spawnSync(process.execPath, [SCRIPT, ...withNames(args)], { cwd, encoding: 'utf8', timeout: 60000 });
 
 // ---- the shells -------------------------------------------------------------------------------------------------------
 
@@ -293,7 +293,7 @@ export function formProblems(args, said, loop, opts = {}, wrong = null) {
   if (opts.profile?.lifecycle?.command && lines.at(-1) === opts.profile.lifecycle.command) return [];
   const { reason, commands } = partsOf(said);
   if (!commands.length || !reason.trim()) return [`no reason and form on lines of their own: ${lines.at(-1)}`];
-  const given = args.map(String);
+  const given = withNames(args).map(String);
   const cmd = J.callOfArgv(given).cmd;
   const problems = [];
   const parsed = [];
@@ -520,7 +520,7 @@ export function generateWrongCalls() {
     if (IDS_AT[cmd] !== undefined) { const wrong = [...valid]; wrong[at[IDS_AT[cmd]]] = '99'; add([cmd, ...wrong], '99'); }
   }
   // A write that records a judgement, with its author left out: the reason names --by.
-  for (const cmd of Object.keys(J.AUTHOR_REQUIRED)) { const valid = VALID[cmd]; const at = valid.indexOf('--by'); if (at !== -1) add([cmd, ...valid.slice(0, at), ...valid.slice(at + 2)], '--by'); }
+  for (const cmd of Object.keys(J.AUTHOR_REQUIRED)) { const valid = VALID[cmd]; if (!valid) continue; const at = valid.indexOf('--by'); if (at !== -1) add([cmd, ...valid.slice(0, at), ...valid.slice(at + 2)], '--by'); }
   // Calls refused for the state of the loop: a close with work open, a loop out of git made permanent.
   add(['close'], null); add(['close', '--by', 'jarl'], null); add(['mode', 'permanent'], null);
   // Each removed flag, and each removed command, given extra words.

@@ -160,7 +160,7 @@ test('with no lease on record one named row proves a mechanical line, and a row 
   assert.equal(stateOf(root)[2], 'proved');
   assert.equal(jarl(root, 'set', '1', 'done', 'by the director'), '1 → done');
   const unnamed = loopOf('[test] the export is written');
-  jarl(unnamed, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 3', '--line', '1');
+  R.addEvidence(unnamed, '1', undefined, { line: 1, ran: 'npm test', saw: 'pass 3' });
   approve(unnamed, 'jarl');
   assert.match(refuses(unnamed, 'set', '1', 'done', 'try'), /line 1 \[test\] unproved: a counted row by a named writer/);
   const compared = loopOf('[compare] the report is unchanged · by: node report.mjs');
@@ -207,7 +207,7 @@ test('a [read] line needs a live approve, a waiver or a profile with no approve 
   assert.equal(jarl(waived, 'set', '1', 'done', 'on the waiver'), '1 → done');
   const profile = join(mkdtempSync(join(tmpdir(), 'jarl-methods-profile-')), 'profile.json');
   const { dir, g } = gitRepo({ prefix: 'jarl-methods-noapprove-', branch: 'main' });
-  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, format: 1, name: 'landed', statuses: L.BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true, approve: 'none' } }));
+  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, name: 'landed', statuses: L.BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true, approve: 'none' } }));
   jarl(dir, 'init', 'work', '--profile', profile);
   jarl(dir, 'new', 'the work', '--acceptance', '[read] the docs describe the new default');
   jarl(dir, 'set', '1', 'in-progress', 'go', '--worker', 'w1');

@@ -32,7 +32,7 @@ for (const [what, pair, reason] of [
       const said = refusedImport(root, file, '--field', pair, ...dry);
       assert.match(said, reason);
       assert.doesNotMatch(said, /cannot be filed|finding "/, 'no finding is blamed for the flag');
-      assert.match(said, new RegExp(`\\njarl\\.mjs import "<findings\\.json>" --source "?[^ \\n]+"? --field "<name=value>"${dry.length ? ' --dry-run' : ''}\\n$`));
+      assert.match(said, new RegExp(`\\njarl\\.mjs import "<findings\\.json>" --by "<who>" --source "?[^ \\n]+"? --field "<name=value>"${dry.length ? ' --dry-run' : ''}\\n$`));
     }
     assert.equal(json(root, 'list', '--all').length, 0);
   });
@@ -42,7 +42,7 @@ test('with a right --field, a finding whose own text the filing refuses is still
   const root = areas();
   const said = refusedImport(root, findingsFile([good(1), BAD]), '--field', 'Area=web');
   assert.match(said, /^finding "finding-bad" cannot be filed: .*holds an opening and a closing why tag/);
-  assert.match(said, /\njarl\.mjs import "<findings\.json>" --dry-run\n$/);
+  assert.match(said, /\njarl\.mjs import "<findings\.json>" --dry-run --by "<who>"\n$/);
   const out = imports(root, findingsFile([{ ...good(1), Area: 'nowhere' }]), '--field', 'Area=web');
   assert.match(out, /extra keys let through, not read: Area \(1 finding\)/);
   assert.equal(json(root, 'show', '1').fields.area, 'web');
@@ -61,7 +61,7 @@ test('the refusal of a finding ends with a form of the import, and a dry run ref
   const root = loop();
   const file = findingsFile([good(1), BAD]);
   const said = refusedImport(root, file);
-  assert.match(said, /\njarl\.mjs import "<findings\.json>" --dry-run\n$/);
+  assert.match(said, /\njarl\.mjs import "<findings\.json>" --dry-run --by "<who>"\n$/);
   assert.equal(refusedImport(root, file, '--dry-run'), said);
 });
 
@@ -71,5 +71,5 @@ test('a flag the filing refuses is refused before the first write, with the form
   const file = findingsFile([good(1), good(2)]);
   const said = refusedImport(root, file, '--adopt', '--tier', 'huge');
   assert.match(said, /--tier must be one of: light, standard, strong \(got "huge"\)/);
-  assert.match(said, /\njarl\.mjs import "<findings\.json>" --source "?[^ \n]+"? --adopt --tier "<tier>"\n$/);
+  assert.match(said, /\njarl\.mjs import "<findings\.json>" --by "<who>" --source "?[^ \n]+"? --adopt --tier "<tier>"\n$/);
 });

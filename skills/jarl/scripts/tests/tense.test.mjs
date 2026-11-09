@@ -26,9 +26,8 @@ const TENSE_FLAGS = [
   [/\balias(?:es|ed)? (?:tools?|commands?|flags?|names?|of)\b|\b(?:tool|command|flag|verb) aliases?\b/i, 'an alias of a command or a flag'],
   [/\((?:issues?|tickets?|packages?|rounds?|tasks?)\s+(?:#?\d|N\b)|(?:^|[^-a-z])(?:issues?|tickets?|packages?|rounds?|tasks?)\s+(?:#?\d|N\b)|#\d{2,}|field report|the review found|as asked by/i, 'a task by number or the story of a task'],
 ];
-// The only text the families do not read: the name of the record contract, which is its version, and the path of the
-// frozen reader and of the fixture it loads.
-const TENSE_ALLOWED = [/jarl-record\/\d+/g, /old-jarl(?:\.mjs)?/g, /fixtures\/jarl-6\.1\.0\//g];
+// The only text the families do not read: the name of the record contract, which is its version.
+const TENSE_ALLOWED = [/jarl-record\/\d+/g];
 // The names of a script that the families read by their words (camel case and underscores split), and the names the
 // output keeps: each is a key the tests assert in the JSON the tools print, and renaming it would change that output.
 const NAME_FLAGS = /^(?:legacy|retire[ds]?|older|backward|backwards|compatible|migrate[sd]?|formerly)$/;
@@ -200,9 +199,8 @@ function tenseTexts() {
   // The Runes vendoring tool is compared byte for byte with Runes' own copy by the vendor gate, so it is changed in Runes only.
   const scripts = [...readdirSync(SCRIPTS).filter((f) => f.endsWith('.mjs') && f !== 'runes.mjs'), ...readdirSync(join(SCRIPTS, 'lib')).filter((f) => f.endsWith('.mjs')).sort().map((f) => `lib/${f}`)];
   const source = scripts.flatMap((f) => sourceTokens(`skills/jarl/scripts/${f}`, read(`skills/jarl/scripts/${f}`)));
-  // The frozen reader is the one file of the tests that names its version, and no rule reads it. The record contract's
-  // test keeps two comments this rule would flag (on the frozen fingerprint and on a retracted row), so its comments are not read here.
-  const tests = readdirSync(TESTS).filter((f) => f.endsWith('.mjs') && f !== 'old-jarl.mjs' && f !== 'record-contract.test.mjs');
+  // The record contract's test keeps two comments this rule would flag (on the frozen fingerprint and on a retracted row), so its comments are not read here.
+  const tests = readdirSync(TESTS).filter((f) => f.endsWith('.mjs') && f !== 'record-contract.test.mjs');
   const testComments = tests.flatMap((f) => commentLines(`skills/jarl/scripts/tests/${f}`, readFileSync(join(TESTS, f), 'utf8')));
   const workflows = readdirSync(join(REPO, '.github/workflows')).filter((f) => f.endsWith('.yml')).sort().flatMap((f) => workflowLines(`.github/workflows/${f}`, read(`.github/workflows/${f}`)));
   return [...markdown, ...derivedLines(), ...source, ...testComments, ...workflows];
@@ -251,10 +249,10 @@ test('the tense test reads the comments and the names of a workflow file, and no
   assert.equal(tenseHits(lines).length, 2, 'the task number and the version-shaped token');
 });
 
-test('the tense test names each family in a sample, and the allow-list passes only the record contract name, the frozen reader path and the two output keys', () => {
+test('the tense test names each family in a sample, and the allow-list passes only the record contract name and the two output keys', () => {
   const samples = ['Jarl 6.2.0 reads it.', 'the v2 shape', 'a version of N.N', 'an X.Y.Z tag', 'an older loop', 'it no longer runs', 'it is new in the tool', 'it used to need a flag', 'a legacy file', 'it is retired', 'it stays compatible with the reader', 'it was migrated', 'a backward rule', 'an issue N of the loop', 'a (issue N) note', 'a previous version', 'before this release', 'a later release', 'the next release', 'the old name of the flag', 'the user decides', 'an alias of check', 'since the last release', '(issue 281)', 'ticket 3 is open', 'round 3 failed', 'see #281', 'the field report', 'the review found it'];
   for (const sample of samples) assert.ok(tenseHits([{ where: 'x', text: sample }]).length, sample);
-  const passes = ['the lease since the last start', 'an earlier round', 'the earlier verdict', 'a row from before a reopen', 'a migration of the record', 'an alias such as the family name', 'a row of the evidence', 'the usage of --issue 7', 'jarl-record/1 is the contract', 'the frozen reader at tests/old-jarl.mjs', 'fixtures/jarl-6.1.0/jarl-lib.mjs', 'the owner rules', 'a round <ids> call'];
+  const passes = ['the lease since the last start', 'an earlier round', 'the earlier verdict', 'a row from before a reopen', 'a migration of the record', 'an alias such as the family name', 'a row of the evidence', 'the usage of --issue 7', 'jarl-record/1 is the contract', 'the owner rules', 'a round <ids> call'];
   for (const sample of passes) assert.deepEqual(tenseHits([{ where: 'x', text: sample }]), [], sample);
   const lib = 'skills/jarl/scripts/lib/resume.mjs:1';
   assert.deepEqual(tenseHits([{ where: lib, text: 'legacyHandoff', kind: 'name' }, { where: lib, text: 'retired', kind: 'name' }]), []);

@@ -3,11 +3,11 @@
 // reason. A handover is logged in a shape every reader places, and the views stop alarming about the lease it ended.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { gitRepo, jarl, refuses, run, loop } from './helpers.mjs';
-import { oldJarl, formatTwoJarl, fileAsBefore } from './old-jarl.mjs';
+import { gitRepo, jarl, refuses, run, spawnJarl, loop } from './helpers.mjs';
+import { fileThreeDigits } from './helpers.mjs';
 import * as R from '../record.mjs';
 
 const logText = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
@@ -28,8 +28,8 @@ test('a second lease on an issue another lease holds is refused, names the holde
   const before = logText(root);
   const said = refuses(root, 'set', '1', 'in-progress', 'B', '--branch', 'jarl/1-one-b', '--worker', 'wB');
   assert.match(said, /1 is leased already \(worker wA, branch jarl\/1-one, since /);
-  assert.match(said, /set 1 in-progress "<why-the-worker-changed>" --branch jarl\/1-one-b --worker wB --handover/, 'the reason names the command that hands the issue over');
-  assert.equal(said.trim().split('\n').at(-1), "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --branch \"<worker-branch>\" --worker \"<the-new-worker>\" \"<--handover-or-none>\"", 'the refusal ends with its form, the handover the caller\'s to give');
+  assert.match(said, /set 1 in-progress "<why-the-worker-changed>" --branch jarl\/1-one-b --model test-model --worker wB --handover/, 'the reason names the command that hands the issue over');
+  assert.equal(said.trim().split('\n').at(-1), "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --by \"<who>\" --model \"<model-id>\" --branch \"<worker-branch>\" --worker \"<the-new-worker>\" \"<--handover-or-none>\"", 'the refusal ends with its form, the handover the caller\'s to give');
   assert.equal(logText(root), before, 'nothing was written');
   const one = JSON.parse(jarl(root, 'show', '1', '--json'));
   assert.equal(one.fields.worker, 'wA');
@@ -40,10 +40,11 @@ test('the same holder restating its lease, or a move that names no lease, is not
   const { root } = twoOnOneFile();
   jarl(root, 'set', '1', 'in-progress', 'A', '--branch', 'jarl/1-one', '--worker', 'wA');
   jarl(root, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/1-one', '--worker', 'wA', '--model', 'some-model');
-  jarl(root, 'set', '1', 'in-progress', 'still going');
-  // A lease that names no worker yet is filled in, not replaced.
+  assert.equal(spawnJarl(root, ['set', '1', 'in-progress', 'still going', '--by', 'jarl'], { bare: true }).status, 0);
+  // A lease the record holds with no worker, as a conversion can carry one over, is filled in, not replaced.
   jarl(root, 'field', '2', 'files', 'g.txt');
-  jarl(root, 'set', '2', 'in-progress', 'reserved');
+  const key = logText(root).match(/ key (\S+) by [^·]+· filed 2 /)[1];
+  appendFileSync(join(root, '.jarl', 'log.md'), `- 2026-11-08 12:00 key ${key} by unrecorded · 2 → in-progress · reserved\n`);
   jarl(root, 'set', '2', 'in-progress', 'raised', '--branch', 'jarl/2-two', '--worker', 'wC');
   assert.equal(JSON.parse(jarl(root, 'show', '2', '--json')).fields.worker, 'wC');
 });
@@ -190,14 +191,14 @@ test('issues leased in one call, or added to the lease that holds their file, sh
 test('a handover with its reason is accepted and logged, and the new lease replaces the old one', () => {
   const { root } = twoOnOneFile();
   jarl(root, 'set', '1', 'in-progress', 'A', '--branch', 'jarl/1-one', '--worker', 'wA', '--model', 'm-one');
-  const out = JSON.parse(jarl(root, 'set', '1', 'in-progress', 'context grew far beyond the others', '--branch', 'jarl/1-one-b', '--worker', 'wB', '--handover', '--json'));
+  const out = JSON.parse(jarl(root, 'set', '1', 'in-progress', 'context grew far beyond the others', '--branch', 'jarl/1-one-b', '--worker', 'wB', '--model', 'm-two', '--handover', '--json'));
   assert.equal(out.handover, true);
   assert.equal(out.worker, 'wB');
-  assert.match(logText(root), /· 1 → in-progress · context grew far beyond the others · handover · branch jarl\/1-one-b · worker wB\n/);
+  assert.match(logText(root), /· 1 → in-progress · context grew far beyond the others · handover · branch jarl\/1-one-b · model m-two · worker wB\n/);
   const one = JSON.parse(jarl(root, 'show', '1', '--json'));
   assert.equal(one.fields.worker, 'wB');
   assert.equal(one.fields.branch, 'jarl/1-one-b');
-  assert.equal(one.fields.model, undefined, 'the old worker\'s model is not the new one\'s');
+  assert.equal(one.fields.model, 'm-two', 'the old worker\'s model is not the new one\'s');
   assert.equal(run(root, ['verify']).status, 0, 'verify places the line');
 });
 
@@ -214,15 +215,12 @@ test('a handover needs its reason, a lease to replace and a change of holder', (
 
 test('a handover ends the old lease in the views: its worktree is not reported gone and its branch is not an orphan', () => {
   const { dir, g } = gitRepo({ prefix: 'jarl-lease-repo-' });
-  // A loop of format 1 kept in the repository, leased first through the frozen reader's own set, which records the worktree.
   R.initLoop(dir, 'goal');
-  fileAsBefore(dir, 'one', { files: 'f.txt' });
+  fileThreeDigits(dir, 'one', { files: 'f.txt' });
   const oldWt = `${dir}-wt-a`;
   g('worktree', 'add', '-q', '-b', 'jarl/001-a', oldWt);
   g('-C', oldWt, 'commit', '-q', '--allow-empty', '-m', 'first worker');
-  const leased = oldJarl(dir, 'set', {}, ['001', 'in-progress', 'A', { branch: 'jarl/001-a', worker: 'wA', worktree: oldWt }]);
-  assert.equal(leased.ok, true, leased.error);
-  assert.match(header(dir, '001'), /\*\*Worktree:\*\* /);
+  R.setStatus(dir, '001', 'in-progress', 'A', { branch: 'jarl/001-a', worker: 'wA', worktree: oldWt });
   R.setStatus(dir, '001', 'in-progress', 'context grew far beyond the others', { branch: 'jarl/001-b', worker: 'wB', handover: true });
   g('branch', 'jarl/001-b');
   g('worktree', 'remove', '--force', oldWt);
@@ -236,22 +234,6 @@ test('a handover ends the old lease in the views: its worktree is not reported g
   assert.match(jarl(dir, 'branches'), /jarl\/001-a .*HANDED OVER: 001 to jarl\/001-b/);
 });
 
-test('the frozen readers read a handover as the lease it is, with no raise of the format', () => {
-  const root = loop({ prefix: 'jarl-lease-old-' });
-  fileAsBefore(root, 'one', { files: 'f.txt' });
-  R.setStatus(root, '001', 'in-progress', 'A', { branch: 'jarl/001-a', worker: 'wA' });
-  R.setStatus(root, '001', 'in-progress', 'branch moved to a fresh worker', { branch: 'jarl/001-b', worker: 'wB', handover: true });
-  assert.equal(existsSync(join(root, '.jarl', 'profile.json')), false, 'nothing here is misread, so the format stays');
-  for (const [name, reader] of [['6.1.0', oldJarl], ['6.2.0', formatTwoJarl]]) {
-    const read = reader(root, 'list', {});
-    assert.equal(read.ok, true, `${name}: ${read.error}`);
-    const one = read.value.find((i) => i.id === '001');
-    assert.equal(one.fields.worker, 'wB', name);
-    assert.equal(one.fields.branch, 'jarl/001-b', name);
-    for (const command of ['status', 'next', 'queue']) assert.equal(reader(root, command, {}).ok, true, `${name} ${command}`);
-  }
-});
-
 test('the record library holds the lease the same way and takes handover as an option', () => {
   const root = loop({ prefix: 'jarl-lease-lib-' });
   R.newIssue(root, 'one', { acceptance: '[read] it works', });
@@ -260,35 +242,4 @@ test('the record library holds the lease the same way and takes handover as an o
   const out = R.setStatus(root, '001', 'in-progress', 'fresh worker after three rounds', { branch: 'jarl/001-b', worker: 'wB', handover: true });
   assert.equal(out.handover, true);
   assert.equal(R.findIssue(root, '001').fields.worker, 'wB');
-});
-
-test('in a loop its composer schedules, two leases on one file and a second lease are the composer\'s to decide, and nothing refuses them', () => {
-  const composed = mkdtempSync(join(tmpdir(), 'jarl-lease-composed-'));
-  mkdirSync(join(composed, '.git'));
-  const file = join(composed, 'profile-source.json');
-  writeFileSync(file, JSON.stringify({
-    'jarl-profile': 1, format: 1, name: 'composer-x',
-    statuses: {
-      proposed: { flags: [], 'set-by': 'record' },
-      queued: { flags: ['dispatchable'], 'set-by': 'record' },
-      running: ['holds-claim'],
-      merged: { flags: ['settles-dependents', 'terminal', 'closes-record'], 'set-by': 'record' },
-      dropped: ['settles-dependents', 'terminal', 'needs-reason'],
-    },
-    'external-scheduler': 'composer-x.mjs tick',
-    'done-gate': { approve: 'none', 'requires-merged': true },
-  }));
-  R.initLoop(composed, 'a composed goal', { profile: file });
-  // Every issue of one node declares that node's log, and the composer runs them at once.
-  for (const t of ['first issue', 'second issue']) R.newIssue(composed, t, { acceptance: '[read] it works', files: '.yggdrasil/model/orders/log.md, src/orders.mjs' });
-  R.setStatus(composed, '001,002', 'queued', 'planned');
-  R.setStatus(composed, '001', 'running', 'tick', { branch: 'composer-x/001', worker: 'agent-1' });
-  R.setStatus(composed, '002', 'running', 'tick', { branch: 'composer-x/002', worker: 'agent-2' });
-  R.setStatus(composed, '001', 'running', 'lease expired, reassigned', { branch: 'composer-x/001-b', worker: 'agent-3' });
-  assert.deepEqual(['001', '002'].map((id) => R.findIssue(composed, id).fields.worker), ['agent-3', 'agent-2']);
-  assert.equal(existsSync(join(composed, '.jarl', 'profile.json')), true);
-  assert.equal(R.loadProfile(composed).format, 1, 'the composer\'s loop keeps its format');
-  // A handover there is still a handover: checked, and logged.
-  R.setStatus(composed, '002', 'running', 'context grew', { branch: 'composer-x/002-b', worker: 'agent-4', handover: true });
-  assert.match(logText(composed), /002 → running · context grew · handover · branch composer-x\/002-b · worker agent-4\n/);
 });

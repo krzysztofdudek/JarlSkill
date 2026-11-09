@@ -1,8 +1,7 @@
 // An issue tagged in-place is worked in place: its worker writes the files it declares in the checkout of their repository, with no
 // branch and no merge, and they are committed in the main checkout once the approve stands. The lease takes no branch and needs the
 // files declared, which keep two such issues off one file as for any lease. It closes on the commit of its files: a row of
-// its proof names a commit on the branch checked out that changes one of them. The tag is a line of record format 3: its
-// first write raises the loop, and the frozen readers, which would close the issue with no commit named, refuse it. An
+// its proof names a commit on the branch checked out that changes one of them. An
 // issue that carries code is never tagged in-place, and its own gate stays as it is.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,7 +9,6 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileAsBefore, formatTwoJarl } from './old-jarl.mjs';
 import { SPAWN_TIMEOUT, gitRepo, jarl, refuses, run } from './helpers.mjs';
 import { FINDINGS } from './findings.mjs';
 
@@ -32,10 +30,10 @@ test('an issue worked in place is leased with no branch on the files it declares
   assert.match(jarl(root, 'next', '--as', 'jarl'), /jarl\.mjs set 1 in-progress --worker "<name>" --model "<model-id>"/, 'the ready row leases it with no branch');
   let said = refuses(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-guide', '--worker', 'w1', '--by', 'jarl');
   assert.match(said, /^1 is worked in place: its worker writes the files it declares in the checkout of their repository, as it is checked out, with no branch and no worktree of its own/);
-  assert.equal(lastLine(said), 'jarl.mjs set "<ids>" "<status>" --worker "<the-new-worker>" --by "<who>"');
+  assert.equal(lastLine(said), 'jarl.mjs set "<ids>" "<status>" --model "<model-id>" --worker "<the-new-worker>" --by "<who>"');
   said = refuses(root, 'set', '3', 'in-progress', '--worker', 'w3', '--by', 'jarl');
   assert.match(said, /^3 is worked in place and declares no files: it names the files it writes before it is leased/);
-  assert.equal(lastLine(said), 'jarl.mjs field 3 Files "<paths>"');
+  assert.equal(lastLine(said), 'jarl.mjs field 3 Files "<paths>" --by "<who>"');
   jarl(root, 'set', '1', 'in-progress', '--worker', 'w1', '--by', 'jarl');
   const ids = nextIds(root);
   assert.ok(!ids.includes('2'), `the second issue on the same file is held: ${ids.join(', ')}`);
@@ -165,7 +163,7 @@ test('a declared path that climbs out of its repository with .. is refused with 
   jarl(root, 'review', '1', 'approve', '--by', 'rev-1', FINDINGS);
   const said = refuses(root, 'set', '1', 'done', 'written', '--by', 'jarl');
   assert.match(said, /^1 is worked in place, and \.\.\/outside\.md lies outside its repository, so no commit of that repository changes it — an issue worked in place declares the files it writes inside their repository/);
-  assert.equal(lastLine(said), 'jarl.mjs field "<ids>" Files "<paths>"');
+  assert.equal(lastLine(said), 'jarl.mjs field "<ids>" Files "<paths>" --by "<who>"');
 });
 
 test('a declared path with letters beyond ASCII closes on the commit that changes it, which git names unquoted', () => {
@@ -204,7 +202,7 @@ test('a declared file that is a symbolic link is checked as the file it points t
   assert.equal(r.status, 0, r.stderr);
   const said = refuses(root, 'set', '2', 'done', 'written', '--by', 'jarl');
   assert.match(said, /^2 is worked in place, and docs\/out\.md is a symbolic link to a place outside its repository, so no commit of that repository changes the file it points to — /);
-  assert.equal(lastLine(said), 'jarl.mjs field "<ids>" Files "<paths>"');
+  assert.equal(lastLine(said), 'jarl.mjs field "<ids>" Files "<paths>" --by "<who>"');
 });
 
 test('the gate reads the repository its files are in when a hook has pointed git at another one', () => {
@@ -247,27 +245,4 @@ test('the gate finds a repository named by its Repo field from the checkout the 
   const env = { GIT_DIR: join(elsewhere.dir, '.git'), GIT_INDEX_FILE: join(elsewhere.dir, '.git', 'index'), GIT_PREFIX: '' };
   const r = run(hub.dir, ['set', '1', 'done', 'written and committed', '--by', 'jarl'], { env });
   assert.equal(r.status, 0, r.stderr);
-});
-
-test('the tag in-place raises the loop to format 3, which the frozen reader then refuses, and an issue that carries code is never tagged with it', () => {
-  const { root } = placeLoop();
-  fileAsBefore(root, 'a guide filed by the first reader');
-  assert.equal(formatTwoJarl(root, 'list', {}).ok, true);
-  jarl(root, 'field', '1', 'Tags', 'in-place', '--add');
-  assert.equal(JSON.parse(readFileSync(join(root, '.jarl', 'profile.json'), 'utf8')).format, 3);
-  const two = formatTwoJarl(root, 'list', {});
-  assert.equal(two.ok, false, 'the reader that would close it with no commit named refuses the loop');
-  assert.match(two.error, /written for record format 3/);
-  jarl(root, 'new', 'change the code', '--acceptance', '[read] it works');
-  jarl(root, 'set', '2', 'in-progress', '--branch', 'jarl/2-code', '--worker', 'w2', '--by', 'jarl');
-  const said = refuses(root, 'field', '2', 'Tags', 'in-place', '--add');
-  assert.match(said, /^2 carries code \(Branch is recorded\), which its merge lands: an issue worked in place has no branch and no merge, so it is not tagged in-place/);
-  assert.equal(lastLine(said), 'jarl.mjs field "<ids>" Tags "<items>" --add');
-});
-
-test('below format 3 the tag in-place is a tag like any other, and verify says so', () => {
-  const { root } = placeLoop();
-  fileAsBefore(root, 'a guide filed by the first reader', { tags: 'in-place' });
-  const r = run(root, ['verify']);
-  assert.match(r.stdout, /^note: issue 001: its tag in-place marks it as worked in place only in record format 3, and this loop is in format 1/m);
 });

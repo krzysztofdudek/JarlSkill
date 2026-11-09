@@ -12,7 +12,7 @@ test('a committed loop switched to permanent logs the property of the mode, read
   jarl(dir, 'init', 'goal', '--committed');
   jarl(dir, 'mode', 'permanent');
   const last = readFileSync(join(dir, '.jarl', 'log.md'), 'utf8').trimEnd().split('\n').at(-1);
-  assert.match(last, /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · mode → permanent · not tied to a feature branch; close keeps the directory$/);
+  assert.match(last, /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} by test-writer · mode → permanent · not tied to a feature branch; close keeps the directory$/);
 });
 
 test('an ask with a kind that does not exist says the owner decides a ratify item', () => {
@@ -25,16 +25,7 @@ test('an ask with a kind that does not exist says the owner decides a ratify ite
 test('a close with open issues says the owner decides on them, and ends with the question to put to him', () => {
   const root = loop();
   jarl(root, 'new', 'still open', '--acceptance', '[read] it works');
-  assert.match(refuses(root, 'close'), /report them to the owner, who decides whether the loop closes with them \(close --force removes it with them\)\njarl\.mjs ask "<question-for-the-owner>"\n$/);
-});
-
-test('a loop written in a record format this Jarl does not read says what the reader needs, and names no upgrade', () => {
-  const root = loop();
-  writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, format: 9 }));
-  const err = refuses(root, 'list');
-  assert.match(err, /is written for record format 9/);
-  assert.match(err, /the reader needs a Jarl that knows format 9/);
-  assert.doesNotMatch(err, /upgrad/);
+  assert.match(refuses(root, 'close'), /report them to the owner, who decides whether the loop closes with them \(close --force removes it with them\)\njarl\.mjs ask "<question-for-the-owner>" --by test-writer\n$/);
 });
 
 test('a new asks.md opens under the owner heading', () => {

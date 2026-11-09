@@ -2,12 +2,12 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve, dirname, basename } from 'node:path';
-import { IDENTICAL_OUTPUT_TAG, echoWord, fieldText, hole, jarlLine, meantToAlterNothing, namesComparison, need } from './base.mjs';
-import { alignRows, evidenceRows, evidenceTable } from './issues.mjs';
+import { echoWord, fieldText, hole, jarlLine, need } from './base.mjs';
+import { acceptanceLines } from './issues.mjs';
 import { canonical, jarlDir } from './where.mjs';
 import { cmpId } from './ids.mjs';
 import { loadProfile, reviewerRule } from './profile.mjs';
-import { GOAL_FILE, LOG_FILE, appendLog, goalLines, logPath, readGoal } from './journal.mjs';
+import { GOAL_FILE, LOG_FILE, appendLog, goalLines, logPath, needRecordFormat, readGoal } from './journal.mjs';
 import { readText } from './files.mjs';
 import { repoLabel, reposNamed } from './repositories.mjs';
 import { carriesCode, gateOf, inFlightMark } from './gate.mjs';
@@ -154,8 +154,8 @@ function needKnownModels(root, profile, where = 'the profile') {
 // The offer of the Model lines is the answer of a lease, once. A lease that records a model (an agent raised) in a loop
 // whose goal declares no Model line, and in which no offer stands, writes one log line and says the offer in its own
 // answer; a lease that finds the lines present while an offer stands writes the line that closes it, and a lease after
-// the lines are gone again offers once more. A lease that records no model raises nobody (an agent working alone), and
-// a loop run by an external scheduler places its models in its composer: neither writes nor says anything. The log
+// the lines are gone again offers once more. A lease that records no model raises nobody (an agent working alone): it
+// writes and says nothing. The log
 // command refuses a note in the shape of either line, so a free note cannot open or close the offer.
 const OFFER_MARK = /^- \d{4}-\d\d-\d\d \d\d:\d\d(?: key \S+)?(?: by [^·]+)? · models (offered|offer closed) · /;
 function lastOfferMark(root) {
@@ -167,7 +167,6 @@ function lastOfferMark(root) {
 }
 // Called under the write lock right after a lease is written; gives the offer to say, or null.
 export function modelOfferAtLease(root, model) {
-  if (loadProfile(root).scheduler != null) return null;
   const last = lastOfferMark(root);
   if (modelLines(root).declared) {
     if (last === 'offered') appendLog(root, 'models offer closed · the goal declares a Model line at a lease');
@@ -191,20 +190,8 @@ const RULE_WORDS = {
   'other-model': 'the profile asks for a reviewer of a model no worker of the issue was leased on (done-gate "reviewer": "other-model")',
   'model-rank': 'the profile asks for a reviewer of a model ranked at least as the worker\'s (done-gate "reviewer": "model-rank")',
 };
-// A change meant to alter nothing whose comparison is on record: the tag and a proof row that names the comparison. The
-// tag is set by anyone, so alone it lets nothing through; with the row, a light review may clear the change. The row is
-// one the done gate counts (recorded since the last start or reopen, not retracted) and recorded after the last round: a
-// comparison of the code before a round or a reopen is not the comparison of the change as it stands. An issue the log
-// does not hold reads the rows of its file.
-function lightMayClear(loop, issue) {
-  if (!meantToAlterNothing(issue)) return false;
-  const g = gateOf(loop, issue.id);
-  if (!g.tracked) return evidenceRows(issue).some(namesComparison);
-  const lastRound = (loop.eventsById.get(issue.id) || []).reduce((n, e) => (e.type === 'round' ? Math.max(n, e.n) : n), -1);
-  const rows = evidenceTable(issue.sections.evidence).rows;
-  const logged = alignRows(issue.id, rows, g.rowLog);
-  return rows.some((r, k) => logged[k] && logged[k].inWindow && !logged[k].retracted && logged[k].n > lastRound && !r.retracted && r.saw !== '' && namesComparison(r));
-}
+// An issue whose every line is a comparison: a change meant to alter nothing, which its examiner may check with a light model.
+const allCompared = (issue) => { const lines = acceptanceLines(issue); return lines.length > 0 && lines.every((l) => l.startsWith('[compare]')); };
 function modelGap(loop, issue, model, lines, events, rule) {
   const leased = [...new Set(leaseModels(events))];
   if (!leased.length || model == null) return null;
@@ -212,8 +199,8 @@ function modelGap(loop, issue, model, lines, events, rule) {
   const top = Math.max(...leased.map(lines.rank));
   if (top < 0 || lines.rank(model) >= top) return null;
   // A change meant to alter nothing keeps its fresh review, and a light one may give it.
-  if (lightMayClear(loop, issue)) return { light: true, gate: false };
-  return { below: leased.find((w) => lines.rank(w) === top), gap: `${model} ranks below the worker's model`, unplaced: lines.rank(model) < 0, gate: rule === 'model-rank', tagWithoutComparison: meantToAlterNothing(issue) };
+  if (allCompared(issue)) return { light: true, gate: false };
+  return { below: leased.find((w) => lines.rank(w) === top), gap: `${model} ranks below the worker's model`, unplaced: lines.rank(model) < 0, gate: rule === 'model-rank' };
 }
 
 // The notes a verdict gets on the command line, where the loop declares model lines or its profile makes the model a
@@ -225,14 +212,12 @@ function reviewModelNotes(loop, issue, verdict, model, lines, events, rule = 'ag
   if (rule !== 'agent' && !leaseModels(events).length) return [`${issue.id}: the lease of ${issue.id} records no model, so this loop's reviewer rule (done-gate "reviewer": "${rule}") has no worker's model to compare ${model} with — done accepts this approve; the rule holds where the lease names the worker's model`];
   const gap = modelGap(loop, issue, model, lines, events, rule);
   if (!gap) return [];
-  if (gap.light) return [`${issue.id}: a change meant to alter nothing (tag ${IDENTICAL_OUTPUT_TAG}): a light review may clear it, one that checks the comparison of the output before and after covers everything the change touched`];
+  if (gap.light) return [`${issue.id}: every line is a comparison, so a light review may clear it, one that checks the comparison of the output before and after covers everything the change touched`];
   const what = gap.same ? `an approve by the same model as the worker's (${model})` : `${model} ranks below the worker's model (${gap.below})${gap.unplaced ? ' — it is on no model line, and an unplaced model ranks below every placed one' : ''}`;
-  // The tag alone lets nothing through: the issue needs a proof row that names the comparison as well.
-  const tagNote = gap.tagWithoutComparison ? ` (the tag ${IDENTICAL_OUTPUT_TAG} lets a light review clear only with a proof row that names the comparison of the output before and after, and ${issue.id} holds none since its last round or reopen)` : '';
   const beyond = reviewBeyond(limitsOf(loop.profile, lines), lines, [...new Set(leaseModels(events))], gap.gate ? rule : 'agent');
   const limitTail = beyond ? `; ${beyondText(beyond)}` : '';
-  if (gap.gate) return [`${issue.id}: ${what} — a gate in this loop: done refuses this approve, because ${RULE_WORDS[rule]}; an approve that meets it clears the issue${tagNote}${limitTail}`];
-  return [`${issue.id}: ${what} — advice, not a gate: done accepts this approve, because ${RULE_WORDS[rule]}; ${gap.same ? 'a reviewer of another model shares fewer of the worker\'s blind spots' : 'a reviewer of at least the worker\'s rank is the stronger check'}, until \`models\` says otherwise${tagNote}${limitTail}`];
+  if (gap.gate) return [`${issue.id}: ${what} — a gate in this loop: done refuses this approve, because ${RULE_WORDS[rule]}; an approve that meets it clears the issue${limitTail}`];
+  return [`${issue.id}: ${what} — advice, not a gate: done accepts this approve, because ${RULE_WORDS[rule]}; ${gap.same ? 'a reviewer of another model shares fewer of the worker\'s blind spots' : 'a reviewer of at least the worker\'s rank is the stronger check'}, until \`models\` says otherwise${limitTail}`];
 }
 
 // Why done refuses an issue's live approve under the loop's reviewer rule, or null: an approve that names no model, or a
@@ -369,7 +354,7 @@ function modelFacts(loop, label, lines) {
     const top = Math.max(-1, ...[...workers].map(lines.rank));
     // A light approve of a change meant to alter nothing, with its comparison on record, is the review the rule asks for: it
     // is not counted as clearing on a lower-ranked model. The worker's own model still is.
-    const light = lightMayClear(loop, issue);
+    const light = allCompared(issue);
     const ownOrLower = (m) => m != null && workers.size > 0 && (workers.has(modelKey(m)) || (!light && top >= 0 && lines.rank(m) < top));
     const seq = ev.filter((e) => e.type === 'verdict' && e.by || e.type === 'round' || e.type === 'move');
     let lastDone = -1;
@@ -507,10 +492,11 @@ export function cmdModels(root, flags = {}) {
     if (basename(path) === '.jarl' && loopShape(dirname(path)) === 'root') path = dirname(path);
     const shape = loopShape(path);
     need(shape, `${p} is not a loop: it holds no .jarl/ with a log and issues, and is not an archived loop (an archive directory holds ${LOG_FILE} and issues/) — nothing was read`, () => ({ replace: p, value: '<loop-root>' }));
+    if (shape === 'root') needRecordFormat(path, `${echoWord(p)}'s`);
     add(p, path, shape);
   }
   need(sources.length, `no loop to read here: ${echoWord(root)} holds no live loop — name one with --with <loop-root>, or its archives with --archives`, () => ({ flag: '--with', value: '<loop-root>' }));
-  const facts = sources.map((s) => modelFacts(readLoop(s.shape === 'archive' ? s.path : jarlDir(s.path)), s.label, lines));
+  const facts = sources.map((s) => modelFacts(readLoop(s.shape === 'archive' ? s.path : jarlDir(s.path), { archived: s.shape === 'archive' }), s.label, lines));
   const unitRows = facts.flatMap((f) => f.units);
   const verdictRows = facts.flatMap((f) => f.verdicts);
   const tables = (u, v) => { const w = workerTable(u, lines); return { workers: w.rows, reviewers: reviewerTable(v), baselines: w.baselines }; };

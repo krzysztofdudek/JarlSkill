@@ -16,14 +16,14 @@ import { basename, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
-  need, refuse, Refusal, isFix, isExternal, isPlaceholder, hole, HOLE, commandOf, printedLine, commandLine, readyText, breaksLine, escapedEchoes, shellWord, shellOf, printable, printCommand, printingFor, jarlLine, rootPrintable, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdRound,
+  fieldText, need, refuse, Refusal, isFix, isExternal, isPlaceholder, hole, HOLE, commandOf, printedLine, commandLine, readyText, breaksLine, escapedEchoes, shellWord, shellOf, printable, printCommand, MUTATING, writes, signedWords, printingFor, jarlLine, rootPrintable, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdRound,
   cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswerMany, cmdModels, renderModels,
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
   renderProfile, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, workerEvidence, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
-  cmdExtend, needLoop, cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, cmdRetractTick, atLeaseText, issueLinesAtLease, withWriter, editorOf, needFormat, formatState, readProfileFile, FORMAT_LINES, cmdRenumber, cmdSplit,
-  needKnownModels, cmdUse, renderUse, discoverLoop,
+  cmdExtend, needLoop, cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, cmdRetractTick, atLeaseText, issueLinesAtLease, withWriter, editorOf, readProfileFile, cmdRenumber, cmdSplit,
+  needKnownModels, cmdUse, renderUse, discoverLoop, needRecordFormat, UNRECORDED,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
 import { USAGE } from './jarl-usage.mjs';
@@ -152,6 +152,7 @@ export function callOfArgv(argv) {
     // An unknown flag before the command takes no word: the word after it is the command.
     if (eq !== -1) call.flags.push([name, a.slice(eq + 1), '=']);
     else if (shape === 'bool' || (shape === undefined && (call.cmd === undefined || i + 1 >= argv.length || String(argv[i + 1]).startsWith('-')))) call.flags.push([name, true]);
+    else if (NAME_FLAGS.has(name) && i + 1 < argv.length && isFlagWord(argv[i + 1])) call.flags.push([name, undefined]);
     else { call.flags.push([name, argv[i + 1] === undefined ? undefined : String(argv[i + 1])]); i += 1; }
   }
   return call;
@@ -247,7 +248,7 @@ const valueHole = (cmd, k) => hole(FLAG_HOLES[`${cmd} ${k}`] ?? FLAG_HOLES[k] ??
 export const callGlobals = (call) => (call?.flags || []).filter(([k]) => k === 'root' || k === 'json');
 const rootOfCall = (call) => callGlobals(call).filter(([k]) => k === 'root');
 // The flags a call of a command needs beside the ones it gives, so that its form, filled, is a call the command takes and
-// not one refused for a part the form left out: the flag each command requires (the author of a judgement, the key of a
+// not one refused for a part the form left out: the flag each command requires (the writer of a write, the key of a
 // renumbering, the sha of a merge that moves no CI state alone), and the flags one given goes with (a row's --ran and
 // --saw, an attachment's --file and --slot, a wait's --person and --check-when with its --kind, the kind a question's
 // --target, --slice or rule scope belongs to, the scope a rule's --until and --to end and hold, the area a ruling's
@@ -258,6 +259,7 @@ export const GOES_WITH = Object.freeze({
   new: { person: ['check-when', 'kind'], 'check-when': ['person', 'kind'] },
   ask: { target: ['kind'], slice: ['kind'], 'applies-to': ['kind'], until: ['applies-to', 'kind'], to: ['applies-to', 'kind'] },
   decide: { reach: ['area'], rule: ['area'], until: ['applies-to'] },
+  set: { worker: ['model'] },
 });
 // What a form of `cmd` holds when its call gives the flags named in `given`: the flags it needs (above), how many
 // arguments at least, the optional last one included where no flag of the call stands in for it (the value field writes,
@@ -265,7 +267,7 @@ export const GOES_WITH = Object.freeze({
 // that last one left out where such a flag stands in for it, the command taking one or the other and never both.
 export function formNeeds(cmd, given) {
   const has = (k) => given.has(k);
-  const flags = [...(Object.hasOwn(AUTHOR_REQUIRED, cmd) ? ['by'] : []), ...(cmd === 'renumber' ? ['key'] : []), ...(cmd === 'merged' && !has('ci') ? ['sha'] : [])];
+  const flags = [...(Object.hasOwn(AUTHOR_REQUIRED, cmd) || (cmd === 'goal' && has('set')) ? ['by'] : []), ...(cmd === 'renumber' ? ['key'] : []), ...(cmd === 'merged' && !has('ci') ? ['sha'] : []), ...(cmd === 'review' && !has('bot') ? ['model'] : [])];
   for (let grew = true; grew;) {
     grew = false;
     for (const k of [...given, ...flags]) for (const w of GOES_WITH[cmd]?.[k] || []) if (!flags.includes(w)) { flags.push(w); grew = true; }
@@ -334,7 +336,9 @@ export function refusalFor(e, call, platform = process.platform) {
     ? [...fixes.filter((f) => f.first !== undefined).map((f) => commandOf(f.first)), formOf(shaped, fixes.some((f) => f.dashes))]
     : [commandOf(e.ready)];
   let unprintable = false;
-  const printed = lines.map((words) => words.map((w) => (printable(w, shell) ? w : ((unprintable = true), hole('<value>')))))
+  // A form of a write holds its writer, so pasted and filled it is a call the command takes.
+  const signed = lines.map((words) => signedWords(words));
+  const printed = signed.map((words) => words.map((w) => (printable(w, shell) ? w : ((unprintable = true), hole('<value>')))))
     .map((words) => (writes(words) && !words.some((w) => HOLE.test(String(w))) ? [...words, hole('<as-the-reason-says>')] : words));
   // The globals of the call as the shape left them: a shape may name the loop root the form is for.
   const globals = callGlobals(shaped);
@@ -414,7 +418,7 @@ function parseWords(argv) {
     if (value === undefined) {
       // A flag given once already loses the word with no value; else the word gets one.
       const before = flags[name] !== undefined && kind !== 'many';
-      need(i + 1 < argv.length, `--${name} needs a value${before ? ` (it is given ${JSON.stringify(flags[name])} before, and takes one value)` : ''}`, () => (before ? [{ drop: `--${name}`, value: null }, { flag: `--${name}`, value: hole('<value>') }] : { flag: `--${name}`, value: hole('<value>') }));
+      need(i + 1 < argv.length && !(NAME_FLAGS.has(name) && isFlagWord(argv[i + 1])), `--${name} needs a value${before ? ` (it is given ${JSON.stringify(flags[name])} before, and takes one value)` : ''}`, () => (before ? [{ drop: `--${name}`, value: null }, { flag: `--${name}`, value: hole('<value>') }] : { flag: `--${name}`, value: hole('<value>') }));
       value = argv[i + 1];
       i += 1;
     } else inlineNames.add(name);
@@ -467,17 +471,30 @@ export const COMMAND_ARGS = {
   decide: ['slug', 'text'], decisions: [], goal: [], status: [], archive: ['slug'], report: [],
   changelog: ['ids'], mode: ['mode'], close: [], profile: ['file?'], extend: ['part', 'name'], verify: [], use: ['path?'],
 };
-// One sentence per command: what it does, the MCP tool's whole description after "WRITES the loop." or "Read-only.".
-// The rest of what a command takes and does is its block of USAGE, which the jarl_help tool and --help print.
-// The writes that record a judgement, each with the author its --by names: every call of one names it, and its tool
-// requires the field by.
-export const AUTHOR_REQUIRED = Object.freeze({
+// The commands that write: each runs under .jarl/.lock (see withLock).
+export { MUTATING, writes };
+// Whether a printed command (jarl.mjs, then its words) writes: a command of the set above, but goal, which writes only
+// with --set and else reads the goal.
+
+// The writes, each with what its --by names: every write names its writer, on the command line and in its tool, where the
+// field is required. goal writes only with --set and is left out here: its call is refused without --by when it writes.
+const WRITER_WORDS = {
   answer: 'who answered: owner for the owner, jarl on an escalation, or a name',
   decide: 'who ruled: jarl for a choice made under a mandate, owner with quote, or a coordinator',
   review: 'who reviewed: a fresh reviewer\'s name, or jarl',
   retract: 'who takes the record back',
   tick: 'who ticks: owner, as only the owner ticks an owner line',
-});
+};
+const ownWriter = (cmd) => WRITER_WORDS[cmd] ?? 'who makes this write: your own name';
+export const AUTHOR_REQUIRED = Object.freeze(Object.fromEntries([...MUTATING].filter((c) => c !== 'goal').map((c) => [c, ownWriter(c)])));
+// The writes that refuse a missing --by themselves, each with a form of its own: dispatch refuses the others.
+const REFUSE_THEIR_OWN_BY = ['answer', 'decide', 'review', 'retract', 'tick'];
+// A value an identity flag takes is one name: a word that starts with -- is the next flag, never a value.
+const NAME_FLAGS = new Set(['by', 'worker', 'model', 'root']);
+const isFlagWord = (word) => String(word).startsWith('--');
+const NAME_FLAG_HOLES = { by: '<who>', worker: '<the-new-worker>', model: '<model-id>', root: '<loop-root>' };
+// One sentence per command: what it does, the MCP tool's whole description after "WRITES the loop." or "Read-only.".
+// The rest of what a command takes and does is its block of USAGE, which the jarl_help tool and --help print.
 export const COMMAND_SUMMARY = {
   init: 'Open a loop: create .jarl/ with the goal, out of git by default, committed or permanent when asked.',
   new: 'File an issue under the next free number, with its fields and its What, Why and Acceptance; a promise (kind promise) or a wait on an outside person (kind wait, with person and check-when).',
@@ -694,12 +711,6 @@ export function replacedMessage(cmd, args = [], root = null) {
 
 const ARITY = Object.fromEntries(Object.entries(COMMAND_ARGS).filter(([, a]) => !a.some((n) => n.endsWith('...'))).map(([c, a]) => [c, a.length]));
 
-// The commands that write: each runs under .jarl/.lock (see withLock).
-export const MUTATING = new Set(['init', 'new', 'renumber', 'import', 'set', 'field', 'split', 'base', 'merged', 'evidence', 'retract', 'review', 'round', 'tick', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close', 'extend']);
-// Whether a printed command (jarl.mjs, then its words) writes: a command of the set above, but goal, which writes only
-// with --set and else reads the goal.
-export const writes = (words) => MUTATING.has(words[1]) && !(words[1] === 'goal' && !words.some((w) => w === '--set' || String(w).startsWith('--set=')));
-
 // git's side of the loop: the merge driver git runs, and the settings a merger passes it. Neither reads a loop.
 function mergeDriverMain(args) {
   const [what, ...rest] = args;
@@ -801,7 +812,6 @@ function renderBatch(batch, loop) {
 // Where close removed the loop the questions went with it, so no answer is offered for them.
 function renderPromotion(p, loop) {
   if (!p) return '';
-  if (p.off) return `\n${p.off}`;
   if (!p.items.length) return '';
   if (loop === 'removed') return `\n${p.items.length} rule(s) of the loop were offered for promotion and left with it unanswered: close --batch offers them before the loop goes`;
   return `\nrules of the loop to promote (${p.items.length}) — answer each with one way (carry, instructions, law or drop): ${jarlLine('answer', '<question>', '--option', '<option>', '--by', '<who>')}\n${p.items.map((i) => `- ${i.ask} · ${i.question}`).join('\n')}`;
@@ -812,9 +822,9 @@ function renderRuleLog(r, t) {
   if (t.state === 'skipped') return ` · rule ${r.rule} not ratified in its own log: ${t.reason}`;
   return ` · rule ${r.rule} NOT ratified in its own log: ${t.reason}`;
 }
-// A loop whose profile keeps close to the record belongs to the composer that runs it: what the answer says instead of
-// a write, naming the composer and its command.
-function composerOf(root) {
+// A loop whose profile keeps close to the record belongs to the tool that runs it: what the answer says instead of
+// a write, naming that tool and its command.
+function recordKeeperOf(root) {
   const profile = R.loadProfile(root);
   if (profile.lifecycle.close !== 'record') return null;
   return { state: 'skipped', reason: `this loop is run by ${profile.name}, which writes it into the graph with its own code${profile.lifecycle.command ? ` — ${profile.lifecycle.command}` : ''}` };
@@ -847,8 +857,10 @@ export function dispatch(root, commandName, rest, flags) {
 // The writing commands that run where no loop is: init makes one. Every other write needs the loop to exist; the views
 // read an empty one where none is.
 const NEEDS_NO_LOOP = ['init'];
+const UNRECORDED_NAME = new RegExp(`^\\s*${UNRECORDED}\\s*$`, 'i');
 function dispatchCall(root, commandName, rest, flags) {
   const cmd = commandName;
+  needRecordFormat(root);
   if (Object.hasOwn(REPLACED_COMMANDS, cmd)) replacedRefusal(cmd, rest);
   // A placeholder a refusal printed, pasted unfilled, is never recorded: every value the call takes is checked for one.
   // The reason names the placeholders a value holds, never the value, which may hold a line break or anything else.
@@ -858,6 +870,9 @@ function dispatchCall(root, commandName, rest, flags) {
   // An argument the command requires and the call left out is named, and the form has a placeholder for it.
   const missing = (COMMAND_ARGS[cmd] || []).filter((a, n) => !/[?.]$/.test(a) && rest[n] === undefined && !(cmd === 'set' && a === 'status' && flags.header));
   need(missing.length === 0, `${cmd} requires ${missing.map((a) => `its ${a}`).join(' and ')}: the form below has a placeholder for each value`, { retry: true });
+  if (writes(['jarl.mjs', cmd, ...Object.keys(flags).map((k) => `--${k}`)]) && !REFUSE_THEIR_OWN_BY.includes(cmd)) need(flags.by !== undefined, `${cmd} writes the record, and every write names its writer with --by: ${ownWriter(cmd)}`, () => ({ flag: '--by', value: '<who>' }));
+  for (const name of NAME_FLAGS) need(typeof flags[name] !== 'string' || !isFlagWord(flags[name]), `--${name} takes a name, and ${JSON.stringify(flags[name])} reads as a flag`, () => ({ flag: `--${name}`, value: NAME_FLAG_HOLES[name] }));
+  if (flags.by !== undefined && MUTATING.has(cmd)) need(!UNRECORDED_NAME.test(String(flags.by)), `${UNRECORDED} is the mark of a line nobody named a writer for, never a name a call gives — every write says who made it`, () => ({ flag: '--by', value: '<who>' }));
   if (MUTATING.has(cmd) && !NEEDS_NO_LOOP.includes(cmd)) needLoop(root);
   ({ rest, flags } = readLists(cmd, rest, flags));
   resetCaches();
@@ -865,11 +880,10 @@ function dispatchCall(root, commandName, rest, flags) {
   let text;
   let warn = [];   // said on stderr, so a caller reading stdout sees the result alone
   const each = (o, f) => [].concat(o).map(f).join('\n');
-  const writes = MUTATING.has(cmd);
-  const writer = writerOf(root, cmd, rest, flags);
+  const locked = MUTATING.has(cmd);
+  const writer = writerOf(cmd, flags);
   {
-    (writes ? (fn) => withLock(root, fn) : (fn) => fn())(() => withWriter(writer, writer === null ? null : (r) => needFormat(r, 'writer'), () => {
-    if (writer !== null) needWriterFormat(root, cmd, flags);
+    (locked ? (fn) => withLock(root, fn) : (fn) => fn())(() => withWriter(writer, () => {
     switch (cmd) {
       case 'init': out = R.initLoop(root, rest[0], { ...flags, caller: 'cli' }); text = `opened ${out.dir} · ${out.permanent ? 'permanent record, no branch' : out.committed ? 'committed with the work' : 'kept out of git'}${out.profile ? ` · profile ${out.profile}` : ''}`; warn = [out.note, out.modelNote, R.loadProfile(root).models && `the profile names models, and the goal places none yet: add a Model line for each tier, then check the profile — ${jarlLine('goal', '--set', hole('<machine-line>'))}, then ${jarlLine('profile')}`].filter(Boolean).map((n) => `note: ${n}`); break;
       // The command line says caller 'cli': the notes (the tier a new issue got) are for it, never for a library caller.
@@ -919,8 +933,8 @@ function dispatchCall(root, commandName, rest, flags) {
           break;
         }
         const rows = cmdNext(root, { ...flags, all: true });
-        out = rows.scheduler || flags.all ? rows : rows.filter((r) => r.ready);
-        text = rows.scheduler ? rows.note : renderNext(out, flags.all === true, rows.length - out.length);
+        out = flags.all ? rows : rows.filter((r) => r.ready);
+        text = renderNext(out, flags.all === true, rows.length - out.length);
         break;
       }
       case 'review':
@@ -935,7 +949,7 @@ function dispatchCall(root, commandName, rest, flags) {
       case 'scope': out = cmdCheck(root, rest[0], flags); text = `${out.id === null ? `package ${out.ids.join(', ')} on ${out.branch}\n` : ''}${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}${out.notes.length || out.notesOmitted ? `\n${renderCheckNotes(out)}` : ''}`; break;
       case 'branches': out = cmdBranches(root, flags); text = renderBranches(out, root); break;
       case 'ask': out = R.ask(root, rest[0], { ...flags, width: undefined }); text = askText(out); break;
-      // The library's answer (jarl-record/1) takes no opts: --by and --option reach the answer through jarl-lib.mjs, under the lock held here.
+      // --by and --option reach the answer through jarl-lib.mjs, under the lock held here.
       // A judgement names its author: on the command line an answer and a ruling are refused without --by, and the refusal
       // ends with the form of the call, its --by a placeholder. The library takes a call that names nobody.
       case 'answer':
@@ -972,30 +986,18 @@ function dispatchCall(root, commandName, rest, flags) {
   }
   // A ratified area ruling goes to the type's decision log after the answer is recorded and the lock let go: the
   // probe and the write run another tool, which may take a while, and other writers of the loop must not wait on it.
-  // A loop run by a composer (its profile keeps close to the record) is written into the graph by that composer, with
-  // its own code and into the tree it hands over: here the answer is recorded and nothing is sent, so no entry is ever
-  // written twice, nor into a checkout the composer's work never reaches.
+  // A loop whose profile keeps close to the record is written into the graph by the tool that runs it, with its own code
+  // and into the tree it hands over: here the answer is recorded and nothing is sent, so no entry is ever written twice,
+  // nor into a checkout that tool's work never reaches.
   if (cmd === 'answer') text = [].concat(out).map((one) => answered(root, one, warn)).join('\n');
   return { out, text, warn };
 }
 
-// The commands whose --by names the writer of the call: every line the call writes into the log carries it, in its fixed
-// place after the stamp, under record format 3. The commands whose --by is part of what they record (the author of a
-// description change, the reviewer, who answered, ruled or retracted) keep it there: set naming a field and evidence
-// taking a row back are those too.
-export const WRITER_COMMANDS = Object.freeze(['init', 'new', 'renumber', 'import', 'evidence', 'set', 'merged', 'round', 'ask', 'log', 'goal', 'base', 'archive', 'mode', 'close', 'extend']);
-function writerOf(root, cmd, rest, flags) {
-  if (!WRITER_COMMANDS.includes(cmd) || flags.by === undefined) return null;
-  if (cmd === 'set' && setRouteOf(root, rest[1]) === 'field') return null;
-  return editorOf(flags.by);
-}
-// A writer is written in record format 3: a loop that cannot be raised to it (its profile names an external scheduler,
-// or init's profile does) refuses the call before anything is written. The raise itself comes with the call's first line.
-function needWriterFormat(root, cmd, flags) {
-  const line = FORMAT_LINES.writer;
-  const profile = cmd === 'init' ? (flags.profile !== undefined ? readProfileFile(flags.profile).profile : null) : R.loadProfile(root);
-  if (profile === null || profile.format >= line.format || formatState(profile).raises) return;
-  refuse(`${line.what} (--by) needs record format ${line.format}, and this loop stays at format ${profile.format}: its profile names an external scheduler (${profile.scheduler}), the composer that reads this record, so Jarl never raises its format; leave --by out there — nothing was written`, { rename: '--by', to: '<no-flag-here>' });
+// The writer of a call: the name its --by gives, written into every line the call writes, in its fixed place after the stamp.
+function writerOf(cmd, flags) {
+  if (!MUTATING.has(cmd) || flags.by === undefined) return null;
+  // A write that refuses a bad --by itself says so in its own words: an empty one reaches that refusal.
+  return REFUSE_THEIR_OWN_BY.includes(cmd) && !fieldText(flags.by) ? null : editorOf(flags.by);
 }
 
 // The flags of a grouping view with --group handed on as the grouping the library reads (by).
@@ -1022,16 +1024,16 @@ const renderEvidence = (o) => (o.retractedNote ? `${o.id} evidence note ${o.retr
 const renderReview = (o) => (o.retracted ? `${o.id} review retracted by ${o.by} (${o.kind}): the approve ${o.retracted}` : `${o.id} review ${o.verdict}${o.by ? ` by ${o.by} (${o.kind})` : ''} · acceptance: ${o.acceptance ? o.acceptance.split('\n').join(' / ') : '(none on file)'}${o.filed ? ` · filed outside the issue: ${o.filed.join(', ')}` : ''}${o.next ? ` · next: ${o.next}` : ''}`);
 
 // One answer, after its ruling is recorded: a ratified area ruling goes to the type's decision log (and a rule's ratification
-// to the rule's own log) through the composer or the graph's tool, then the line the command prints for it.
+// to the rule's own log) through the tool that runs the loop or the graph's tool, then the line the command prints for it.
 function answered(root, out, warn) {
-  const composer = (out.typeDecision || out.ruleRatification) ? composerOf(root) : null;
+  const keeper = (out.typeDecision || out.ruleRatification) ? recordKeeperOf(root) : null;
   if (out.typeDecision) {
-    out.typeLog = composer || writeAreaDecision(root, out.typeDecision);
+    out.typeLog = keeper || writeAreaDecision(root, out.typeDecision);
     try { withLock(root, () => recordTypeLog(root, out.ruling, out.typeDecision, out.typeLog)); } catch (e) { warn.push(`note: what became of ${out.ruling} in the type log was not recorded in the loop: ${e.message}`); }
   }
   // The rule's ratification is written after the type's decision, and independently of it: either may fail alone.
   if (out.ruleRatification) {
-    out.ruleLog = composer || writeRuleRatification(root, out.ruleRatification);
+    out.ruleLog = keeper || writeRuleRatification(root, out.ruleRatification);
     try { withLock(root, () => recordRuleLog(root, out.ruling, out.ruleRatification, out.ruleLog)); } catch (e) { warn.push(`note: what became of ${out.ruling} in the rule's log was not recorded in the loop: ${e.message}`); }
   }
   if (out.typeLog?.state === 'failed') warn.push(`note: ${out.ruling} stays a ruling of this loop; write it by hand in ${out.typeLog.repo}: ${out.typeLog.retry} (add --supersedes and the date and time of the decision it replaces, or --adds, when yg lists decisions in force)`);

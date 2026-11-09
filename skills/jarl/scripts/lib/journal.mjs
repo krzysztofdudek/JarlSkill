@@ -6,7 +6,7 @@ import { fieldText, hole, jarlLine, need, noSeparators, oneBreak, refuse, splitL
 import { issuesDir, jarlDir, stamp, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { ISSUE_FILE_RE, KEY_RE, idKey, idRe, issueForms, writtenId } from './ids.mjs';
-import { FORMAT_LINES, loadProfile, needRaisable } from './profile.mjs';
+import { loadProfile } from './profile.mjs';
 import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteLine, quoteOf, rulingAuthor, underLine, underOf } from './owner.mjs';
 
 // ---- journal and decisions ----------------------------------------------------------------------
@@ -26,12 +26,34 @@ function parseStamp(s) {
   return m ? Date.parse(`${m[1]}T${m[2]}:00Z`) : null;
 }
 function goalPath(dir) { return join(dir, GOAL_FILE); }
+// The format of the record: one machine line of goal.md, written by init and by nothing else. A loop that holds exactly this
+// line is read; a loop with another number, with no such line or with two is refused before anything else is read. There
+// is one format, this one, and one way to it from the format before: an agent follows CONVERSION_FILE, in the skill.
+export const RECORD_FORMAT = 4;
+// The writer a line carries when nobody named one: a library call that gave none, and the lines a conversion carries over
+// from a record that kept no writer. It is never a name a call may give.
+export const UNRECORDED = 'unrecorded';
+export const FORMAT_MARK = `Format: ${RECORD_FORMAT}`;
+export const CONVERSION_FILE = 'references/converting-from-6-2.md';
+const FORMAT_LINE_RE = /^Format:(.*)$/;
+const formatLinesOf = (text) => text.split(/\r?\n/).filter((l) => FORMAT_LINE_RE.test(l));
+// Whether a text holds a line a reader of the goal takes for the format line.
+export const holdsFormatLine = (text) => formatLinesOf(String(text ?? '')).length > 0;
+// The refusal of a loop in any other format. A place with no live loop has no format to refuse.
+export function needRecordFormat(root, whose = 'this loop\'s') {
+  const path = goalPath(jarlDir(root));
+  if (!existsSync(path)) return;
+  const lines = formatLinesOf(readText(path));
+  if (lines.length === 1 && lines[0].trimEnd() === FORMAT_MARK) return;
+  const held = lines.length === 0 ? `holds no "Format:" line` : lines.length > 1 ? `holds ${lines.length} "Format:" lines` : `says "${lines[0].trim()}"`;
+  refuse(`${whose} ${GOAL_FILE} ${held}, and this Jarl reads a loop whose ${GOAL_FILE} holds the one line "${FORMAT_MARK}" — nothing was read or written; an agent converts a loop of the format before by following ${CONVERSION_FILE}`, { external: `follow ${CONVERSION_FILE}, in the directory of the skill` });
+}
 function decisionsPath(dir) { return join(dir, DECISIONS_FILE); }
 function asksPath(dir) { return join(dir, ASKS_FILE); }
 export function appendLog(root, event) {
   appendLogLines(root, [event]);
 }
-// A whole-file write for a composer (record.writeAtomic): any file but the loop's journal, which is appended to and
+// A whole-file write for a library caller (record.writeAtomic): any file but the loop's journal, which is appended to and
 // never written whole, so no line of it is replaced or dropped behind the record's back.
 export function writeWhole(path, text) {
   const dir = dirname(path);
@@ -43,32 +65,33 @@ export function writeWhole(path, text) {
 // An event is the line's text, or { text, key } for a line that names its issue's key itself (the filing, written before
 // the issue's file exists), or a tip line as tipLine makes it. A line about an issue whose file carries a key is written
 // with that key, in its fixed place right after the stamp and before the writer: `- <stamp> key <key> by <writer> ·
-// <text>`. A tip line carries the tip mark after the key and before the writer. No text reaches either place.
+// <text>`. A tip line carries the tip mark after the key and before the writer. No text reaches either place. Every line
+// names its writer: the call's --by, or `unrecorded` for a library call that named nobody.
 export function appendLogLines(root, events, at = stamp()) {
-  const w = writerRaised(root);
+  const by = callWriter ? callWriter.name : UNRECORDED;
   const keyOf = lineKeys(root, events);
   appendAtomic(logPath(jarlDir(root)), '# Log\n\n', events.map((e) => {
     const text = oneLine(typeof e === 'string' ? e : e.text);
     const key = typeof e === 'string' || e.key === undefined ? keyOf(text) : e.key;
-    return `- ${at}${key ? ` key ${key}` : ''}${typeof e !== 'string' && e.tip === true ? ` ${TIP_MARK}` : ''}${w ? ` by ${w.name}` : ''} · ${text}\n`;
+    return `- ${at}${key ? ` key ${key}` : ''}${typeof e !== 'string' && e.tip === true ? ` ${TIP_MARK}` : ''} by ${by} · ${text}\n`;
   }).join(''));
 }
 // The tip mark: the word a tip line carries before the separator, where no text of a line reaches. Only the write of a
 // row, a verdict, a merge or a close puts it there, through tipLine, and a log command that writes `- <stamp> · <text>`
-// cannot, so the reader counts a tip line only with it. The loop holds it from record format 3 (FORMAT_LINES 'tip-mark').
+// cannot, so the reader counts a tip line only with it.
 export const TIP_MARK = 'tip';
 // The tip line of an issue: the commit its branch points to in each repository of the issue, joined by commas.
 export const tipLine = (id, tip) => ({ text: `${id} tip ${tip}`, tip: true });
 // The key each line of `events` is about, read from its issue's file: a line that opens with an issue's number (after
-// "filed", for a filing) takes the key of the one issue file of that number, when that file carries one and the loop is
-// in the format that holds keys. A number two files carry names no one issue, and its line is written with no key.
+// "filed", for a filing) takes the key of the one issue file of that number, when that file carries one. A number two
+// files carry names no one issue, and its line is written with no key.
 const LEADING_ISSUE = idRe('^(?:filed )?({id})\\b');
 function lineKeys(root, events) {
   const wanted = new Set(events.filter((e) => typeof e === 'string' || e.key === undefined).map((e) => LEADING_ISSUE.exec(oneLine(typeof e === 'string' ? e : e.text))?.[1]).filter(Boolean).map(idKey));
   const none = () => null;
   if (!wanted.size) return none;
   const dir = join(jarlDir(root), 'issues');
-  if (!existsSync(dir) || !loadProfile(root).keyed || loadProfile(root).format < FORMAT_LINES['issue-key'].format) return none;
+  if (!existsSync(dir)) return none;
   const keys = new Map();
   for (const f of readdirSync(dir)) {
     const m = ISSUE_FILE_RE.exec(f);
@@ -92,20 +115,11 @@ export function headerKey(text) {
 }
 // The writer one call names (its --by), for every line the call writes: withWriter sets it for the length of `fn` and
 // puts back what was there, so nothing outlives the call and a server that runs call after call keeps no name of its own.
-// `raise` runs once, before the first line, under the call's lock: it raises the record to the format that holds a
-// writer. A call that names nobody writes its lines with no writer.
 let callWriter = null;
-export function withWriter(name, raise, fn) {
+export function withWriter(name, fn) {
   const was = callWriter;
-  callWriter = name ? { name, raise, raised: false } : null;
+  callWriter = name ? { name } : null;
   try { return fn(); } finally { callWriter = was; }
-}
-// The writer of the call, after the raise its first line needs has run: a write that rewrites a file the raise rewrites
-// too (the profile) calls it first, and starts from the file as the raise left it. Null when the call names nobody.
-export function writerRaised(root) {
-  const w = callWriter;
-  if (w && !w.raised) { w.raise(root); w.raised = true; }
-  return w;
 }
 
 // The log is one event per line: a text with line breaks never reaches it raw. A command that keeps the whole text
@@ -186,10 +200,8 @@ function decisionsAt(dir, skipped) {
 }
 // The fields the tool writes into a ruling's closing block. Applies to, Area, Reach and Rule come with the ruling (decide
 // --applies-to, --area, --reach, --rule); Superseded by, Ratified, Rejected, Type log and Rule log are added to an earlier
-// ruling in place, later. Applies to is the block's first line, after Waives review: a reader that knows no such field
-// ends the ruling's text with it, so it shows the scope in words and still reads every field after it. Waives review
-// (decide --waives-review, the issues a ruling of the owner closes without a review) is held by record format 3
-// (FORMAT_LINES 'review-waiver'): a reader of the formats below it would count the issues it closes as unreviewed.
+// ruling in place, later. Applies to is the block's first line, after Waives review. Waives review
+// (decide --waives-review, the issues a ruling of the owner closes without a review) comes first of all.
 const DECISION_META = /^\*\*(Waives review|Applies to|By|Supersedes|Superseded by|Settles|Area|Reach|Rule|Ratified|Rejected|Type log|Rule log):\*\*\s*(.*)$/;
 // The answer line of an answered question's ruling (ask-<n>): the answer itself, the option chosen, or the answer in its own words.
 const ANSWER_LINE = /^\*\*(?:Answer|Answer in own words|Chose):\*\*/;
@@ -221,8 +233,7 @@ function markDecision(root, slug, line, { text: given } = {}) {
 }
 
 // The refusals of a new ruling's slug and of the earlier ruling it supersedes, which write nothing. appendDecision asks
-// them before it writes; a caller that raises the record format for the ruling asks them before the raise, so a ruling
-// refused for its slug leaves the format as it was.
+// them before it writes.
 export function needNewRuling(root, slug, supersedes) {
   need(typeof slug === 'string' && SLUG_RE.test(slug), `a ruling's slug is letters, digits and . _ - (starting with a letter or digit, at most 80 characters) — not "${slug}"`, () => ({ arg: 0, value: '<slug>' }));
   const all = loadDecisions(root);
@@ -441,10 +452,6 @@ export function cmdGoalSet(root, text) {
 function rangeLine(root, old, line, text) {
   const span = rangeSpan(line.qualifier, line.value);
   need(span, `${RANGE_REASON} (got "${String(text).trim()}")`, () => ({ flag: '--set', value: `Range (${hole('<name>')}): ${hole('<from-to>')}` }));
-  // A loop whose format a composer keeps can never file a number of a range, so it declares none.
-  const profile = loadProfile(root);
-  const rangeNumber = FORMAT_LINES['range-number'];
-  if (profile.format < rangeNumber.format) needRaisable(profile, rangeNumber.format, rangeNumber.what, [{ first: ['jarl.mjs', 'profile'] }, { retry: true }]);
   const declared = goalLines(old).ranges;
   const was = declared.find((r) => r.name.toLowerCase() === span.name.toLowerCase()) || null;
   const name = was ? was.name : span.name;

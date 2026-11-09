@@ -13,7 +13,6 @@ import * as R from '../record.mjs';
 import * as L from '../jarl-lib.mjs';
 import * as W from '../lib/where.mjs';
 import { jarl, refuses, gitRepo, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
-import { oldJarl, formatTwoJarl } from './old-jarl.mjs';
 import { FINDINGS } from './findings.mjs';
 
 const MIN = 60_000;
@@ -45,7 +44,7 @@ test('a lease with no commit, row or log line for longer than 30 minutes is idle
     assert.match(statusText(root), new RegExp(`^stale 001 · ${idle.replace(/[()]/g, '\\$&')}$`, 'm'));
     assert.match(resumeText(root), /^- 001 one · worker w1 · model not recorded · since 2026-06-01 10:00 · STALE: idle 31m \(threshold 30m\)/m);
     const list = nextAs(root, 'jarl');
-    assert.match(list, /^- 001 one: with worker w1 since 2026-06-01 10:00, no commit, row or log line for 31m \(threshold 30m\): ask the worker whether it waits on a prompt or a lock, or hand the lease over — jarl\.mjs set 001 in-progress "<why-the-worker-changed>" --worker "<the-new-worker>" --handover$/m);
+    assert.match(list, /^- 001 one: with worker w1 since 2026-06-01 10:00, no commit, row or log line for 31m \(threshold 30m\): ask the worker whether it waits on a prompt or a lock, or hand the lease over — jarl\.mjs set 001 in-progress "<why-the-worker-changed>" --worker "<the-new-worker>" --model "<model-id>" --handover --by jarl$/m);
     assert.equal(L.cmdNextAs(root, { as: 'jarl' }).rows[0].what, 'idle');
   });
 });
@@ -64,7 +63,7 @@ test('a row resets the age, and a proof that waits past the threshold for its ve
   });
   at(56, () => {
     assert.match(R.statusData(root).stale[0].problems[0], /^idle 31m \(threshold 30m\): last log line 31m ago, last row 31m ago, no branch/);
-    assert.match(nextAs(root, 'jarl'), /^- 001 one: proof recorded, no verdict for 31m \(threshold 30m\); raise a reviewer \(worker w1\) — jarl\.mjs review 001 "<verdict>" --by "<reviewer>" "<text>"$/m);
+    assert.match(nextAs(root, 'jarl'), /^- 001 one: proof recorded, no verdict for 31m \(threshold 30m\); raise a reviewer \(worker w1\) — jarl\.mjs review 001 "<verdict>" --by "<reviewer>" --model "<model-id>" "<text>"$/m);
   });
 });
 
@@ -246,7 +245,7 @@ test('a held resource shows the issue that holds it and that holder\'s age', () 
   at(31, () => assert.match(resumeText(root), /^- 002  P2  waiter \(resource db held by 001, last active 31m ago, past the 30m threshold\)$/m));
 });
 
-test('goal --set takes a Liveness line of whole minutes, and the frozen readers read a goal that holds one', () => {
+test('goal --set takes a Liveness line of whole minutes', () => {
   const root = makeLoop({ prefix: 'jarl-live-', via: 'cli', dotGit: false });
   assert.match(jarl(root, 'goal', '--set', 'Liveness: 20'), /Liveness: 20/);
   assert.match(readFileSync(join(root, '.jarl', 'goal.md'), 'utf8'), /^Liveness: 20$/m);
@@ -259,11 +258,6 @@ test('goal --set takes a Liveness line of whole minutes, and the frozen readers 
   // A reader that knows no Liveness line reads it as a line of the goal's text, and the goal stays the goal.
   const before = makeLoop({ prefix: 'jarl-live-old-', dotGit: false, via: 'library' });
   L.cmdGoalSet(before, 'Liveness: 20');
-  for (const reader of [oldJarl, formatTwoJarl]) {
-    const r = reader(before, 'status', {});
-    assert.equal(r.ok, true, r.error);
-    assert.equal(r.value.goal, 'goal');
-  }
 });
 
 test('a lease that holds a live approve and waits for its merge is not idle for that wait, and shows on the merger\'s list; a lease with no approve is idle as before', () => {
@@ -335,8 +329,9 @@ test('resume, status and next --as show a lease idle for 45 minutes at the defau
   writeFileSync(log, readFileSync(log, 'utf8').replace(/^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}/gm, `- ${back}`));
   assert.match(jarl(root, 'resume'), /^- 1 one · .*STALE: idle 4[56]m \(threshold 30m\)/m);
   assert.match(jarl(root, 'status'), /^stale 1 · idle 4[56]m \(threshold 30m\)/m);
-  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1 one: with worker w1 since \S+ \S+, no commit, row or log line for 4[56]m \(threshold 30m\): .* — jarl\.mjs set 1 in-progress "<why-the-worker-changed>" --worker "<the-new-worker>" --handover$/m);
+  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1 one: with worker w1 since \S+ \S+, no commit, row or log line for 4[56]m \(threshold 30m\): .* — jarl\.mjs set 1 in-progress "<why-the-worker-changed>" --worker "<the-new-worker>" --model "<model-id>" --handover --by jarl$/m);
   jarl(root, 'goal', '--set', 'Liveness: 60');
   assert.doesNotMatch(jarl(root, 'resume'), /STALE/);
   assert.match(jarl(root, 'status', '--stale-hours', '0.5'), /^stale 1 · idle 4[56]m \(threshold 30m\)/m);
 });
+

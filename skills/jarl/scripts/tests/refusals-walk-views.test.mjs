@@ -42,8 +42,8 @@ test('the note of a text that names an unordered issue, given --root, carries it
   assert.equal(r.status, 0, r.stderr);
   const note = r.stderr.split('\n').find((l) => l.includes('no After orders it with 3'));
   const command = /: (jarl\.mjs .*)$/.exec(note ?? '')?.[1];
-  assert.equal(command, `jarl.mjs field 3 After "<ids-it-waits-on>" --add --root ${ROOT_ARG}`, note);
-  const filled = command.replace('"<ids-it-waits-on>"', '1');
+  assert.equal(command, `jarl.mjs field 3 After "<ids-it-waits-on>" --add --by "<who>" --root ${ROOT_ARG}`, note);
+  const filled = command.replace('"<ids-it-waits-on>"', '1').replace('"<who>"', 'jarl');
   for (const sh of SHELLS) {
     const dir = copy(ROOTED);
     run(dir, ['field', '3', 'What', 'relies on issue 1 for its data', '--root', ROOT_ARG]);
@@ -69,9 +69,10 @@ test('in a worker worktree of a committed loop, the note of a call given --root 
   const copyBefore = readFileSync(join(wt, '.jarl', 'log.md'), 'utf8');
   const r = at(wt, ['field', '3', 'What', 'relies on issue 1 for its data', '--root', main]);
   const command = /: (jarl\.mjs .*)$/.exec(r.stderr.split('\n').find((l) => l.includes('no After orders it with 3')) ?? '')?.[1];
-  assert.equal(command, `jarl.mjs field 3 After "<ids-it-waits-on>" --add --root ${L.shellWord(main)}`);
-  assert.equal(runPrinted(wt, command.replace('"<ids-it-waits-on>"', '1')).status, 0, command);
+  assert.equal(command, `jarl.mjs field 3 After "<ids-it-waits-on>" --add --by "<who>" --root ${L.shellWord(main)}`);
+  assert.equal(runPrinted(wt, command.replace('"<ids-it-waits-on>"', '1').replace('"<who>"', 'jarl')).status, 0, command);
   assert.deepEqual(L.findIssue(main, '3').after, ['1'], 'the main checkout\'s loop waits on 1');
   assert.equal(readFileSync(join(wt, '.jarl', 'log.md'), 'utf8'), copyBefore, 'the worktree\'s copy of the loop is untouched');
   assert.deepEqual(L.findIssue(wt, '3').after, [], 'nor its issue');
 });
+

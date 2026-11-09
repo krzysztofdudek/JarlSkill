@@ -1,6 +1,5 @@
 // Rules with a scope: decide --applies-to writes whom a ruling applies to and until when, the views print to each reader
 // the rules that match it, whole, Jarl ships its own role guidance as such rules, an agent proposes a rule for the jarl or
-// the owner to accept, and close offers each rule of the loop for promotion. A reader of format 1 or 2 reads a ruling with a scope
 // as a ruling whose text ends with the scope, and every other field of it as before.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,7 +8,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { jarl, refuses, skillText, loop as makeLoop } from './helpers.mjs';
 import { BUILTIN_RULES, BUILTIN_STATUSES, parseScope, readLoop, ruleMatches, rulesFor } from '../jarl-lib.mjs';
-import { formatTwoJarl, oldJarl } from './old-jarl.mjs';
 import { FINDINGS } from './findings.mjs';
 
 const loop = () => makeLoop({ prefix: 'jarl-rules-', via: 'cli', dotGit: false });
@@ -54,25 +52,6 @@ test('a rule ends after its date, when its issue closes, or when a ruling supers
   jarl(root, 'set', '1', 'dropped', 'not needed');
   assert.deepEqual(live(), ['future', 'revoke-it']);
   assert.match(jarl(root, 'decisions'), /while-1 · by coordinator · applies to role worker · until issue 1 closes · ENDED: ended when 1 closed \(dropped\)/);
-});
-
-test('a reader of format 1 or 2 reads a ruling with a scope: its text ends with the scope, its author and its supersession read as before', () => {
-  const root = loop();
-  jarl(root, 'decide', 'first', 'A rule for reviewers.', '--applies-to', 'role reviewer and moment round', '--by', 'jarl');
-  jarl(root, 'decide', 'second', 'A rule for workers.', '--applies-to', 'role worker', '--supersedes', 'first', '--by', 'jarl');
-  for (const reader of [oldJarl, formatTwoJarl]) {
-    const read = reader(root, 'decisions', {});
-    assert.equal(read.ok, true, read.error);
-    const [first, second] = read.value;
-    assert.equal(first.by, 'jarl');
-    assert.equal(first.supersededBy, 'second');
-    assert.match(first.ruling, /^A rule for reviewers\.\n\n\*\*Applies to:\*\* role reviewer and moment round$/);
-    assert.equal(second.by, 'jarl');
-    assert.equal(second.supersedes, 'first');
-    assert.match(second.ruling, /\*\*Applies to:\*\* role worker$/);
-  }
-  const profile = join(root, '.jarl', 'profile.json');
-  assert.equal(existsSync(profile) ? JSON.parse(readFileSync(profile, 'utf8')).format ?? 1 : 1, 1, 'a scope raises no record format');
 });
 
 // A loop with two slices, a ui issue in each, and a rule of every reach: the loop, a role, each slice, a tag for workers,
@@ -147,18 +126,18 @@ test('every rule Jarl ships is quoted whole from the reference it names, and eac
     assert.ok(r.selectors.length > 0);
   }
   const of = (role) => BUILTIN_RULES.filter((r) => r.selectors.some((s) => s.word === 'role' && s.value === role)).length;
-  assert.deepEqual([of('reviewer'), of('worker'), of('coordinator')], [5, 1, 4]);
+  assert.deepEqual([of('reviewer'), of('worker'), of('coordinator')], [3, 1, 3]);
 });
 
-test('a reviewer of a light issue in a round is given the reviewer\'s rules of the round and of the light tier; a reviewer of a standard issue at its first review is not', () => {
+test('a reviewer in a round is given the reviewer\'s rules of the round; a reviewer at its first review is not', () => {
   const root = loop();
   jarl(root, 'new', 'light work', '--acceptance', '[read] it works', '--tier', 'light');
   jarl(root, 'new', 'standard work', '--acceptance', '[read] it works', '--tier', 'standard');
   const loopRead = readLoop(join(root, '.jarl'));
   const reviewer = (id, moments) => ({ roles: new Set(['reviewer']), slice: null, moments: new Set(moments), issues: [loopRead.byId.get(id)] });
   const slugsOf = (reader) => rulesFor(root, loopRead, reader, '2026-11-04').map((r) => r.slug);
-  assert.deepEqual(slugsOf(reviewer('1', ['review', 'round'])), ['jarl:reviewer-every-round', 'jarl:reviewer-light-tier', 'jarl:reviewer-tier-above', 'jarl:reviewer-identical-output', 'jarl:reviewer-judges-the-issue']);
-  assert.deepEqual(slugsOf(reviewer('2', ['review'])), ['jarl:reviewer-tier-above', 'jarl:reviewer-identical-output', 'jarl:reviewer-judges-the-issue']);
+  assert.deepEqual(slugsOf(reviewer('1', ['review', 'round'])), ['jarl:reviewer-every-round', 'jarl:reviewer-tier-above', 'jarl:reviewer-judges-the-issue']);
+  assert.deepEqual(slugsOf(reviewer('2', ['review'])), ['jarl:reviewer-tier-above', 'jarl:reviewer-judges-the-issue']);
 });
 
 test('a selector of files matches a path, a directory and a pattern; of a repository and a kind, the issue that names them', () => {
@@ -185,7 +164,6 @@ test('an agent proposes a rule: the ball is on the jarl, or on the owner where t
   const asked = json(root, 'ask', 'A worker runs the linter before it reports.', '--kind', 'rule', '--applies-to', 'role worker', '--by', 'w1');
   assert.equal(asked.kind, 'rule');
   assert.equal(asked.to, 'jarl');
-  assert.equal(json(root, 'profile').format, 3, 'a proposed rule is a line of format 3');
   const onJarl = json(root, 'next', '--as', 'jarl').rows.find((r) => r.what === 'rule');
   assert.equal(onJarl.command, `jarl.mjs answer a-${asked.id} "<yes-or-reject-first>" --by jarl`);
   assert.match(onJarl.says, /rule proposed for role worker/);
@@ -207,7 +185,7 @@ test('an agent proposes a rule: the ball is on the jarl, or on the owner where t
   assert.match(refuses(root, 'ask', 'x', '--kind', 'rule'), /a rule is proposed with whom it applies to/);
   const withOptions = refuses(root, 'ask', 'x', '--kind', 'rule', '--applies-to', 'loop', '--option', 'a:one', '--option', 'b:two');
   assert.match(withOptions, /^a proposed rule is answered yes or reject, so it takes no --option\n/);
-  assert.match(withOptions, /\njarl\.mjs ask "<text>" --kind "<ask-kind>" --applies-to "<selectors>"\n$/, 'the form leaves the options out');
+  assert.match(withOptions, /\njarl\.mjs ask "<text>" --by "<who>" --kind "<ask-kind>" --applies-to "<selectors>"\n$/, 'the form leaves the options out');
   assert.equal(json(root, 'ask', 'x', '--kind', 'rule', '--applies-to', 'loop').options, undefined, 'a proposed rule without options is filed');
   assert.match(refuses(root, 'ask', 'x', '--kind', 'rule', '--applies-to', 'loop', '--issue', '1'), /a proposed rule holds no issue back/);
   assert.match(refuses(root, 'ask', 'x', '--applies-to', 'loop'), /--applies-to, --until and --to go with kind rule/);
@@ -239,19 +217,6 @@ test('close offers each rule of the loop for promotion, on the owner, with four 
   assert.equal(a1.appliesTo, null, 'the answer to an offer is a ruling of its own, not a second rule');
   jarl(root, 'set', '1', 'dropped', 'not needed');
   assert.match(jarl(root, 'close'), /^removed /);
-});
-
-test('a loop whose composer keeps its format is offered no promotion, and says why; its rules with a scope still reach their readers', () => {
-  const root = mkdtempSync(join(tmpdir(), 'jarl-rules-composed-'));
-  const file = join(mkdtempSync(join(tmpdir(), 'jarl-rules-profile-')), 'profile.json');
-  writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }));
-  jarl(root, 'init', 'a composed goal', '--profile', file);
-  jarl(root, 'decide', 'standing', 'Reports name their branch.', '--applies-to', 'loop', '--by', 'coordinator');
-  const out = json(root, 'close', '--batch');
-  assert.deepEqual(out.promotion.items, []);
-  assert.match(out.promotion.off, /1 rule\(s\) of the loop are not offered for promotion: a question of kind rule needs record format 3/);
-  assert.match(refuses(root, 'ask', 'A rule.', '--kind', 'rule', '--applies-to', 'loop'), /a question of kind rule needs record format 3, and this loop stays at format 1/);
-  assert.deepEqual(json(root, 'next', '--as', 'owner').rules.map((r) => r.slug), ['standing']);
 });
 
 test('a rule of two lines, written by decide or proposed and accepted, is printed whole in every view that prints rules', () => {

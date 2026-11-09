@@ -306,8 +306,7 @@ function batchesLine(b) {
 }
 
 // The slips a coordinator records against its own work, per writer: the reopens after done (moves out of a status that
-// closes the record), the retractions (of a row, a note or an approve) and the changes that grew a leased issue's scope
-// (its acceptance gained or rewrote a line). The writer is the name the line carries, the --by of the call that wrote it
+// closes the record) and the retractions (of a row, a note or an approve). The writer is the name the line carries, the --by of the call that wrote it
 // (a retraction's own `by`, and a description change's author, which their lines hold); null when the call named nobody. A
 // refused call writes no line, so it is never counted. Each list is [{ writer, coordinator, count, issues }], the issues
 // in the order of the log, an issue once per line; coordinator says whether the name reviews as the loop's director.
@@ -316,7 +315,6 @@ function slipsOf(loop) {
   const directors = new Set(loop.coordinators.map((c) => fieldText(c).toLowerCase()));
   const reopens = new Map();
   const retractions = new Map();
-  const scopeGrew = new Map();
   const add = (map, writer, id) => {
     const key = writer === null ? null : fieldText(writer);
     if (!map.has(key)) map.set(key, { writer: key, coordinator: key !== null && directors.has(key.toLowerCase()), count: 0, issues: [] });
@@ -328,11 +326,10 @@ function slipsOf(loop) {
     if (e.id === null || !loop.byId.has(e.id)) continue;
     if (e.type === 'move' && e.from && closes(e.from) && !closes(e.to)) add(reopens, e.writer, e.id);
     else if (e.type === 'retract-row' || e.type === 'retract-note' || e.type === 'retract-review') add(retractions, e.writer ?? e.by ?? null, e.id);
-    else if (e.type === 'body' && e.grew) add(scopeGrew, e.writer ?? e.by ?? null, e.id);
   }
   // Named writers by name, the unnamed last.
   const order = (map) => [...map.values()].sort((a, b) => (a.writer === null) - (b.writer === null) || String(a.writer).localeCompare(String(b.writer)));
-  return { reopens: order(reopens), retractions: order(retractions), scopeGrew: order(scopeGrew) };
+  return { reopens: order(reopens), retractions: order(retractions) };
 }
 // One line per kind of slip: each writer with its count and the issues, a writer that is no coordinator marked.
 function slipLine(label, list) {
@@ -354,7 +351,6 @@ export function renderMetrics(m) {
     `reopened: ${m.reopenings.noData ? nd(m.reopenings) : `${m.reopenings.issues.length} issue(s), ${m.reopenings.times} time(s)${list(m.reopenings.issues)} · n ${m.reopenings.n}`}`,
     slipLine('reopened after done', m.slips.reopens),
     slipLine('retracted', m.slips.retractions),
-    slipLine('scope grew after the lease', m.slips.scopeGrew),
     `fresh reviews of closed work: ${f.noData ? nd(f) : `${f.fresh} of ${f.recorded} with a recorded reviewer (${pct(f.share)}) · coordinator ${f.coordinator} · self ${f.self}${f.relayed || f.bot ? ` · relayed ${f.relayed} · bot ${f.bot}` : ''}${f.retracted ? ` · retracted ${f.retracted}` : ''}${f.unrecorded ? ` · no data for ${f.unrecorded} (approved before --by)` : ''}${f.code.recorded ? ` · carrying code: ${f.code.fresh} of ${f.code.recorded} (${pct(f.code.share)})` : ''}`}`,
     ...(Object.keys(f.reviewers).length ? [`fresh reviewers: ${Object.keys(f.reviewers).length}${Object.keys(f.reviewers).length > 5 ? ', most often' : ''} ${Object.entries(f.reviewers).slice(0, 5).map(([k, v]) => `${k} ${v}`).join(' · ')}`] : []),
     ...(m.batches && m.batches.n ? [batchesLine(m.batches)] : []),

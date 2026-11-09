@@ -3,7 +3,7 @@
 import { PRIORITIES, fieldText, hole, need, splitList } from './base.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { findIssue, removeFirstField, setField } from './issues.mjs';
-import { commitRepoNames, needFormat, repoList } from './repositories.mjs';
+import { commitRepoNames, repoList } from './repositories.mjs';
 import { IN_PLACE_TAG, carriesCode } from './gate.mjs';
 import { isSliceTag, needOneSlice } from './slices.mjs';
 import { issuesFor, listAll, oneOrMany } from './shared.mjs';
@@ -38,7 +38,6 @@ function writeTags(root, rawIds, results, by, out) {
   // The mark of an issue worked in place goes on an issue with no branch and no merge: code is merged from its branch.
   const marked = results.filter((r) => r.tags.includes(IN_PLACE_TAG) && !r.issue.tags.includes(IN_PLACE_TAG));
   for (const r of marked) need(!carriesCode(r.issue), `${r.issue.id} carries code (${r.issue.fields.merged ? 'Merged' : 'Branch'} is recorded), which its merge lands: an issue worked in place has no branch and no merge, so it is not tagged ${IN_PLACE_TAG}`, () => ({ arg: 2, value: hole('<items>') }));
-  if (marked.length) needFormat(root, 'in-place');
   logChanges(root, results.map((r) => fieldLine(r.issue.id, 'Tags', r.tags.join(', '), heldField(r.issue, 'Tags'), by)));
   for (const r of results) writeAtomic(r.issue.file, setField(readText(r.issue.file), 'Tags', r.tags.join(', ')));
   return oneOrMany(rawIds, results.map(out));

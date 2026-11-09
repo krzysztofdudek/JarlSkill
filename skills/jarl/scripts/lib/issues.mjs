@@ -106,8 +106,8 @@ function issuesAt(recordDir, profile, events = loopEvents(recordDir, profile)) {
     .map((f) => withProfile(parseIssue(readText(join(dir, f)), join(dir, f)), profile));
   const files = new Map();
   for (const i of parsed) if (i.id !== null) files.set(idKey(i.id), (files.get(idKey(i.id)) || 0) + 1);
-  // A loop whose profile declares a field Key of its own holds no key of the tool's: its Key is the profile's field.
-  const keyOf = profile.keyed === false ? () => null : issueKeyOf;
+  // A line that names a key no file carries is read by its number, as a line with no key is.
+  const carried = new Set(parsed.map(issueKeyOf).filter(Boolean));
   const issues = parsed.map((issue) => {
     // An After names an issue as the loop writes it: the form its file carries, whatever form the After line gives. So
     // does a Parent, which a loop whose profile declares a field Parent of its own does not read as one.
@@ -116,9 +116,9 @@ function issuesAt(recordDir, profile, events = loopEvents(recordDir, profile)) {
     // An issue's lines are those that name its key, and those under its number that name no key: all of them for the one
     // file of a number, and for a file with no key among files that carry one. A line that names another key is another
     // issue's, even under the same number.
-    const key = keyOf(issue);
+    const key = issueKeyOf(issue);
     const alone = issue.id === null || files.get(idKey(issue.id)) === 1;
-    const events = (by.get(issue.id) || []).filter((e) => (key !== null && e.key === key) || ((e.key ?? null) === null && (key === null || alone)));
+    const events = (by.get(issue.id) || []).filter((e) => (key !== null && e.key === key) || ((e.key ?? null) === null || !carried.has(e.key)) && (key === null || alone));
     // Filings are counted by what they file: a filing line repeated with the same title (a line copied in the log) files
     // the same issue again, while two titles under one number are two issues.
     const filings = new Set(events.filter((e) => e.type === 'filed').map((e) => e.text.replace(/^filed \S+ · /, ''))).size;
@@ -127,7 +127,7 @@ function issuesAt(recordDir, profile, events = loopEvents(recordDir, profile)) {
     // number that each carry their own key, and whose number has no line with no key that carries state, are attributed
     // by their keys: each is read from its own lines.
     const shared = issue.id !== null && files.get(idKey(issue.id)) > 1;
-    if (issue.id !== null && ((shared && !keyedApart(parsed, by, issue.id, keyOf)) || filings > 1)) return headerRead(issue, filings);
+    if (issue.id !== null && ((shared && !keyedApart(parsed, by, issue.id)) || filings > 1)) return headerRead(issue, filings);
     return withRecordState(issue, issueState(profile, events));
   });
   // An issue whose number another file carries too holds the files of that number in `shared`, which the views print;
@@ -138,9 +138,9 @@ function issuesAt(recordDir, profile, events = loopEvents(recordDir, profile)) {
 // Whether the files that carry the number `id` are told apart by their keys: each carries a key no other of them carries,
 // at most one of them carries none, and every line under the number that carries state (a filing, a move, a row, a
 // verdict, a merge) names one of the keys, or names none where one file carries none, whose line it then is.
-export function keyedApart(parsed, by, id, keyOf = issueKeyOf) {
+export function keyedApart(parsed, by, id) {
   const same = parsed.filter((i) => i.id !== null && idKey(i.id) === idKey(id));
-  const keys = same.map(keyOf).filter((k) => k !== null);
+  const keys = same.map(issueKeyOf).filter((k) => k !== null);
   const unkeyed = same.length - keys.length;
   if (unkeyed > 1 || new Set(keys).size !== keys.length) return false;
   return (by.get(id) || []).every((e) => e.type === 'other' || keys.includes(e.key) || ((e.key ?? null) === null && unkeyed === 1));
@@ -545,9 +545,10 @@ export function mergedOf(issue) {
 // indented lines under it) and whether it is retracted (struck through: `- ~~**ran:** … **saw:** …~~`). The one
 // numbering: show prints it, retract takes it, the done gate counts by it.
 // A row names the acceptance lines it proves by the digest of each line (evidence --line), in its mark, where no text of
-// the row reaches: `- **ran (line a1b2c3d4e5f6):** … · **saw:** …` (see rowLineHead for its log line).
-const ROW_START = new RegExp(`^- (~~)?\\*\\*ran(?: \\(line (${LINES_SRC})\\))?:\\*\\*`);
-const ROW_MARK = new RegExp(`^- (~~)?\\*\\*ran(?: \\(line ${LINES_SRC}\\))?:\\*\\*\\s*`);
+// the row reaches: `- **ran (line a1b2c3d4e5f6):** … · **saw:** …` (see rowLineHead for its log line). A row a conversion
+// carried over names none and is marked as history: `- **ran (history):** … · **saw:** …`, and counts for no line.
+const ROW_START = new RegExp(`^- (~~)?\\*\\*ran(?: \\(line (${LINES_SRC})\\)| \\(history\\))?:\\*\\*`);
+const ROW_MARK = new RegExp(`^- (~~)?\\*\\*ran(?: \\(line ${LINES_SRC}\\)| \\(history\\))?:\\*\\*\\s*`);
 // Which journal line each file row wrote, by position in the file: a row's journal line keeps the first line of its
 // command (`<id> evidence row · <first line>`, with a pointer suffix when the command has more lines) and the lines the
 // row names, so it matches when those are the row's own and the command is the row's whole first line (a command of

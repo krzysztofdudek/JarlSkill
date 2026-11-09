@@ -21,10 +21,8 @@ test('a filing, a round, an evidence row and the retractions are typed', () => {
   assert.deepEqual(L.parseEvent('012', '012 evidence retract · row 3 · by rev · wrong', P), { type: 'retract-row', row: 3, by: 'rev' });
   assert.deepEqual(L.parseEvent('012', '012 evidence retract · note 2 · by odin · wrong', P), { type: 'retract-note', note: 2, by: 'odin' });
   assert.deepEqual(L.parseEvent('012', '012 review retract · by rev (fresh) · retracts the approve by x · why', P), { type: 'retract-review', target: { by: 'x', kind: null }, by: 'rev' });
-  assert.deepEqual(L.parseEvent('012', '012 body · what', P), { type: 'body', part: 'what', grew: null, by: null });
-  assert.deepEqual(L.parseEvent('012', '012 body · why · was "x" (1 characters) · by odin', P), { type: 'body', part: 'why', grew: null, by: 'odin' });
-  assert.deepEqual(L.parseEvent('012', '012 body · acceptance · was "x" (1 characters) · grew after the lease: line 2, 3 · by odin', P), { type: 'body', part: 'acceptance', grew: [2, 3], by: 'odin', was: null });
-  assert.deepEqual(L.parseEvent('012', '012 body · acceptance · was (none) · grew after the lease: line 1', P), { type: 'body', part: 'acceptance', grew: [1], by: null, was: '' });
+  assert.deepEqual(L.parseEvent('012', '012 body · what', P), { type: 'body', part: 'what', by: null });
+  assert.deepEqual(L.parseEvent('012', '012 body · why · was "x" (1 characters) · by odin', P), { type: 'body', part: 'why', by: 'odin' });
 });
 
 test('a line about another issue, or about the loop, is not an event of the issue', () => {
@@ -69,13 +67,13 @@ test('loopEvents reads the file in order, with the line index, the stamp and the
   const dir = mkdtempSync(join(tmpdir(), 'jarl-log-reader-'));
   writeFileSync(join(dir, 'log.md'), [
     '# Log', '',
-    '- 2026-10-01 09:00 · opened · a goal',
-    '- 2026-10-01 09:05 · filed 001 · first',
-    '- 2026-10-01 09:06 · filed 002 · second',
+    '- 2026-10-01 09:00 by a-writer · opened · a goal',
+    '- 2026-10-01 09:05 key 20260101T0000-aaaa by a-writer · filed 001 · first',
+    '- 2026-10-01 09:06 key 20260101T0000-baaa by a-writer · filed 002 · second',
     'a stray line that is no event',
-    '- 2026-10-01 09:10 · 001 → in-progress · start · worker w-1',
-    '- 2026-10-01 09:20 · 002 → in-progress · start',
-    '- 2026-10-01 09:30 · 001 → done · merged',
+    '- 2026-10-01 09:10 key 20260101T0000-aaaa by a-writer · 001 → in-progress · start · worker w-1',
+    '- 2026-10-01 09:20 key 20260101T0000-baaa by a-writer · 002 → in-progress · start',
+    '- 2026-10-01 09:30 key 20260101T0000-aaaa by a-writer · 001 → done · merged',
     '',
   ].join('\n'));
   const events = L.loopEvents(dir, P);
@@ -144,18 +142,18 @@ test('a log line holds any character but a newline: a pasted note with U+2028 is
   const root = loop();
   const id = worked(root, 'with a pasted note', { worker: 'w-one', branch: 'jarl/z' });
   const note = `pasted${String.fromCharCode(0x2028)}note`;
-  appendToLog(root, `- 2030-01-01 00:00 · ${id} evidence · ${note}`);
+  appendToLog(root, `- 2030-01-01 00:00 key 20260101T0000-tstk by a-writer · ${id} evidence · ${note}`);
   const events = L.loopEvents(L.jarlDir(root), L.loadProfile(root));
   assert.equal(events[events.length - 1].text, `${id} evidence · ${note}`);
   assert.equal(L.cmdStatus(root).lastActivity, '2030-01-01 00:00');
-  assert.equal(L.cmdResume(root, {}).log.at(-1), `2030-01-01 00:00 · ${id} evidence · ${note}`);
+  assert.equal(L.cmdResume(root, {}).log.at(-1), `2030-01-01 00:00 by a-writer · ${id} evidence · ${note}`);
 });
 
 test('a mention of another issue inside a note is not a round of that issue', () => {
   const root = loop();
   const a = worked(root, 'first', { worker: 'w-one', branch: 'jarl/a' });
   const b = worked(root, 'second', { worker: 'w-two', branch: 'jarl/b' });
-  appendToLog(root, `- 2030-01-01 00:00 · ${b} evidence · compare with ${a} · ${a} round 9 · not a round`);
+  appendToLog(root, `- 2030-01-01 00:00 key 20260101T0000-tstk by a-writer · ${b} evidence · compare with ${a} · ${a} round 9 · not a round`);
   assert.equal(L.roundsOf(root, a), 0);
   L.cmdRound(root, a, 'red once');
   assert.equal(L.roundsOf(root, a), 1);
@@ -167,7 +165,7 @@ test('a hand-written line that is no verdict is not a changes verdict in the met
   R.addEvidence(root, id, undefined, { line: 1, ran: 'npm test', saw: 'pass' });
   R.review(root, id, 'approve', 'read the diff, nothing found', { by: 'rev-a' });
   R.recordMerged(root, id, { sha: 'abc1234' }); R.setStatus(root, id, 'done', 'merged', {});
-  appendToLog(root, `- 2030-01-01 00:00 · ${id} review changes needed more tests`);
+  appendToLog(root, `- 2030-01-01 00:00 key 20260101T0000-tstk by a-writer · ${id} review changes needed more tests`);
   assert.equal(L.loopMetrics(root).rounds.changes, 0);
 });
 
@@ -185,4 +183,78 @@ test('an archived loop is read by its directory', () => {
   assert.deepEqual(value.issues.map((i) => i.id), [id]);
   assert.equal(L.gateOf(value, id).fresh, true);
   assert.equal(L.cmdModels(root, { with: dir }).loops.length, 1);
+});
+
+// A line about one issue as this Jarl writes it, by hand, with its key.
+const lineOf = (root, id, text, by = 'a-writer') => `- 2030-01-01 00:00 key ${R.findIssue(root, id).fields.key} by ${by} · ${id} ${text}\n`;
+const logFile = (root) => join(root, '.jarl', 'log.md');
+
+test('a line with no writer, and a line that names no key though it carries state, are not read: verify names each, and the record stays as it was', () => {
+  const root = loop();
+  const id = worked(root, 'first', { worker: 'w-one', branch: 'jarl/a' });
+  appendFileSync(logFile(root), '- 2030-01-01 00:00 · a note in an older shape\n');
+  appendFileSync(logFile(root), `- 2030-01-01 00:00 by a-writer · ${id} → done · closed by an older line\n`);
+  assert.equal(R.findIssue(root, id).status, 'in-progress', 'a state line with no key changes nothing');
+  const log = L.cmdVerify(root).checks.find((c) => c.name === 'log');
+  assert.equal(log.findings.length, 2, JSON.stringify(log.findings));
+  assert.match(log.findings[0].what, /not a line of the current shape/);
+  assert.match(log.findings[1].what, /names no key/);
+});
+
+test('a note that opens with a number and names no key stays a note, with no finding', () => {
+  const root = loop();
+  worked(root, 'first', { worker: 'w-one', branch: 'jarl/a' });
+  appendFileSync(logFile(root), '- 2030-01-01 00:00 by a-writer · 42 is a number a note may open with\n');
+  assert.equal(L.cmdVerify(root).checks.find((c) => c.name === 'log').findings.length, 0);
+});
+
+test('a line with the writer unrecorded is read, and stands as no writer at all', () => {
+  const root = loop();
+  const id = worked(root, 'first', { worker: 'w-one', branch: 'jarl/a' });
+  appendFileSync(logFile(root), lineOf(root, id, 'evidence · a note', 'unrecorded'));
+  const events = L.loopEvents(L.jarlDir(root), P);
+  assert.equal(events.at(-1).writer, null);
+  assert.equal(L.cmdVerify(root).checks.find((c) => c.name === 'log').findings.length, 0);
+});
+
+test('a history row is read as a row that names no line: it counts for no line, and verify says nothing of it', () => {
+  const root = loop();
+  const id = worked(root, 'first', { worker: 'w-one', branch: 'jarl/a' });
+  assert.equal(L.parseEvent('012', '012 evidence row (history) · npm test', P).history, true);
+  appendFileSync(logFile(root), lineOf(root, id, 'evidence row (history) · npm test · saw pass', 'unrecorded'));
+  assert.equal(L.cmdVerify(root).checks.find((c) => c.name === 'log').findings.length, 0);
+  const row = L.loopEvents(L.jarlDir(root), P).at(-1);
+  assert.equal(row.type, 'row');
+  assert.equal(row.history, true);
+  assert.equal(row.lines, undefined);
+  assert.equal(L.evidenceTable('- **ran (history):** npm test · **saw:** pass').rows[0].lines.length, 0);
+});
+
+test('a row that names no line and is no history row is named by verify', () => {
+  const root = loop();
+  const id = worked(root, 'first', { worker: 'w-one', branch: 'jarl/a' });
+  appendFileSync(logFile(root), lineOf(root, id, 'evidence row · npm test'));
+  const log = L.cmdVerify(root).checks.find((c) => c.name === 'log');
+  assert.match(log.findings[0].what, /names no acceptance line/);
+});
+
+test('an attachment row names no line and is no finding of verify', () => {
+  assert.equal(L.parseEvent('012', `012 evidence row · attach before before.png sha256:${'a'.repeat(64)} size:1000`, P).type, 'row');
+});
+
+test('an issue closed before a converted line is not re-read against the gate; one closed after it is', () => {
+  const root = loop();
+  const old = R.newIssue(root, 'closed by an earlier gate', { tier: 'light', acceptance: '[read] it works' }).id;
+  appendFileSync(logFile(root), lineOf(root, old, '→ done · merged', 'unrecorded'));
+  appendFileSync(logFile(root), '- 2030-01-01 00:01 by the-converter · converted\n');
+  assert.deepEqual(L.closedGateFlags(L.readLoop(L.jarlDir(root))), [], 'the issue closed before the line is left as it stands');
+  assert.equal(L.loopEvents(L.jarlDir(root), P).at(-1).type, 'converted');
+  const late = R.newIssue(root, 'closed after the conversion', { tier: 'light', acceptance: '[read] it works' }).id;
+  appendFileSync(logFile(root), lineOf(root, late, '→ done · merged'));
+  assert.deepEqual(L.closedGateFlags(L.readLoop(L.jarlDir(root))).map((f) => f.id), [late]);
+});
+
+test('the log command writes no converted line: only a conversion ends with one', () => {
+  const root = loop();
+  assert.throws(() => R.appendLog(root, 'converted'), /only a conversion writes it/);
 });

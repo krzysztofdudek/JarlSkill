@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFil
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SPAWN_TIMEOUT, gitRepo, jarl, refuses, run, windowsWords, loop as makeLoop } from './helpers.mjs';
-import { fileAsBefore, oldJarl } from './old-jarl.mjs';
+import { fileThreeDigits } from './helpers.mjs';
 import * as R from '../record.mjs';
 import * as L from '../jarl-lib.mjs';
 import { composed } from './import-kit.mjs';
@@ -47,7 +47,7 @@ test('an approve with a finding outside the issue files that finding as a new is
   assert.match(fileOf(root, '1'), /^ {2}outside the issue, filed as 2: Important: the json export drops the header row$/m);
   assert.match(fileOf(root, '1'), /^ {2}outside the issue, filed as 3: Minor: the docs name the old flag$/m);
   assert.match(logText(root), /· filed 2 · Important: the json export drops the header row$/m);
-  assert.match(logText(root), /· 1 review approve · by rev-a \(fresh\) · read the diff/m);
+  assert.match(logText(root), /· 1 review approve · by rev-a \(fresh\) · (?:model test-model · )?read the diff/m);
   jarl(root, 'set', '1', 'done', 'proved and approved');
   assert.equal(json(root, 'show', '1').status, 'done');
 });
@@ -58,7 +58,7 @@ test('a changes verdict whose only Critical or Important findings are outside th
   const said = refuses(root, 'review', '1', 'changes', 'read the diff, Minor: a comment is stale', '--by', 'rev-a', '--outside', 'Important: the json export drops the header row');
   assert.match(said, /its only Critical or Important findings are outside the issue/);
   const form = said.trim().split('\n').pop();
-  assert.match(form, /^jarl\.mjs review "<ids>" "<verdict>" "<what-was-read-and-found>" --by "<reviewer>" --outside "<finding-outside-the-issue>"$/);
+  assert.match(form, /^jarl\.mjs review "<ids>" "<verdict>" "<what-was-read-and-found>" --model "<model-id>" --by "<reviewer>" --outside "<finding-outside-the-issue>"$/);
   assert.equal(logText(root), before, 'a refused review writes no line');
   assert.deepEqual(issueFiles(root), ['1'], 'and files nothing');
 });
@@ -139,29 +139,8 @@ test('in a loop whose profile requires a field, a finding outside the issue take
   assert.match(alone, /--field names a field of the issues --outside files/);
 });
 
-test('the issue a finding outside a format-1 loop files names the reviewed issue\'s repository as the raise leaves it, and verify stays clean', () => {
-  const root = makeLoop({ prefix: 'jarl-outside-format1-', via: 'cli', dotGit: false });
-  const tool = join(root, 'tool');
-  mkdirSync(tool);
-  const g = (...a) => execFileSync('git', a, { cwd: tool, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT });
-  g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
-  writeFileSync(join(tool, 'a.txt'), 'a\n'); g('add', '-A'); g('commit', '-qm', 'base');
-  const id = fileAsBefore(root, 'the csv export', { acceptance: 'the export writes csv', repo: 'tool' });
-  assert.equal(json(root, 'show', id).fields.repo, 'tool', 'the format-1 reader writes the path bare');
-  assert.equal(oldJarl(root, 'set', {}, [id, 'in-progress', null, { worker: 'w1' }]).ok, true);
-  jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
-  const out = jarl(root, 'review', id, 'approve', 'read the diff and the test, the export writes csv', '--by', 'rev-a', '--outside', 'Important: the importer drops the header row');
-  const filedId = /filed outside the issue: (\S+)/.exec(out)[1];
-  assert.equal(json(root, 'show', id).fields.repo, './tool', 'the raise wrote the reviewed issue\'s path with a leading ./');
-  assert.equal(json(root, 'show', filedId).fields.repo, './tool', 'and the filed issue names it the same way');
-  const v = run(root, ['verify']);
-  assert.equal(v.status, 0, v.stdout);
-});
-
-// A format-1 loop as the frozen reader of format 1 files it: its issues name the checkout `tool` beside the loop's root bare, each leased
-// on a branch of its own with one commit past the base, and a proof row the frozen reader records, with no tip line (the
-// first tip line raises a loop to format 3).
-function formatOneLeased(titles) {
+// Issues in progress on their branches, filed with three digits and no key.
+function leasedIssues(titles) {
   const root = makeLoop({ prefix: 'jarl-outside-tip-', via: 'cli', dotGit: false });
   const tool = join(root, 'tool');
   mkdirSync(tool);
@@ -169,37 +148,14 @@ function formatOneLeased(titles) {
   g('init', '-q', '-b', 'main'); g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
   writeFileSync(join(tool, 'a.txt'), 'a\n'); g('add', '-A'); g('commit', '-qm', 'base');
   const ids = titles.map((t, k) => {
-    const id = fileAsBefore(root, t, { acceptance: 'it works', repo: 'tool' });
+    const id = fileThreeDigits(root, t, { acceptance: '[read] it works', repo: 'tool' });
     const branch = `jarl/${id}-work`;
     g('checkout', '-q', '-b', branch, 'main'); writeFileSync(join(tool, `f${k}.txt`), `${k}\n`); g('add', '-A'); g('commit', '-qm', t); g('checkout', '-q', 'main');
-    assert.equal(oldJarl(root, 'set', {}, [id, 'in-progress', null, { branch, worker: `w${k}` }]).ok, true);
-    assert.equal(oldJarl(root, 'evidence', {}, [id, null, { ran: 'npm test', saw: 'tests 4, pass 4' }]).ok, true);
     return id;
   });
   return { root, g, ids };
 }
 const tipLinesOf = (root) => logText(root).split('\n').map((l) => / · (\S+) tip ([0-9a-f]+)$/.exec(l)).filter(Boolean).map((m) => [m[1], m[2]]);
-
-test('a review whose finding outside the issue raises a format-1 loop records the tip of the reviewed branch as a review without one does', () => {
-  const runs = [[], ['--outside', 'Important: the importer drops the header row']].map((outside) => {
-    const { root, g, ids: [id] } = formatOneLeased(['the csv export']);
-    const before = tipLinesOf(root).length;
-    jarl(root, 'review', id, 'approve', 'read the diff and the test, the export writes csv', '--by', 'rev-a', ...outside);
-    assert.deepEqual(tipLinesOf(root).slice(before), [[id, g('rev-parse', `jarl/${id}-work`)]], outside.length ? 'with --outside' : 'without --outside');
-    // A commit past the approve: the merge of the new tip says the approve was given on another tip, either way.
-    g('checkout', '-q', `jarl/${id}-work`); writeFileSync(join(root, 'tool', 'late.txt'), 'late\n'); g('add', '-A'); g('commit', '-qm', 'late'); g('checkout', '-q', 'main');
-    const merged = run(root, ['merged', id, '--sha', g('rev-parse', `jarl/${id}-work`), '--ran', 'npm test', '--saw', 'tests 4, pass 4', '--keep']);
-    return `${merged.stdout}\n${merged.stderr}`;
-  });
-  for (const said of runs) assert.match(said, /APPROVED ON ANOTHER TIP/);
-});
-
-test('a bulk review whose finding outside the issues raises a format-1 loop records the tip of every reviewed branch', () => {
-  const { root, g, ids } = formatOneLeased(['the csv export', 'the json export']);
-  const before = tipLinesOf(root).length;
-  jarl(root, 'review', ids.join(','), 'approve', 'read both diffs and their tests, both exports work', '--by', 'rev-a', '--outside', 'Important: the importer drops the header row');
-  assert.deepEqual(tipLinesOf(root).slice(before), ids.map((id) => [id, g('rev-parse', `jarl/${id}-work`)]));
-});
 
 test('a review with a finding outside the issue in a format-3 loop records the tip of the reviewed branch', () => {
   const { dir, g } = gitRepo({ prefix: 'jarl-outside-tip3-' });
@@ -211,52 +167,6 @@ test('a review with a finding outside the issue in a format-3 loop records the t
   const before = tipLinesOf(root).length;
   jarl(root, 'review', '1', 'approve', 'read the diff and the test, the export writes csv', '--by', 'rev-a', '--outside', 'Important: the importer drops the header row');
   assert.deepEqual(tipLinesOf(root).slice(before), [['1', g('rev-parse', 'jarl/1-csv').trim()]]);
-});
-
-test('on a loop that stays at its record format, the second finding outside the issue that would take a number the format cannot hold refuses the review before the first is filed', () => {
-  const hub = composed();
-  writeFileSync(join(hub, '.jarl', 'issues', '998-old-998.md'), L.renderIssue({ id: '998', title: 'old 998', kind: 'bug', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
-  jarl(hub, 'set', '001', 'in-progress', 'start', '--worker', 'w1');
-  jarl(hub, 'evidence', '001', '--line', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
-  const before = snapshot(hub);
-  const said = refuses(hub, 'review', '001', 'approve', 'read the diff and the test, it works', '--by', 'rev-a', '--outside', 'Minor: the first thing seen', '--outside', 'Minor: the second thing seen');
-  assert.match(said, /^the finding outside the issue "Minor: the second thing seen" cannot be filed: issue number 1000 needs record format 2, and this loop stays at format 1: /);
-  assert.match(said, /nothing was written\n/);
-  assert.deepEqual(snapshot(hub), before, 'the refused review left the loop as it found it');
-  assert.deepEqual(issueFiles(hub), ['001', '998']);
-  // The one finding that fits is filed as 999.
-  assert.match(jarl(hub, 'review', '001', 'approve', 'read the diff and the test, it works', '--by', 'rev-a', '--outside', 'Minor: the first thing seen'), /filed outside the issue: 999/);
-});
-
-test('on a composer\'s loop whose goal holds a range, a second finding outside the issue that the range moves onto a number the format cannot hold refuses the review before the first is filed', () => {
-  // A composer's goal command refuses a range, so the range line is written into the goal file as it stands.
-  const hub = composed();
-  writeFileSync(join(hub, '.jarl', 'issues', '997-old-997.md'), L.renderIssue({ id: '997', title: 'old 997', kind: 'bug', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
-  writeFileSync(join(hub, '.jarl', 'goal.md'), `${readFileSync(join(hub, '.jarl', 'goal.md'), 'utf8')}Range (film): 999-1001\n`);
-  jarl(hub, 'set', '001', 'in-progress', 'start', '--worker', 'w1');
-  jarl(hub, 'evidence', '001', '--line', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
-  const before = snapshot(hub);
-  const said = refuses(hub, 'review', '001', 'approve', 'read the diff and the test, it works', '--by', 'rev-a', '--outside', 'Minor: the first thing seen', '--outside', 'Minor: the second thing seen');
-  // The first finding takes 998; the second takes 1002, the number after the range 999 to 1001, which needs record format 2.
-  assert.match(said, /^the finding outside the issue "Minor: the second thing seen" cannot be filed: issue number 1002 needs record format 2, and this loop stays at format 1: /);
-  assert.match(said, /nothing was written\n/);
-  assert.deepEqual(snapshot(hub), before, 'the refused review left the loop as it found it');
-  assert.deepEqual(issueFiles(hub), ['001', '997']);
-  assert.match(jarl(hub, 'review', '001', 'approve', 'read the diff and the test, it works', '--by', 'rev-a', '--outside', 'Minor: the first thing seen'), /filed outside the issue: 998/);
-});
-
-test('on a loop that stays at its record format, a finding outside the issue that takes a number the format cannot hold ends with the profile view its reason names and the call\'s own form', () => {
-  const hub = composed();
-  writeFileSync(join(hub, '.jarl', 'issues', '999-old-999.md'), L.renderIssue({ id: '999', title: 'old 999', kind: 'bug', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
-  jarl(hub, 'set', '001', 'in-progress', 'start', '--worker', 'w1');
-  jarl(hub, 'evidence', '001', '--line', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4');
-  const before = snapshot(hub);
-  const said = refuses(hub, 'review', '001', 'approve', 'read the diff and the test, it works', '--by', 'rev-a', '--outside', 'Minor: the thing seen');
-  assert.match(said, /^the finding outside the issue "Minor: the thing seen" cannot be filed: issue number 1000 needs record format 2, .* until its profile says "format": 2 — nothing was written\n/);
-  const [view, form] = said.trim().split('\n').slice(-2);
-  assert.equal(view, 'jarl.mjs profile');
-  assert.equal(form, 'jarl.mjs review "<ids>" "<verdict>" "<what-was-read-and-found>" --by "<who>" --outside "<finding-outside-the-issue>"', 'the call\'s own form, every value a placeholder');
-  assert.deepEqual(snapshot(hub), before, 'the refused review left the loop as it found it');
 });
 
 test('a finding that holds a field\'s tag pair is refused with a reason that names the pair and the way review takes it', () => {

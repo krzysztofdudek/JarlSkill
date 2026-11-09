@@ -57,7 +57,7 @@ test('show prints the gate window: current rows and verdicts, one line per earli
   const restarted = jarl(root, 'show', id);
   const earlier = restarted.split('\n').filter((l) => l.startsWith('- earlier: '));
   assert.equal(earlier.length, 4, 'three changes and the approve, a line each');
-  assert.match(earlier[0], /\*\*changes\*\* · by rev-a \(fresh\) · \d{4}-\d{2}-\d{2} · Important: first problem$/);
+  assert.match(earlier[0], /\*\*changes\*\* · by rev-a \(fresh\) · \d{4}-\d{2}-\d{2} · (?:model test-model · )?Important: first problem$/);
   assert.doesNotMatch(restarted, /with a second line/, 'an answered earlier finding is a line, not the text');
 
   // The same issue without the approve: the changes findings nothing answered are printed whole.

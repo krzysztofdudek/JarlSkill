@@ -1,14 +1,14 @@
 // The review command.
 
 import { Refusal, echoWord, fieldText, hole, jarlLine, need, refuse } from './base.mjs';
-import { needNoOwnersWords } from './owner.mjs';
+import { OWNER, needNoOwnersWords } from './owner.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { isBulk, newIssueKey } from './ids.mjs';
 import { appendLog, appendLogLines, firstLine } from './journal.mjs';
 import { bodyText, parseIssue, reviewEntries, setSection, unattributedRefusal } from './issues.mjs';
-import { needFormat, tipLinesOf } from './repositories.mjs';
-import { FORMAT_LINES, formatState, loadProfile, reviewerRule } from './profile.mjs';
+import { tipLinesOf } from './repositories.mjs';
+import { loadProfile, reviewerRule } from './profile.mjs';
 import { carriesCode, gateOf, unclearedText } from './gate.mjs';
 import { readLoop } from './loop.mjs';
 import { reviewerKind } from './slices.mjs';
@@ -16,10 +16,9 @@ import { SEVERITIES, limitNote, loggedFinding, modelLines, modelRefusalOf, model
 import { issuesFor, nothingWritten, oneOrMany, refiled } from './shared.mjs';
 import { cmdNew } from './new.mjs';
 import { nextIssueNumbers } from './numbers.mjs';
-import { REVIEW_MIN_WORDS, needSaid, raisedText, retractedBy, struck } from './evidence.mjs';
+import { REVIEW_MIN_WORDS, needSaid, retractedBy, struck } from './evidence.mjs';
 import { closeForm, ownerLineWait } from './owner-lines.mjs';
 import { lineRowForm, lineStates, lineStateText, unprovedMechanical } from './lines.mjs';
-import { resetCaches } from './tips.mjs';
 
 // ---- commands: review ---------------------------------------------------------------------------------
 
@@ -38,15 +37,12 @@ function retractReview(root, rawIds, reason, flags) {
   need(g.lastApprove || target, `${issue.id} has no approve to retract — a retraction takes away the newest approve (review), never a "changes" verdict; a row or a note is retracted by its number`, () => ({ arg: 1, value: '<n-or-note-n>' }));
   const who = g.lastApprove || target;
   const kind = reviewerKind(by, g.workers, coordinators, loop.bots);
-  // The first retraction of a loop raises the record format, before its line is written: a reader of format 1 does not
-  // read a retraction and would go on counting the approve, so it must refuse the loop instead.
-  const raised = needFormat(root, 'retraction');
   const lines = table.lines.slice();
   if (target) lines[target.start] = `${struck(lines[target.start])}~~`;
   const named = `${who.by ? `by ${who.by}${who.kind ? ` (${who.kind})` : ''}` : 'with no reviewer recorded'}${(who.at || who.day) ? ` of ${(who.at || who.day).slice(0, 10)}` : ''}`;
   const entry = `- **retract** · by ${by} (${kind}) · ${stamp().slice(0, 10)}\n  retracts the approve ${named}\n${bodyText(reason).split('\n').map((l) => (l ? `  ${l}` : '')).join('\n')}`;
   const current = lines.join('\n').trim();
-  writeAtomic(issue.file, setSection(raisedText(issue, text, raised), 'Reviews', current ? `${current}\n${entry}` : entry));
+  writeAtomic(issue.file, setSection(text, 'Reviews', current ? `${current}\n${entry}` : entry));
   appendLog(root, `${issue.id} review retract · by ${by} (${kind}) · retracts the approve ${named} · ${firstLine(reason, "the issue's Reviews section")}`);
   return { id: issue.id, verdict: 'retract', by, kind, retracted: named, severities: [], acceptance: (issue.sections.acceptance || '').trim() };
 }
@@ -61,6 +57,8 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   need(words >= REVIEW_MIN_WORDS, `the findings of a review need at least ${REVIEW_MIN_WORDS} words — what was read and what was found, even when nothing (got ${words} word${words === 1 ? '' : 's'}: "${String(findings).trim().slice(0, 40)}")`, () => ({ arg: 2, value: hole('<what-was-read-and-found>') }));
   need(flags.by === undefined || fieldText(flags.by), '--by needs a value — the reviewer\'s name', () => ({ flag: '--by', value: '<reviewer>' }));
   need(flags.by !== undefined, `a verdict needs --by <reviewer> — who read the diff: a fresh reviewer's name, or jarl when the loop's director reviewed it`, () => ({ flag: '--by', value: '<reviewer>' }));
+  // A verdict says what model gave it. A bot and the owner are not models, so their verdicts name none.
+  need(flags.caller !== 'cli' || flags.model !== undefined || flags.bot === true || fieldText(flags.by).toLowerCase() === OWNER, `a verdict names the model of its reviewer with --model`, () => ({ flag: '--model', value: hole('<model-id>') }));
   const issues = issuesFor(root, rawIds);
   if (verdict === 'approve') for (const issue of issues) { const refusal = unattributedRefusal(issue, 'approved'); need(!refusal, issues.length > 1 ? nothingWritten(refusal) : refusal, refiled); }
   const severities = SEVERITIES.filter((s) => findings.includes(s));
@@ -99,20 +97,11 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   // Every finding outside the issue passes every check of a filing before anything is written, so a review refused for one
   // of them writes nothing at all; then each is filed, as a new issue, and the verdict's entry names the issue it became
   // under the findings of the issue itself. They are filed in the order given, each taking the next number, so each is
-  // checked with the number it would take: one the loop's record format cannot hold refuses the review before the first.
+  // checked with the number it would take.
   const numbers = outside.length ? nextIssueNumbers(root, outside.length) : [];
   outside.forEach((o, k) => fileOutside(root, issues, by, o, flags, withModel, true, numbers[k]));
-  // One verdict given on several issues is one review: each of its lines carries the same batch id. The id is a line of
-  // record format 3, which a reader of the formats below would count as several reviews, so the first one raises the loop
-  // once every check has passed; a loop whose format a composer keeps records the verdict without it.
-  // A bot's verdict is a line of record format 3 too: a reader of the formats below would read it as an approve with no
-  // reviewer recorded. Where a composer keeps the loop's format it is refused, with nothing written.
-  const botRaised = kinds.includes('bot') ? needBotFormat(root) : false;
-  const batch = issues.length > 1 && holdsBatches(root) ? newIssueKey(stamp()) : null;
-  // The artifact a verdict judged is a line of record format 3 too: a reader of the formats below would read it as the
-  // first words of the findings. Only a verdict that names one raises the loop.
-  const artifactRaised = artifact !== undefined ? needFormat(root, 'artifact') : false;
-  const raised = (batch ? needFormat(root, 'batch') : false) || botRaised || artifactRaised;
+  // One verdict given on several issues is one review: each of its lines carries the same batch id.
+  const batch = issues.length > 1 ? newIssueKey(stamp()) : null;
   const filed = outside.map((o) => fileOutside(root, issues, by, o, flags, withModel, false));
   const recorded = filed.length ? `${String(findings).trim()}\n${filed.map((f) => `outside the issue, filed as ${f.id}: ${f.first}`).join('\n')}` : findings;
   // The whole findings go under the issue's ## Reviews (before Evidence, which stays last); the log keeps the verdict
@@ -127,14 +116,9 @@ export function cmdReview(root, rawIds, verdict, findings, flags = {}) {
   // The model, the relay mark, the batch and the artifact come after the kind: a reader that parses only the name and the
   // kind ignores what follows.
   const marks = `${model !== undefined ? `model ${model} · ` : ''}${relayed ? 'relayed · ' : ''}${batch ? `batch ${batch} · ` : ''}${artifact !== undefined ? `artifact ${artifact} · ` : ''}`;
-  // Each verdict line is followed by the tip of the issue's branch: the code the verdict was given on. A filing or the batch
-  // may have raised the loop's format, which writes a bare format-1 path with a leading ./ and reads a bare word as a name:
-  // the issues are read again, and every lookup of a repository is made anew, so the tip is read where the Repo points now.
-  const again = filed.length > 0 || raised;
-  if (again) resetCaches();
-  const reviewed = again ? issuesFor(root, rawIds) : issues;
-  const tips = tipLinesOf(root, reviewed);
-  appendLogLines(root, reviewed.flatMap((issue, n) => [`${issue.id} review ${verdict} · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${marks}${loggedFinding(firstLine(recorded, "the issue's Reviews section"))}`, ...tips(issue)]));
+  // Each verdict line is followed by the tip of the issue's branch: the code the verdict was given on.
+  const tips = tipLinesOf(root, issues);
+  appendLogLines(root, issues.flatMap((issue, n) => [`${issue.id} review ${verdict} · ${by ? `by ${by} (${kinds[n]}) · ` : ''}${marks}${loggedFinding(firstLine(recorded, "the issue's Reviews section"))}`, ...tips(issue)]));
   // Recorded, never refused: a coordinator's approve on a code issue is a fact of the record, but it does not clear
   // the issue for done or the merge queue — the output says so at once. On the command line, in a loop that declares
   // its models, the model notes join it (see reviewModelNotes).
@@ -252,15 +236,6 @@ export function artifactValue(raw) {
 // A character as a refusal names it: its code point, and the character itself when it is printable ASCII.
 const codePoint = (c) => `U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}${/^[\x21-\x7e]$/.test(c) ? ` (${c})` : ''}`;
 
-// The record format a bot's verdict needs, raised before the verdict is written. Where a composer keeps the loop's format,
-// the refusal ends with the profile view, which shows the format the profile says, and then the call's own form: --bot
-// takes no value, so no placeholder follows it.
-function needBotFormat(root) {
-  try { return needFormat(root, 'bot-verdict'); } catch (e) {
-    if (!(e instanceof Refusal) || formatState(loadProfile(root)).raises) throw e;
-    return refuse(e.reason, [{ first: ['jarl.mjs', 'profile'] }, { retry: true }]);
-  }
-}
 
 
 // What an approve says of the lines done still asks for: the mechanical lines whose rows or landing are not there. Null
@@ -270,11 +245,6 @@ function unprovedNote(loop, issue) {
   return left.length ? `${issue.id}: done asks of each line what its method asks, and ${left.map(lineStateText).join('; ')}: ${lineRowForm(issue.id)}` : null;
 }
 
-// Whether the loop holds a batch id: it is in the format that holds one, or Jarl may raise it there.
-function holdsBatches(root) {
-  const profile = loadProfile(root);
-  return profile.format >= FORMAT_LINES.batch.format || formatState(profile).raises;
-}
 
 // The findings a review gives outside the issue (--outside, repeatable), each a text with words in it, as written.
 function outsideFindings(raw) {
@@ -292,7 +262,7 @@ const REVIEW_TAKES = new Set(['--field', '--root']);
 // One finding outside the reviewed issues, filed as a new issue (Found by the reviewer, Where the review of the reviewed
 // issues, ruling outside-finding-found-by-reviewer-where-names-the-review): its title the finding's first line, its What
 // the finding, the fields the review's --field gives (a field the profile defaults takes its default), and the Repo the
-// reviewed issues hold once the filing's raises have run. Dry, it runs every check of the filing with the number it would
+// reviewed issues hold. Dry, it runs every check of the filing with the number it would
 // take (`number`) and writes nothing; a refusal names the finding, and ends with the form of the review: the filing's own
 // fix where review takes it, else the finding's place.
 function fileOutside(root, issues, by, o, flags, withModel, dry, number) {
@@ -309,8 +279,7 @@ function fileOutside(root, issues, by, o, flags, withModel, dry, number) {
     // A field's tag pair in the finding: the filing's reason names a flag of new, which review does not take.
     const tag = /holds an opening and a closing (\w+) tag in angle brackets/.exec(e.reason);
     const why = tag ? `it holds an opening and a closing ${tag[1]} tag in angle brackets, which the text of an issue never holds: write the finding without the tag pair, or put the tags in backticks` : e.reason;
-    // A reason that names a view (the profile, for a line the loop's record format does not hold) ends with that view and
-    // the call's own form, as import does: no other text of the finding files it in this loop.
+    // A reason that names a view ends with that view and the call's own form, as import does.
     const view = fixes.find((f) => f && typeof f === 'object' && f.first);
     refuse(`the finding outside the issue "${shown}" cannot be filed: ${why}${/nothing was written/.test(why) ? '' : ' — nothing was written'}`, view ? [{ first: view.first }, { retry: true }] : [...(kept ? fixes : [{ replace: String(o.given), value: hole('<finding-outside-the-issue>') }]), { flag: '--by', value: hole('<reviewer>') }, ...withModel]);
   }
@@ -328,9 +297,9 @@ function fileOutside(root, issues, by, o, flags, withModel, dry, number) {
 // gate does not name, or the loop's own definition of an approved issue; an approve that clears it is then next.
 // `close` is the close the done gate takes (closeForm): the profile's closing status.
 function nextAfterVerdict(issue, verdict, kind, wait = null, model = { rule: 'agent', refused: false }, uncleared, close) {
-  if (verdict === 'changes') return `the jarl records the round — ${jarlLine('round', issue.id, '<text>')} — and a worker is raised again to fix it`;
-  if (uncleared) return `${uncleared.text} — an approve that clears it is next — ${jarlLine('review', issue.id, '<verdict>', '--by', uncleared.cause === 'bot' ? '<a-fresh-reviewer>' : '<reviewer>', '<text>')}`;
-  if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — ${model.rule === 'agent' ? jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '<text>') : modelReviewForm(issue.id)} — then the merger lands it`;
+  if (verdict === 'changes') return `the jarl records the round — ${jarlLine('round', issue.id, '<text>', '--by', 'jarl')} — and a worker is raised again to fix it`;
+  if (uncleared) return `${uncleared.text} — an approve that clears it is next — ${jarlLine('review', issue.id, '<verdict>', '--by', uncleared.cause === 'bot' ? '<a-fresh-reviewer>' : '<reviewer>', '--model', '<model-id>', '<text>')}`;
+  if (carriesCode(issue) && kind === 'coordinator') return `a fresh reviewer's approve is next — ${model.rule === 'agent' ? jarlLine('review', issue.id, '<verdict>', '--by', '<a-fresh-reviewer>', '--model', '<model-id>', '<text>') : modelReviewForm(issue.id)} — then the merger lands it`;
   const after = carriesCode(issue)
     ? `the merger merges the branch and records it with one call — ${jarlLine('merged', issue.id, '--sha', '<sha>', '--ran', '<command>', '--saw', '<what-it-printed>')} — then ${wait ? `${wait}, then ` : ''}${close}, once every line has what its method asks (the merge check is the merger's and proves no line but one on the declared check); a worker never sets done`
     : `${wait ? `${wait}, then ` : ''}${close} once every line has what its method asks; a worker never sets done`;

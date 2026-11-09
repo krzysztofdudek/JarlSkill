@@ -6,7 +6,7 @@
 
 import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { IDENTICAL_OUTPUT_TAG, REVIEWER_KIND_SRC, fieldText, hole, jarlLine, meantToAlterNothing, need, printCommand } from './base.mjs';
+import { REVIEWER_KIND_SRC, fieldText, hole, jarlLine, need, printCommand, signedWords } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
 import { firstLine, firstLineReadings, goalLineOf, goalPath } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
@@ -311,7 +311,7 @@ function parentPurpose(issue) {
 function leaseWhere(root, loop, issues) {
   const first = issues[0];
   const branch = fieldText(first.fields.branch) || null;
-  const inPlace = worksInPlace(loop.profile, first);
+  const inPlace = worksInPlace(first);
   const tier = loop.profile.tiers.reduce((best, t) => (issues.some((i) => i.tier === t) ? t : best), first.tier);
   const repos = [...new Set(issues.flatMap((i) => issueRepos(root, i)))].filter(isGitRepo).map((repo) => {
     const wt = branch ? worktreeState(repo, branch, fieldText(first.fields.worktree)) : null;
@@ -320,12 +320,12 @@ function leaseWhere(root, loop, issues) {
   return { branch, worker: fieldText(first.fields.worker) || null, model: fieldText(first.fields.model) || null, inPlace, tier, repos };
 }
 
-const toolCommand = (ctx) => (...words) => printCommand([RUNTIME, SCRIPT, ...words, '--root', ctx.root], { globals: [] });
+const toolCommand = (ctx, by) => (...words) => printCommand([RUNTIME, SCRIPT, ...signedWords(['jarl.mjs', ...words], by).slice(1), '--root', ctx.root], { globals: [] });
 
 // The commands a role uses, each with every value the record holds filled.
 function workerCommands(ctx, issues, lease) {
   const by = lease.worker ?? hole('<who>');
-  const tool = toolCommand(ctx);
+  const tool = toolCommand(ctx, by);
   const ids = issues.map((i) => i.id).join(',');
   const issueWord = issues.length > 1 ? hole('<id>') : issues[0].id;
   const proofs = issues.map((i) => ({ forIssue: i.id, what: `proof of a line of ${i.id}, one row per run`, command: tool('evidence', i.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>'), '--by', by) }));
@@ -355,12 +355,6 @@ function issueData(root, loop, issue, role) {
   if (role === 'worker' && loop.profile.is(issue.status, 'terminal')) notes.push(`${issue.id} is ${issue.status}: a worker starts on it once it is reopened — ${jarlLine('set', issue.id, loop.profile.initial, hole('<why>'))}`);
   const findings = findingsOf(loop, issue, events, notes);
   if (role === 'reviewer' && !proof.length) notes.push(`${issue.id} holds no proof row: a worker's missing rows are an Important finding`);
-  if (meantToAlterNothing(issue)) {
-    const meant = `${issue.id} is a change meant to alter nothing (tag ${IDENTICAL_OUTPUT_TAG})`;
-    notes.push(role === 'worker'
-      ? `${meant}: its comparison of the output before and after is a proof row, the command and what it printed — ${jarlLine('evidence', issue.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>'), '--by', hole('<who>'))}`
-      : `${meant}: its review may be a light one, and it checks that the comparison in its proof rows covers everything the change touched; the comparison never stands in for the review`);
-  }
   const data = {
     id: issue.id, title: issue.title, status: issue.status, tier: issue.tier,
     text: issueText(root, issue, role),
@@ -429,7 +423,7 @@ function mergerBrief(root, loop, slice, ctx) {
     return { repo, label: repoLabel(repo), base, target: m ? integrationBranch(m.slice) : base };
   });
   const rules = rulesFor(root, loop, { roles: new Set(['merger']), slice: null, moments: new Set(['merge']), issues: [] }, today()).map(ruleOf);
-  const tool = toolCommand(ctx);
+  const tool = toolCommand(ctx, m ? m.name : lines.merger ?? hole('<who>'));
   const repoFlag = repos.length > 1 ? ['--repo', hole('<name-or-path>')] : [];
   const record = [
     { what: 'what waits for you, branch by branch', command: tool(...(m ? ['next', '--as', m.name, '--all'] : ['resume', ...repoFlag])) },
@@ -438,7 +432,7 @@ function mergerBrief(root, loop, slice, ctx) {
     { what: 'a green merge', command: tool('merged', hole('<ids>'), '--sha', hole('<sha>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), ...repoFlag) },
     { what: 'a red, the work\'s fault', command: tool('round', hole('<id>'), hole('<text>')) },
     { what: 'a red from outside the branch', command: tool('new', hole('<what-is-red>'), '--tier', hole('<tier>')) },
-    { what: 'a landing on red', command: tool('merged', hole('<ids>'), '--sha', hole('<sha>'), '--red', hole('<id>')) },
+    { what: 'a landing on red', command: tool('merged', hole('<ids>'), '--sha', hole('<sha>'), '--red', hole('<another-issue>')) },
     { what: 'closing each issue', command: tool('set', hole('<id>'), 'done', hole('<text>')) },
     { what: 'the in-place commit, its sha printed', command: tool('evidence', hole('<id>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>')) },
     { what: 'its changelog entries', command: tool('changelog', hole('<ids>')) },

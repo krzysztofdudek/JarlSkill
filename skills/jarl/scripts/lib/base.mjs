@@ -11,16 +11,6 @@ export const KINDS = ['bug', 'gap', 'cleanup', 'docs', 'test', 'research', 'proc
 export const PROMISE_KIND = 'promise';
 export const WAIT_KIND = 'wait';
 export const KEPT_KINDS = [PROMISE_KIND, WAIT_KIND];
-// The tag of a change meant to alter nothing (a refactor whose output is the same before and after): its comparison of the
-// output is a proof row, and its fresh review may be a light one that checks the comparison covers everything the change
-// touched. The comparison never stands in for the review. The tag alone relaxes nothing: anyone can set it, so a light
-// review is enough only for an issue that carries the tag and a proof row that names the comparison.
-export const IDENTICAL_OUTPUT_TAG = 'identical-output';
-export const meantToAlterNothing = (issue) => (issue.tags || []).some((t) => String(t).toLowerCase() === IDENTICAL_OUTPUT_TAG);
-// A proof row ({ ran, saw }) that names the comparison of the output before and after: its command or what it printed
-// says so with a word of a comparison (compare, diff, cmp, identical, byte for byte, a checksum or a hash).
-const COMPARISON_WORD = /\b(?:compar\w*|diffs?|cmp|identical|byte[- ]for[- ]byte|checksums?|sha\d*sum|md5(?:sum)?|hash(?:es)?)\b/i;
-export const namesComparison = (row) => COMPARISON_WORD.test(`${row.ran ?? ''} ${row.saw ?? ''}`);
 export const PRIORITIES = ['1', '2', '3'];
 // The standing a verdict's reviewer is recorded with, as every reader of a verdict line or a Reviews entry matches it:
 // the issue's own worker (self), the loop's director (coordinator), a bot, or anyone else (fresh).
@@ -184,7 +174,17 @@ export function globalWords(k, v, spelt, shell = 'posix') {
   if (!rootPrintable(v, shell)) return ['--root', hole('<loop-root>')];
   return spelt === '=' ? [`--root=${v}`] : ['--root', v];
 }
-export function printCommand(words, { globals = current().globals, shell = current().shell } = {}) {
+// The commands that write the record. goal writes only when it is given --set.
+export const MUTATING = new Set(['init', 'new', 'renumber', 'import', 'set', 'field', 'split', 'base', 'merged', 'evidence', 'retract', 'review', 'round', 'tick', 'ask', 'answer', 'log', 'decide', 'goal', 'archive', 'mode', 'close', 'extend']);
+export const writes = (words) => MUTATING.has(words[1]) && !(words[1] === 'goal' && !words.some((w) => w === '--set' || String(w).startsWith('--set=')));
+// A printed write names its writer: the words of a command with --by added where they name none, before a bare --.
+export function signedWords(words, by = hole('<who>')) {
+  const end = words.indexOf('--') === -1 ? words.length : words.indexOf('--');
+  if (!writes(words) || words.slice(0, end).some((w) => w === '--by' || String(w).startsWith('--by='))) return words;
+  return [...words.slice(0, end), '--by', by, ...words.slice(end)];
+}
+export function printCommand(given, { globals = current().globals, shell = current().shell } = {}) {
+  const words = given[0] === 'jarl.mjs' ? signedWords(given) : given;
   const w = words.map((x) => (x === undefined || x === null ? hole('<value>') : String(x)));
   let all = w;
   if (w[0] === 'jarl.mjs') {

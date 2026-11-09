@@ -27,7 +27,7 @@ test('done refuses a code issue with no merge recorded, ending with the form of 
   const before = files(root);
   const said = refuses(root, 'set', '1', 'done', 'all green', '--by', 'jarl');
   assert.match(said, /^1 carries code \(its lease records Branch jarl\/1-fix\) and records no merge — a code issue is merged before it is done/, said);
-  assert.match(said, /\njarl\.mjs merged "<ids>" --sha "<sha>"\n$/, said);
+  assert.match(said, /\njarl\.mjs merged "<ids>" --sha "<sha>" --by "<who>"\n$/, said);
   assert.deepEqual(files(root), before, 'a refused done writes nothing');
   jarl(root, 'merged', '1', '--sha', 'abc1234', '--by', 'jarl');
   jarl(root, 'set', '1', 'done', 'merged and green', '--by', 'jarl');
@@ -87,7 +87,7 @@ test('a code issue reopened after its merge and given a new commit is refused by
   const before = files(root);
   const said = refuses(root, 'set', '1', 'done', 'all green');
   assert.match(said, new RegExp(`^1 carries code \\(its lease records Branch jarl/1-fix\\) and its last merge, ${first} \\([^)]+\\), was recorded before its last start, reopen or red round, which spends a merge as it spends an approve — a code issue is merged before it is done`), said);
-  assert.match(said, /\njarl\.mjs merged "<ids>" --sha "<sha>"\n$/, said);
+  assert.match(said, /\njarl\.mjs merged "<ids>" --sha "<sha>" --by "<who>"\n$/, said);
   assert.deepEqual(files(root), before, 'a refused done writes nothing');
   merge();
   assert.equal(jarl(root, 'set', '1', 'done', 'merged again'), '1 → done');
@@ -116,7 +116,7 @@ test('next --as jarl and resume ask for the merge again, with the form of merged
   work('late.txt');
   const row = rowOf(root);
   assert.equal(row.says, 'approved, and the branch has commits after its last merge; merge it again and record the merge');
-  assert.equal(row.command, 'jarl.mjs merged 1 --sha "<sha>" --ran "<command>" --saw "<what-it-printed>"');
+  assert.equal(row.command, 'jarl.mjs merged 1 --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" --by jarl');
   const step = stepOf(root);
   assert.equal(step.mark, 'approved');
   assert.equal(step.next, 'approved, and the branch has commits after its last merge — next the merger lands it again and records the merge, then set it done');
@@ -131,7 +131,7 @@ test('next --as jarl asks for the merge again when a red round spent it, and a l
   proved();
   assert.equal(rowOf(root).says, 'approved, and its last merge was spent by a later start, reopen or red round; merge it again and record the merge');
   const profile = join(mkdtempSync(join(tmpdir(), 'jarl-merge-now-profile-')), 'profile.json');
-  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, format: 1, name: 'landed-no-approve', statuses: BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true, approve: 'none' } }));
+  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, name: 'landed-no-approve', statuses: BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true, approve: 'none' } }));
   const bare = codeIssue(['--profile', profile], { approve: false });
   bare.merge();
   assert.equal(rowOf(bare.root).says, 'proof recorded; close it');
@@ -139,7 +139,7 @@ test('next --as jarl asks for the merge again when a red round spent it, and a l
   assert.match(refuses(bare.root, 'set', '1', 'done', 'all green'), /so the commits after it are not merged/, 'done refuses the merge');
   const row = rowOf(bare.root);
   assert.equal(row.says, 'proof recorded, and the branch has commits after its last merge; merge it again and record the merge');
-  assert.equal(row.command, 'jarl.mjs merged 1 --sha "<sha>" --ran "<command>" --saw "<what-it-printed>"');
+  assert.equal(row.command, 'jarl.mjs merged 1 --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" --by jarl');
 });
 
 test('a red round after a merge spends it as it spends the approve', () => {
@@ -154,7 +154,7 @@ test('a red round after a merge spends it as it spends the approve', () => {
 
 test('a loop that closes only on a landed merge refuses a merge from before the reopen, though its commit is in the base', () => {
   const profile = join(mkdtempSync(join(tmpdir(), 'jarl-merge-now-profile-')), 'profile.json');
-  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, format: 1, name: 'landed-gate', statuses: BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true } }));
+  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, name: 'landed-gate', statuses: BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true } }));
   const { root, work, proved, merge } = codeIssue(['--profile', profile]);
   merge();
   jarl(root, 'set', '1', 'done', 'merged');
@@ -164,7 +164,7 @@ test('a loop that closes only on a landed merge refuses a merge from before the 
   proved();
   const said = refuses(root, 'set', '1', 'done', 'all green');
   assert.match(said, /was recorded before its last start, reopen or red round/, said);
-  assert.match(said, /\njarl\.mjs merged "<ids>" --sha "<sha>"\n$/, said);
+  assert.match(said, /\njarl\.mjs merged "<ids>" --sha "<sha>" --by "<who>"\n$/, said);
   merge();
   assert.equal(jarl(root, 'set', '1', 'done', 'merged again'), '1 → done');
 });
@@ -179,8 +179,8 @@ test('status flags a code issue closed on a merge from before its reopen, naming
   proved();
   // Closed past the gate, as a hand edit or another tool can: the move line and the file's status.
   const log = join(root, '.jarl', 'log.md');
-  const stamp = [...readFileSync(log, 'utf8').matchAll(/^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) · /gm)].pop()[1];
-  writeFileSync(log, `${readFileSync(log, 'utf8')}- ${stamp} · 1 → done · closed by hand\n`);
+  const stamp = [...readFileSync(log, 'utf8').matchAll(/^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2})(?: key \S+)? by [^·]+ · /gm)].pop()[1];
+  writeFileSync(log, `${readFileSync(log, 'utf8')}- ${stamp} key 20260101T0000-tstk by a-writer · 1 → done · closed by hand\n`);
   const file = join(root, '.jarl', 'issues', readdirSync(join(root, '.jarl', 'issues')).find((f) => f.startsWith('1-')));
   writeFileSync(file, readFileSync(file, 'utf8').replace(/^\*\*Status:\*\* .*$/m, '**Status:** done'));
   const flags = json(root, 'status').closedGate;

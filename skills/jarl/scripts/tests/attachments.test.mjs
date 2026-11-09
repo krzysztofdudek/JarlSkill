@@ -13,7 +13,6 @@ import * as R from '../record.mjs';
 import { spawnSync } from 'node:child_process';
 import { jarl, refuses, run, spawnJarl, loop as makeLoop } from './helpers.mjs';
 import { FINDINGS } from './findings.mjs';
-import { oldJarl } from './old-jarl.mjs';
 
 const L = await import('../jarl-lib.mjs');
 
@@ -156,8 +155,8 @@ test('done is refused until every required slot is filled, naming each missing s
   const root = loopWith();
   const why = refuses(root, 'set', '1', 'done');
   assert.match(why, /1 needs these attachments before done/);
-  assert.match(why, /slot before: no file recorded — jarl\.mjs evidence 1 --file "<path>" --slot before \(a file at attachments\/1\/before\.\*\)/);
-  assert.match(why, /slot after: no file recorded — jarl\.mjs evidence 1 --file "<path>" --slot after \(a file at attachments\/1\/after\.\*\)/);
+  assert.match(why, /slot before: no file recorded — jarl\.mjs evidence 1 --file "<path>" --slot before --by "<who>" \(a file at attachments\/1\/before\.\*\)/);
+  assert.match(why, /slot after: no file recorded — jarl\.mjs evidence 1 --file "<path>" --slot after --by "<who>" \(a file at attachments\/1\/after\.\*\)/);
   put(root, 'attachments/1/before.png');
   attach(root, 'before', 'attachments/1/before.png');
   const half = refuses(root, 'set', '1', 'done');
@@ -174,7 +173,7 @@ test('done is refused when a recorded file is gone', () => {
   unlinkSync(join(root, 'attachments', '1', 'before.png'));
   const why = refuses(root, 'set', '1', 'done');
   assert.match(why, /slot before: attachments\/1\/before\.png is gone/);
-  assert.match(why, /jarl\.mjs evidence 1 --file "<path>" --slot before \(a file at attachments\/1\/before\.\*\)/);
+  assert.match(why, /jarl\.mjs evidence 1 --file "<path>" --slot before --by "<who>" \(a file at attachments\/1\/before\.\*\)/);
   assert.doesNotMatch(why, /slot after/);
 });
 
@@ -300,20 +299,6 @@ test('the profile is described with its slots, and profile prints them', () => {
   assert.deepEqual(d.doneGate['requires-slots'], { bug: ['before', 'after'] });
   assert.equal(d.doneGate.slots.before.place, 'attachments/<id>/before.*');
   assert.match(jarl(root, 'profile'), /attachments: bug needs before, after/);
-});
-
-test('a reader that does not know the key refuses the profile loudly, and reads the same loop without it', () => {
-  const root = makeLoop({ prefix: 'jarl-attach-', via: 'library' });
-  R.newIssue(root, 'a defect', { acceptance: '[read] it works' });
-  writeProfile(root, { 'jarl-profile': 1, name: 'bugs', statuses: L.BUILTIN_STATUSES });
-  assert.equal(oldJarl(root, 'list', {}).ok, true, 'before: the frozen reader reads the loop');
-  writeProfile(root, PROFILE);
-  for (const command of ['list', 'status', 'next', 'queue']) {
-    const r = oldJarl(root, command, {});
-    assert.equal(r.ok, false, command);
-    assert.match(r.error, /"done-gate": unknown key "requires-slots"/, command);
-  }
-  assert.match(jarl(root, 'list'), /a defect/);
 });
 
 test('the help text describes the two flags', () => {

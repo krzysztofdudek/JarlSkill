@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { jarl, refuses, run, skillText, loop as makeLoop } from './helpers.mjs';
-import { fileAsBefore, fileAsFormatTwo, formatTwoJarl } from './old-jarl.mjs';
+import { filePlain } from './helpers.mjs';
 
 const loop = () => makeLoop({ prefix: 'jarl-slice-', via: 'cli', dotGit: false });
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
@@ -19,7 +19,7 @@ test('field Tags and new refuse a second slice: tag on one issue, and say how to
   const file = readFileSync(json(root, 'show', '1').file, 'utf8');
   const moving = refuses(root, 'field', '1', 'Tags', '--add', 'slice:thor');
   assert.match(moving, /^1 is in slice:odin already, and an issue is in one slice — to move it, take slice:odin off with field --remove first, then add slice:thor with field --add$/m);
-  assert.match(moving, /\njarl\.mjs field "<ids>" Tags "<tag>" --remove\njarl\.mjs field "<ids>" Tags "<tag>" --add\n$/, 'the steps are forms: no command is composed that takes a tag off');
+  assert.match(moving, /\njarl\.mjs field "<ids>" Tags "<tag>" --remove --by "<who>"\njarl\.mjs field "<ids>" Tags "<tag>" --by "<who>" --add\n$/, 'the steps are forms: no command is composed that takes a tag off');
   assert.match(refuses(root, 'field', '1', 'Tags', 'slice:odin, slice:thor'), /^1 is in slice:odin already, and an issue is in one slice — to move it, take slice:odin off with field --remove first, then add slice:thor with field --add$/m);
   assert.match(refuses(root, 'new', 'two', '--tags', 'slice:odin,slice:thor'), /^an issue is in one slice, and the tags name slice:odin, slice:thor — keep one, e\.g\. --tags slice:odin$/m);
   assert.match(refuses(root, 'field', '1', 'Tags', '--add', 'slice:'), /^slice: names no coordinator: a slice is the tag slice:<coordinator>/m);
@@ -75,15 +75,15 @@ function twoSlices() {
   jarl(root, 'set', '5', 'in-progress', 'go', '--worker', 'w5', '--branch', 'jarl/5');
   return root;
 }
-// The same loop with its issues filed with no key (fileAsFormatTwo), so it stays in format 2 until a line of format 3.
+// The same loop with its issues filed with no key (filePlain).
 function twoSlicesUnkeyed() {
   const root = loop();
   jarl(root, 'goal', '--set', 'Coordinators: odin, thor');
-  fileAsFormatTwo(root, 'odin first', { tags: 'slice:odin', files: 'a.mjs', prio: '1' });
-  fileAsFormatTwo(root, 'odin second', { tags: 'slice:odin', files: 'a.mjs' });
-  fileAsFormatTwo(root, 'thor first', { tags: 'slice:thor', files: 'a.mjs' });
-  fileAsFormatTwo(root, 'the jarl\'s', { files: 'b.mjs' });
-  fileAsFormatTwo(root, 'thor leased', { tags: 'slice:thor', files: 'c.mjs' });
+  filePlain(root, 'odin first', { tags: 'slice:odin', files: 'a.mjs', prio: '1' });
+  filePlain(root, 'odin second', { tags: 'slice:odin', files: 'a.mjs' });
+  filePlain(root, 'thor first', { tags: 'slice:thor', files: 'a.mjs' });
+  filePlain(root, 'the jarl\'s', { files: 'b.mjs' });
+  filePlain(root, 'thor leased', { tags: 'slice:thor', files: 'c.mjs' });
   jarl(root, 'set', '5', 'in-progress', 'go', '--worker', 'w5', '--branch', 'jarl/5');
   return root;
 }
@@ -150,7 +150,7 @@ test('next --as <coordinator> holds its slice\'s ready issues, leases, proofs wi
   assert.match(jarl(root, 'next', '--as', 'odin'), /^- 6 odin proof: proof recorded, no verdict; raise a fresh reviewer for 6;/m);
   // A coordinator the line names whose slice has no issue says so, and so does one while the loop has no slice at all.
   jarl(root, 'goal', '--set', 'Coordinators: odin, thor, frey');
-  assert.match(jarl(root, 'next', '--as', 'frey'), /^no issue carries slice:frey, so nothing of a slice is on frey: the issues in no slice are the jarl's \(jarl\.mjs next --as jarl\), and jarl\.mjs field "<ids>" Tags --add slice:frey gives frey its slice$/m);
+  assert.match(jarl(root, 'next', '--as', 'frey'), /^no issue carries slice:frey, so nothing of a slice is on frey: the issues in no slice are the jarl's \(jarl\.mjs next --as jarl\), and jarl\.mjs field "<ids>" Tags --add slice:frey --by "<who>" gives frey its slice$/m);
   assert.doesNotMatch(jarl(root, 'next', '--as', 'odin'), /no issue carries/);
 });
 
@@ -165,15 +165,11 @@ test('the issues waiting on a slice\'s issue, through After or a file it reserve
 
 test('ask --kind escalation names its slice or issue, is held by the jarl, shows in the slice\'s views and holds its issue back', () => {
   const root = twoSlicesUnkeyed();
-  const before = readFileSync(join(root, '.jarl', 'profile.json'), 'utf8');
-  assert.match(refuses(root, 'ask', 'is this ours?', '--kind', 'escalation'), /^an escalation names what it is about, its slice or its issue or both\njarl\.mjs ask "<text>" --kind "<ask-kind>" --slice "<coordinator>"\n$/);
+  assert.match(refuses(root, 'ask', 'is this ours?', '--kind', 'escalation'), /^an escalation names what it is about, its slice or its issue or both\njarl\.mjs ask "<text>" --by "<who>" --kind "<ask-kind>" --slice "<coordinator>"\n$/);
   assert.match(refuses(root, 'ask', 'is this ours?', '--slice', 'odin'), /^--slice goes with kind escalation only/m);
   assert.match(refuses(root, 'ask', 'is this ours?', '--kind', 'escalation', '--slice', 'loki'), /no coordinator loki on the goal's Coordinators line/);
-  assert.equal(readFileSync(join(root, '.jarl', 'profile.json'), 'utf8'), before, 'a refusal raises nothing');
-  assert.equal(json(root, 'profile').format, 2);
   const a = json(root, 'ask', 'thor blocks odin on a.mjs: which goes first?', '--kind', 'escalation', '--slice', 'odin', '--issue', '2');
   assert.deepEqual([a.id, a.kind, a.slice], ['1', 'escalation', 'odin']);
-  assert.equal(json(root, 'profile').format, 3, 'an older reader refuses a kind it does not know: the first escalation raises the format');
   assert.match(readFileSync(join(root, '.jarl', 'asks.md'), 'utf8'), /^- \*\*a-1\*\* \(open\) · escalation · issue 2 · slice odin · thor blocks odin on a\.mjs: which goes first\?$/m);
   // The jarl holds it; the owner does not.
   const jarlRows = json(root, 'next', '--as', 'jarl', '--all').rows;
@@ -196,22 +192,6 @@ test('ask --kind escalation names its slice or issue, is held by the jarl, shows
   jarl(root, 'answer', 'a-1', 'odin goes first', '--by', 'jarl');
   assert.match(readFileSync(join(root, '.jarl', 'decisions.md'), 'utf8'), /## \d{4}-\d{2}-\d{2} · ask-1\n[\s\S]*?\*\*By:\*\* jarl/);
   assert.equal(json(root, 'next', '--slice', 'odin', '--all').find((r) => r.id === '2').group, 'held-by-file', 'the answer releases the issue');
-});
-
-test('verify finds an escalation in a loop that is not in record format 3', () => {
-  const root = twoSlices();
-  jarl(root, 'ask', 'which first?', '--kind', 'escalation', '--slice', 'odin');
-  writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, format: 2 }));
-  assert.match(run(root, ['verify']).stdout, /asks\.md a-1: an escalation is written in record format 3, and this loop is not in it/);
-});
-
-test('a loop holding an escalation is refused by the frozen reader of formats 1 and 2, which would refuse the kind it does not know', () => {
-  const root = twoSlicesUnkeyed();
-  assert.equal(formatTwoJarl(root, 'list', {}).ok, true);
-  jarl(root, 'ask', 'which first?', '--kind', 'escalation', '--slice', 'odin');
-  const two = formatTwoJarl(root, 'list', {});
-  assert.equal(two.ok, false);
-  assert.match(two.error, /written for record format 3/);
 });
 
 test('the goal\'s Merger line names the one holder that raises the merger: every approve not merged is on it, in every slice', () => {
@@ -244,7 +224,7 @@ test('with more than one slice in play, a lease on an issue that declares no Fil
   jarl(root, 'new', 'no slice, bare', '--acceptance', '[read] it works');                                         // 3
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   for (const id of ['1', '3']) {
-    assert.match(refuses(root, 'set', id, 'in-progress', 'go', '--worker', 'w', '--branch', `jarl/${id}`), new RegExp(`^${id} declares no Files or Resources, and 3 slices are in play \\(slice:odin, slice:thor, the issues in no slice\\): across slices only leases hold, and a lease holds only what its issue declares — declare them first, its files or its resources \\(jarl\\.mjs field "<ids>" Resources "<resource-name>"\\)\njarl\\.mjs field "<ids>" Files "<paths>"\njarl\\.mjs set "<ids>" "<status>" "<why>" --worker "<the-new-worker>" --branch "<worker-branch>"\n$`));
+    assert.match(refuses(root, 'set', id, 'in-progress', 'go', '--worker', 'w', '--branch', `jarl/${id}`), new RegExp(`^${id} declares no Files or Resources, and 3 slices are in play \\(slice:odin, slice:thor, the issues in no slice\\): across slices only leases hold, and a lease holds only what its issue declares — declare them first, its files or its resources \\(jarl\\.mjs field "<ids>" Resources "<resource-name>" --by "<who>"\\)\njarl\\.mjs field "<ids>" Files "<paths>" --by "<who>"\njarl\\.mjs set "<ids>" "<status>" "<why>" --by "<who>" --model "<model-id>" --worker "<the-new-worker>" --branch "<worker-branch>"\n$`));
   }
   assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), log, 'nothing was written');
   jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'w2', '--branch', 'jarl/2');
@@ -276,36 +256,6 @@ test('the jarl reference hands slices to coordinators: the four reasons to escal
   assert.match(section.replace(/\n/g, ' '), /The goal's `Merger: <name>` line names the one holder, the jarl or one coordinator, that raises the merger/);
   assert.match(section.replace(/\n/g, ' '), /Counts are never pushed up: the jarl reads them with `status --slice <name>`\./);
   assert.match(skillText('references/models.md'), /\[Coordinators\]\(jarl\.md#coordinators-slices-of-the-backlog\)/);
-});
-
-test('a refused escalation writes nothing: the format is raised only after every check, right before the write', () => {
-  const root = twoSlicesUnkeyed();
-  const profile = () => readFileSync(join(root, '.jarl', 'profile.json'), 'utf8');
-  const before = profile();
-  const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
-  assert.match(refuses(root, 'ask', 'which first?', '--kind', 'escalation', '--slice', 'odin', '--option', 'only: one choice'), /at least two options/);
-  assert.equal(profile(), before, 'the profile line holds the format it held');
-  assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), log);
-  assert.equal(json(root, 'profile').format, 2);
-});
-
-test('a refused question in a format-1 loop writes nothing and raises nothing, whatever line its write would have raised for', () => {
-  const root = loop();
-  jarl(root, 'goal', '--set', 'Coordinators: odin');
-  const id = fileAsBefore(root, 'odin first', { tags: 'slice:odin', files: 'a.mjs' });
-  const dir = join(root, '.jarl');
-  const before = () => ({ files: readdirSync(dir).sort(), log: readFileSync(join(dir, 'log.md'), 'utf8') });
-  const was = before();
-  assert.equal(existsSync(join(dir, 'profile.json')), false, 'the loop is in format 1');
-  for (const [what, args, why] of [
-    ['an escalation with one option', ['ask', 'which first?', '--kind', 'escalation', '--slice', 'odin', '--option', 'only: one choice'], /at least two options/],
-    ['an escalation with --by and one option', ['ask', 'which first?', '--kind', 'escalation', '--issue', id, '--option', 'only: one choice', '--by', 'odin'], /at least two options/],
-    ['a rule proposal with no scope', ['ask', 'run the long check', '--kind', 'rule'], /a rule is proposed with whom it applies to/],
-    ['a rule proposal that names an issue', ['ask', 'run the long check', '--kind', 'rule', '--applies-to', 'loop', '--issue', id], /holds no issue back/],
-  ]) {
-    assert.match(refuses(root, ...args), why, what);
-    assert.deepEqual(before(), was, `${what}: no file of the record is added or changed, the profile included`);
-  }
 });
 
 test('issues in no slice count as one more slice in play: beside one coordinator\'s slice, a lease on an issue that declares nothing is refused', () => {

@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { FINDINGS } from './findings.mjs';
-import { oldJarl, fileAsBefore } from './old-jarl.mjs';
+import { fileThreeDigits } from './helpers.mjs';
 import { run, jarl, refuses, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
 import * as R from '../record.mjs';
 
@@ -258,17 +258,13 @@ test('an issue that declares a resource passes check on its real files; check, t
   assert.deepEqual(JSON.parse(jarl(dir, 'resume', '--json')).queue.repos.flatMap((r) => r.rows), [], 'queue reads no resource');
 });
 
-test('field Resources refuses a bad name; --clear empties it; the frozen reader ignores the field', () => {
+test('field Resources refuses a bad name; --clear empties it', () => {
   const hub = twoRepos();
-  // Filed with three digits and no key (fileAsBefore), so the loop stays format 1 for the frozen reader.
-  fileAsBefore(hub, 'a', { files: 'a.mjs' });
-  fileAsBefore(hub, 'b', { files: 'b.mjs' });
+  fileThreeDigits(hub, 'a', { files: 'a.mjs' });
+  fileThreeDigits(hub, 'b', { files: 'b.mjs' });
   assert.match(refuses(hub, 'field', '1', 'Resources', 'two words'), /resource names are single words/);
   jarl(hub, 'field', '1,2', 'Resources', 'port-8080');
   assert.deepEqual(JSON.parse(jarl(hub, 'next', '--json')).map((r) => r.id), ['001'], '002 shares the resource, so it is held');
-  // The pinned frozen reader reads the field as any other it does not know: both issues are ready to it, nothing refused.
-  for (const command of ['list', 'status', 'next', 'queue']) assert.equal(oldJarl(hub, command, {}).ok, true, command);
-  assert.deepEqual(oldJarl(hub, 'next', {}).value.filter((r) => r.ready).map((r) => r.id), ['001', '002'], '6.1.0 ignores Resources');
   jarl(hub, 'field', '2', 'Resources', '--clear');
   assert.deepEqual(JSON.parse(jarl(hub, 'next', '--json')).map((r) => r.id), ['001', '002']);
 });

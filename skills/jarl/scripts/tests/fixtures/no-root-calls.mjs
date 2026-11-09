@@ -7,7 +7,7 @@ import { SCRIPT, SPAWN_TIMEOUT } from '../helpers.mjs';
 import * as mcp from '../../jarl-mcp.mjs';
 
 const cwd = process.argv[2];
-const spawned = spawnSync(process.execPath, [SCRIPT, 'new', 'filed by a spawned call'], { cwd, encoding: 'utf8', timeout: SPAWN_TIMEOUT });
-const shell = process.platform === 'win32' ? null : spawnSync('/bin/sh', ['-c', `"$0" "$1" new 'filed through a shell'`, process.execPath, SCRIPT], { cwd, encoding: 'utf8', timeout: SPAWN_TIMEOUT });
-const tool = mcp.callTool('jarl_new', { title: 'filed by a tool call' }, process.env, cwd, { root: null });
+const spawned = spawnSync(process.execPath, [SCRIPT, 'new', 'filed by a spawned call', '--by', 'jarl'], { cwd, encoding: 'utf8', timeout: SPAWN_TIMEOUT });
+const shell = process.platform === 'win32' ? null : spawnSync('/bin/sh', ['-c', `"$0" "$1" new 'filed through a shell' --by jarl`, process.execPath, SCRIPT], { cwd, encoding: 'utf8', timeout: SPAWN_TIMEOUT });
+const tool = mcp.callTool('jarl_new', { title: 'filed by a tool call', by: 'jarl' }, process.env, cwd, { root: null });
 process.stdout.write(JSON.stringify({ inherited: process.env.JARL_ROOT ?? null, spawned: spawned.status, shell: shell ? shell.status : null, tool: tool.isError }));

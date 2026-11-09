@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileAsBefore } from './old-jarl.mjs';
+import { fileThreeDigits } from './helpers.mjs';
 import { jarl, refuses, loop as makeLoop } from './helpers.mjs';
 import { FINDINGS } from './findings.mjs';
 import { ARTIFACT_MOST, Refusal, artifactValue, loadProfile, loopEvents } from '../jarl-lib.mjs';
@@ -200,7 +200,7 @@ test('the review command writes each accepted value as given into the verdict li
   const sample = DECIDED.filter(([v]) => !v.includes('\u0000') && v !== LONG).concat([[`${'a'.repeat(19996)}.png`, null]]);
   assert.ok(sample.length >= 150, `the sample holds ${sample.length} values`);
   const root = makeLoop({ prefix: 'jarl-artifact-rule-', via: 'cli' });
-  const id = fileAsBefore(root, 'a page change', { acceptance: 'the page renders' });
+  const id = fileThreeDigits(root, 'a page change', { acceptance: '[read] the page renders' });
   jarl(root, 'set', id, 'in-progress', '--worker', 'w1');
   jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass 3, fail 0');
   // Every file of the loop, by its path, with what it holds.
@@ -223,8 +223,8 @@ test('the review command writes each accepted value as given into the verdict li
   const verdicts = loopEvents(join(root, '.jarl'), loadProfile(root)).filter((e) => e.type === 'verdict');
   assert.deepEqual(verdicts.map((e) => e.artifact), stored, 'the verdict lines');
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
-  for (const v of stored) assert.ok(log.includes(`${id} review approve · by rev-a (fresh) · artifact ${v} · ${FINDINGS}`), `the verdict line names ${v}`);
-  const entries = (text) => [...text.matchAll(/^- \*\*approve\*\* · by rev-a \(fresh\) · \d{4}-\d\d-\d\d · artifact (.+)$/gm)].map((m) => m[1]);
+  for (const v of stored) assert.ok(log.includes(`${id} review approve · by rev-a (fresh) · model test-model · artifact ${v} · ${FINDINGS}`), `the verdict line names ${v}`);
+  const entries = (text) => [...text.matchAll(/^- \*\*approve\*\* · by rev-a \(fresh\) · \d{4}-\d\d-\d\d · (?:model test-model · )?artifact (.+)$/gm)].map((m) => m[1]);
   assert.deepEqual(entries(readFileSync(issueFile, 'utf8')), stored, 'the Reviews entries');
   assert.deepEqual(entries(jarl(root, 'show', id)), stored, 'show');
   assert.deepEqual(entries(JSON.parse(jarl(root, 'show', id, '--json')).sections.reviews), stored, 'show --json');

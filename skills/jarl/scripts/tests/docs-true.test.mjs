@@ -13,7 +13,7 @@ import { LEFT_THE_FAMILY } from './left-the-family.mjs';
 
 const { COMMAND_FLAGS, INTERNAL_COMMANDS, MUTATING, USAGE } = await import('../jarl.mjs');
 const mcp = await import('../jarl-mcp.mjs');
-const { RECORD_API, RECORD_APIS } = await import('../record.mjs');
+const { RECORD_API } = await import('../record.mjs');
 const { renderSplit } = await import('../lib/gate.mjs');
 
 const PLUGIN = resolve(SKILL_DIR, '..', '..');
@@ -54,7 +54,7 @@ test('a drop-in copy of skills/jarl/ runs its own command and starts its own MCP
   const script = join(copy, 'scripts', 'jarl.mjs');
   assert.match(node([script, '--help']).stdout, /^usage: jarl\.mjs "<a-jarl-command>"/);
   const { dir } = gitRepo({ prefix: 'jarl-dropin-repo-' });
-  assert.equal(node([script, 'init', 'a goal', '--root', dir]).status, 0);
+  assert.equal(node([script, 'init', 'a goal', '--by', 'jarl', '--root', dir]).status, 0);
   assert.match(node([script, 'status', '--root', dir]).stdout, /^goal: a goal/);
   const server = node([join(copy, 'scripts', 'jarl-mcp.mjs')], { input: `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })}\n` });
   assert.match(server.stdout, /"instructions"/);
@@ -130,7 +130,7 @@ test('close --force closes with issues still open, as the reference says, and re
   const { dir } = gitRepo({ prefix: 'jarl-docs-close-' });
   jarl(dir, 'init', 'g');
   jarl(dir, 'new', 'still open', '--acceptance', '[read] it works');
-  assert.match(refuses(dir, 'close'), /still open or in progress.*close --force removes it with them\)\njarl\.mjs ask "<question-for-the-owner>"\n$/);
+  assert.match(refuses(dir, 'close'), /still open or in progress.*close --force removes it with them\)\njarl\.mjs ask "<question-for-the-owner>" --by test-writer\n$/);
   assert.match(jarl(dir, 'close', '--force'), /^removed /);
   assert.equal(existsSync(join(dir, '.jarl')), false);
 });
@@ -306,7 +306,7 @@ test('the README names the branch the merger merges into, who reads JARL_ROOT, t
   assert.match(readme, /never in a subdirectory/);
 });
 
-test('the README\'s opening says what closes an issue as the done gate does, and its record contract line names the contract the library holds and the ones it keeps', () => {
+test('the README\'s opening says what closes an issue as the done gate does, and its record contract line names the contract the library holds', () => {
   const readme = readRoot('README.md');
   assert.doesNotMatch(readme, /closes nothing without recorded evidence and a fresh reviewer/, 'an approval of a fresh reviewer is needed for code, not for every issue');
   const opening = readme.split('\n').filter((l) => l.includes('closes nothing without recorded evidence'));
@@ -316,8 +316,7 @@ test('the README\'s opening says what closes an issue as the done gate does, and
   const contract = readme.split('\n').find((l) => l.includes('record.mjs'));
   assert.ok(contract, 'the README names the record library');
   assert.equal(/under the contract `(jarl-record\/\d+)`/.exec(contract)?.[1], RECORD_API, 'the line names the contract the library holds as the current one');
-  assert.deepEqual([...new Set(contract.match(/jarl-record\/\d+/g))].sort(), [...RECORD_APIS].sort(), 'the line names exactly the contracts the library keeps');
-  assert.match(contract, new RegExp(`which keeps every export of ${RECORD_APIS.slice(0, -1).map((c) => `\`${c}\``).join(' and ')}`));
+  assert.deepEqual([...new Set(contract.match(/jarl-record\/\d+/g))], [RECORD_API], 'the line names exactly the one contract the library holds');
 });
 
 const linesNaming = (text, names) => text.split('\n').filter((line) => names.some((name) => new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(line)));
@@ -426,12 +425,12 @@ test('jarl_help prints the usage the command line prints, and the server instruc
 
 test('a tool call does what its description says: jarl_ask without a kind files a stuck question, jarl_close with force closes', () => {
   const root = loop({ prefix: 'jarl-docs-call-', via: 'cli' });
-  const asked = mcp.callTool('jarl_ask', { text: 'which way?', root });
+  const asked = mcp.callTool('jarl_ask', { by: 'test-writer', text: 'which way?', root });
   assert.equal(asked.isError, false);
   assert.match(readFileSync(join(root, '.jarl', 'asks.md'), 'utf8'), /stuck/);
-  mcp.callTool('jarl_new', { title: 'open', root });
-  assert.equal(mcp.callTool('jarl_close', { root }).isError, true, 'close refuses while an issue is open');
-  assert.equal(mcp.callTool('jarl_close', { force: true, root }).isError, false);
+  mcp.callTool('jarl_new', { by: 'test-writer', title: 'open', root });
+  assert.equal(mcp.callTool('jarl_close', { by: 'test-writer', root }).isError, true, 'close refuses while an issue is open');
+  assert.equal(mcp.callTool('jarl_close', { by: 'test-writer', force: true, root }).isError, false);
 });
 
 // ---- the rules as the tool applies them ---------------------------------------------------------------------------

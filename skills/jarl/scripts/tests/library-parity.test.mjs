@@ -82,7 +82,10 @@ function snapshot(root, wt) {
   const scrub = (text) => {
     let t = text;
     for (const n of [existsOrNull(wt), wt, realpathSync(root), root]) if (n) t = t.split(n).join(n === wt || n === existsOrNull(wt) ? '<wt>' : '<root>');
-    return t.replace(KEY, '<key>').replace(TIME, '<time>');
+    // The command line requires a writer and a model the library takes only when it is given them: those differ by design.
+    return t.replace(KEY, '<key>').replace(TIME, '<time>')
+      .replace(/^(- <time>(?: key <key>)?(?: tip)?) by [^·]+ ·/gm, '$1 ·')
+      .replace(/ · by test-writer$/gm, '').replace(/ · model test-model\b/g, '').replace(/^\*\*Model:\*\* test-model\n/gm, '');
   };
   const walk = (d) => {
     for (const e of readdirSync(d, { withFileTypes: true })) {
@@ -155,14 +158,6 @@ const raise = (root, id) => R.setStatus(root, id, 'in-progress', undefined, { br
 const raiseArgs = (id) => ['set', id, 'in-progress', '--branch', `work/${id}`, '--worker', `w${id}`, '--model', 'some-model'];
 const MODEL_LINES = '\nModel (strong): big-model\nModel (standard): mid-model\n';
 const goalOf = (root) => join(root, '.jarl', 'goal.md');
-// A loop run by an external scheduler: its composer places the models.
-function scheduled(root) {
-  const file = join(root, 'profile.json');
-  writeFileSync(file, JSON.stringify({ 'jarl-profile': R.PROFILE_VERSION, name: 'p', statuses: { queued: ['dispatchable'], running: ['lease'], done: ['settles-dependents', 'terminal', 'closes-record'] }, initial: 'queued', 'external-scheduler': 'composer tick' }));
-  R.initLoop(root, 'g', { profile: file });
-  R.newIssue(root, 't', { acceptance: '[read] it works' });
-}
-
 // Each case: `pre` builds the state on both loops with the library; `lib` runs on one loop as the library calls it;
 // `cli` is the command line's arguments (the loop's --root is added), run on the other; `git` makes a checkout; `spell`
 // compares the ids with their padding taken out; `refusal` says which side refuses, when the two must differ in that.
@@ -170,15 +165,14 @@ function scheduled(root) {
 const CASES = [
   { op: 'initLoop', name: 'init', git: false, pre: () => {}, lib: (root) => R.initLoop(root, 'goal'), cli: ['init', 'goal'] },
   { op: 'newIssue', name: 'new', pre: base, spell: true, lib: (root) => R.newIssue(root, 'third', { kind: 'gap', prio: '2', acceptance: '[read] it works' }), cli: ['new', 'third', '--kind', 'gap', '--prio', '2', '--acceptance', '[read] it works'] },
-  { op: 'setStatus', name: 'set in-progress', pre: base, lib: (root) => R.setStatus(root, '1', 'in-progress', undefined, { branch: 'work/first', worker: 'w1' }), cli: ['set', '1', 'in-progress', '--branch', 'work/first', '--worker', 'w1'] },
+  { op: 'setStatus', name: 'set in-progress', pre: base, lib: (root) => R.setStatus(root, '1', 'in-progress', undefined, { branch: 'work/first', worker: 'w1', model: 'test-model' }), cli: ['set', '1', 'in-progress', '--branch', 'work/first', '--worker', 'w1', '--model', 'test-model'] },
   // The offer of the Model lines: the lines that remember it are written by both, the offer text is the command line's.
   { op: 'setStatus', name: 'lease with a model, offered', pre: ready, lib: (root) => raise(root, '1'), cli: raiseArgs('1') },
   { op: 'setStatus', name: 'second lease with a model, not offered again', pre: (root) => { ready(root); raise(root, '1'); }, lib: (root) => raise(root, '2'), cli: raiseArgs('2') },
   { op: 'setStatus', name: 'lease that finds the lines, closes the offer', pre: (root) => { ready(root); raise(root, '1'); appendFileSync(goalOf(root), MODEL_LINES); }, lib: (root) => raise(root, '2'), cli: raiseArgs('2') },
   { op: 'setStatus', name: 'lease after the lines are gone, offered again', pre: (root) => { ready(root); const goal = readFileSync(goalOf(root), 'utf8'); raise(root, '1'); appendFileSync(goalOf(root), MODEL_LINES); raise(root, '2'); writeFileSync(goalOf(root), goal); }, lib: (root) => raise(root, '3'), cli: raiseArgs('3') },
-  { op: 'setStatus', name: 'lease under an external scheduler, nothing offered', pre: scheduled, lib: (root) => R.setStatus(root, '1', 'running', undefined, { branch: 'work/1', worker: 'w1', model: 'some-model' }), cli: ['set', '1', 'running', '--branch', 'work/1', '--worker', 'w1', '--model', 'some-model'] },
   { op: 'setStatus', name: 'set done', pre: proven, lib: (root) => R.setStatus(root, '1', 'done'), cli: ['set', '1', 'done'] },
-  { op: 'setStatus', name: 'status as cli', pre: recordOwned, lib: (root) => R.setStatus(root, '1', 'doing'), cli: ['set', '1', 'doing'], refusal: { lib: false, cli: true } },
+  { op: 'setStatus', name: 'status as cli', pre: recordOwned, lib: (root) => R.setStatus(root, '1', 'doing', '', { worker: 'w1' }), cli: ['set', '1', 'doing', '--worker', 'w1'], refusal: { lib: false, cli: true } },
   { op: 'setStatus', name: 'worktree as cli', pre: base, lib: (root) => R.setStatus(root, '1', 'in-progress', undefined, { branch: 'work/first', worker: 'w1', worktree: join(root, '.jarl') }), cli: (root) => ['set', '1', 'in-progress', '--branch', 'work/first', '--worker', 'w1', '--worktree', join(root, '.jarl')], refusal: { lib: false, cli: true } },
   { op: 'setField', name: 'field Area', pre: fielded, lib: (root) => R.setField(root, '1', 'Area', 'core'), cli: ['field', '1', 'Area', 'core'] },
   { op: 'setBody', name: 'field What', pre: base, lib: (root) => R.setBody(root, '1', { what: 'the what' }), cli: ['field', '1', 'What', 'the what'] },
@@ -239,20 +233,12 @@ test('every record operation writes the same files and log lines as its command,
       }
       let aFiles = a.files;
       let bFiles = b.files;
-      let raised = false;
       if (c.spell) {
         aFiles = spelled(aFiles);
         bFiles = spelled(bFiles);
-        // A plain number under three digits makes the command line raise the record format: that marker, exactly, is the one
-        // file that may differ beside the padding of the ids.
-        if (bFiles['profile.json'] !== undefined && aFiles['profile.json'] === undefined) {
-          assert.deepEqual(JSON.parse(bFiles['profile.json']), { 'jarl-profile': R.PROFILE_VERSION, format: 2 }, `${c.name}: the marker the command line raises`);
-          delete bFiles['profile.json'];
-          raised = true;
-        }
       }
       // A case whose ids are spelled with padding on one side differs by that padding, whatever else is the same.
-      if (raised || !sameFiles(aFiles, bFiles) || (c.spell && !sameFiles(a.files, b.files))) differing.add(c.name);
+      if (!sameFiles(aFiles, bFiles) || (c.spell && !sameFiles(a.files, b.files))) differing.add(c.name);
       if (sameFiles(aFiles, bFiles)) assert.deepEqual(logLines(aFiles), logLines(bFiles), `${c.name}: log lines`);
     } finally {
       for (const d of [lib, cli, wtLib, wtCli]) rmSync(d, { recursive: true, force: true });

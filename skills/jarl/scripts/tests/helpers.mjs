@@ -45,13 +45,43 @@ export function skillLines() {
   return out;
 }
 
+// Every write names its writer, and a lease and a verdict their model. A test about something else does not spell them:
+// a call that gives none carries these. A test about the flags themselves spawns with `bare`, or names its own.
+export const TEST_WRITER = 'test-writer';
+export const TEST_MODEL = 'test-model';
+export const TEST_WORKER = 'test-worker';
+export function withNames(args, { bare = false } = {}) {
+  if (bare) return args;
+  const words = args.map(String);
+  const stop = words.indexOf('--');
+  const before = stop === -1 ? words : words.slice(0, stop);
+  const call = J.callOfArgv(before);
+  const cmd = call.cmd;
+  if (cmd === undefined || !J.MUTATING.has(cmd)) return args;
+  const has = (flag) => call.flags.some(([k]) => k === flag);
+  if (cmd === 'goal' && !has('set')) return args;
+  const add = [];
+  // The writes that name a judgement (who ruled, answered, took back or ticked) name it themselves, as they always did.
+  if (!['decide', 'answer', 'retract', 'tick', 'review'].includes(cmd) && !has('by')) add.push('--by', cmd === 'set' ? 'jarl' : TEST_WRITER);
+  // A lease names its worker; a move that restates a lease is written with its own --worker, or bare.
+  const leasing = cmd === 'set' && call.args[1] === 'in-progress' && !has('header');
+  if (leasing && !has('worker') && !has('model')) add.push('--worker', TEST_WORKER);
+  const leases = leasing || (cmd === 'set' && has('worker'));
+  const by = call.flags.find(([k]) => k === 'by')?.[1];
+  const verdict = cmd === 'review' && call.args[1] !== 'retract' && !has('bot') && by !== 'owner';
+  if ((leases || verdict) && !has('model')) add.push('--model', TEST_MODEL);
+  if (!add.length) return args;
+  // Right after the command: a flag at the end of a call may be one that lacks its value on purpose.
+  const at = words.indexOf(cmd);
+  return [...words.slice(0, at + 1), ...add, ...words.slice(at + 1)];
+}
 // One run of the command line against the loop in `root`: the result of spawnSync, both streams as written. `env` is
 // added to the environment of the process.
 // The host's plugin root is taken out of the environment of every run, so a run sees it only when the test sets it.
-export function spawnJarl(root, args, { env, timeout = SPAWN_TIMEOUT } = {}) {
+export function spawnJarl(root, args, { env, timeout = SPAWN_TIMEOUT, bare = false } = {}) {
   const inherited = { ...process.env };
   delete inherited.CLAUDE_PLUGIN_ROOT;
-  return spawnSync(process.execPath, [SCRIPT, ...args, '--root', root], { encoding: 'utf8', timeout, env: { ...inherited, ...env } });
+  return spawnSync(process.execPath, [SCRIPT, ...withNames(args, { bare }), '--root', root], { encoding: 'utf8', timeout, env: { ...inherited, ...env } });
 }
 // The same, as { status, stdout, stderr } with both streams trimmed. Every command the call prints (a view's row, a note,
 // a step a reason names, a form) carries the call's --root, which every call of these tests gives: it is taken out, so a
@@ -73,8 +103,11 @@ export function jarl(root, ...args) { return jarlResult(root, args).stdout; }
 // these tests gives --root, last, and the ready line carries it into each command it prints: it is taken out of the line,
 // so a test reads the call as it would be without it, and a ready line that drops it fails the test. After a bare -- the
 // --root is two arguments, not a flag, and the line is read as it is.
-export function refuses(root, ...args) {
-  const r = spawnJarl(root, args);
+export function refuses(root, ...args) { return refusesCall(root, args); }
+// The same for a call that keeps only the flags it was given, for a test about the writer or the model of a call.
+export function refusesBare(root, ...args) { return refusesCall(root, args, { bare: true }); }
+function refusesCall(root, args, opts) {
+  const r = spawnJarl(root, args, opts);
   assert.notEqual(r.status, 0, `expected a refusal: ${args.join(' ')}`);
   const said = posixForms(r.stderr ?? '');
   return args.includes('--') ? said : withoutRoot(said, root);
@@ -170,6 +203,11 @@ export function loop({ prefix = 'jarl-loop-', goal = 'goal', dotGit = true, via 
   else R.initLoop(root, goal);
   return root;
 }
+
+// An issue filed through the library, whose numbers have three digits (007-…), for a test that reads or writes them so.
+export function fileThreeDigits(root, title, flags = {}) { return R.newIssue(root, title, { acceptance: '[read] it works', ...flags }).id; }
+// An issue filed through the library with a plain number, as the command line writes it.
+export function filePlain(root, title, flags = {}) { return R.newIssue(root, title, { acceptance: '[read] it works', width: undefined, ...flags }).id; }
 
 // A git repository with one commit (a.txt), on `branch`; `g` runs git in it and returns what it prints.
 export function gitRepo({ prefix = 'jarl-git-', branch = 'feature' } = {}) {

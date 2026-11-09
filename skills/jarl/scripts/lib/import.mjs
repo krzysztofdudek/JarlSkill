@@ -5,9 +5,8 @@ import { resolve, dirname, basename, relative, isAbsolute } from 'node:path';
 import { KEPT_KINDS, KINDS, PRIORITIES, Refusal, fieldText, hole, isFix, jarlLine, need, refuse, slugify, splitList } from './base.mjs';
 import { git } from './git.mjs';
 import { canonical } from './where.mjs';
-import { needsRaisedFormat, newNumber } from './ids.mjs';
 import { readText } from './files.mjs';
-import { DEFAULT_PROFILE, FORMAT_LINES, formatOffText, formatState, loadProfile, numberWidth } from './profile.mjs';
+import { DEFAULT_PROFILE, loadProfile } from './profile.mjs';
 import { appendLog } from './journal.mjs';
 import { PROPOSED, bodyText, findIssue, loadIssues, sharedMark } from './issues.mjs';
 import { repoList, reposWhereLines } from './repositories.mjs';
@@ -21,7 +20,7 @@ import { cmdNew, givenFields } from './new.mjs';
 import { cmdSource, editorOf } from './body.mjs';
 import { nextIssueNumbers } from './numbers.mjs';
 import { parentToFile, putUnder } from './setters.mjs';
-import { leasedByText, schedulerNote, subsText } from './evidence.mjs';
+import { leasedByText, subsText } from './evidence.mjs';
 
 // ---- research findings into issues ----------------------------------------------------------------
 
@@ -300,19 +299,12 @@ export function cmdImport(root, file, flags) {
     field: flags.field, 'found-by': foundBy, where: f.where, what: f.what, why: f.why, acceptance: f.acceptance || undefined, source: key,
   });
   // The findings are filed in the order of the file, each taking the next number (stepped past a range the goal declares,
-  // as new steps), so each is checked with the number it would take: a number the loop's record format cannot hold
-  // refuses the file before the first finding is filed, and the way out is the findings ahead of it, chosen with --only
-  // (or the format its profile says).
+  // as new steps), so each is checked with the number it would take.
   const numbers = nextIssueNumbers(root, toFile.length);
-  const holdsAny = formatState(profile).raises || profile.format >= FORMAT_LINES['plain-number'].format;
-  const width = numberWidth(profile);
   toFile.forEach(({ f, key }, k) => {
     try { cmdNew(root, f.title, filing(f, key), { dry: true, number: numbers[k] }); } catch (e) {
       if (!(e instanceof Refusal)) throw e;
-      const edge = !holdsAny && needsRaisedFormat(newNumber(numbers[k], width));
-      const fits = edge && !needsRaisedFormat(newNumber(numbers[0], width));
-      refuse(`finding "${f.id}" cannot be filed: ${e.reason}${/nothing was (written|filed)/.test(e.reason) ? '' : ' — nothing was filed'}${fits ? '; the findings that take a number below it can be filed with --only' : ''}`,
-        fits ? { flag: '--only', value: hole('<finding-ids>') } : edge ? [{ first: ['jarl.mjs', 'profile'] }, { retry: true }] : formOf(e.ready));
+      refuse(`finding "${f.id}" cannot be filed: ${e.reason}${/nothing was (written|filed)/.test(e.reason) ? '' : ' — nothing was filed'}`, formOf(e.ready));
     }
   });
   // One issue may name several findings (a package of minor ones): its Source gets all of them, once.
@@ -373,8 +365,7 @@ function countOf(o, st) { return (o.statuses || o)[st] || 0; }
 function countsLine(o, profile) {
   const ready = profile.with('dispatchable');
   const rest = profile.statuses.filter((st) => !profile.active(st)).map((st) => ` · ${st} ${countOf(o, st)}`).join('');
-  // Under an external scheduler Jarl does not reckon readiness: each dispatchable status by its own count instead.
-  const head = o.scheduler ? ready.map((st) => `${st} ${countOf(o, st)}`).join(' · ') : `${ready.length === 1 ? ready[0] : 'ready'} ${o.ready}`;
+  const head = `${ready.length === 1 ? ready[0] : 'ready'} ${o.ready}`;
   return `${head} · in flight ${o.inFlight}${o.waiting ? ` · waiting ${o.waiting}` : ''}${rest} · questions ${o.questions}${o.escalations ? ` · escalations ${o.escalations}` : ''}${o.ratify ? ` · to ratify ${o.ratify}` : ''}${o.ciPending.length ? ` · merged, CI pending ${o.ciPending.length}` : ''}${o.ciRed.length ? ` · CI red ${o.ciRed.length}` : ''}`;
 }
 const statusLabel = (st) => (st === 'in-progress' ? 'in flight' : st);
@@ -385,7 +376,7 @@ function slicesLine(slices) {
   return `slices: ${slices.map((s) => (s.declared ? `${s.coordinator} runs ${s.tag} ${inPlay(s)}` : `${s.tag} has no coordinator on the goal's Coordinators line ${inPlay(s)}: its approve counts as fresh until the line names ${s.coordinator}`)).join(' · ')}`;
 }
 export function renderStatus(o, profile = DEFAULT_PROFILE) {
-  const head = o.goal ? `goal: ${o.goal}\nopened ${o.opened || '?'} · last activity ${o.lastActivity || '?'}${o.archived ? ` · ${o.archived} archived loop(s)` : ''}${o.recordFormat ? ` · record format ${o.recordFormat.format}` : ''}${profile.declared ? ` · profile ${profile.name}` : ''}\n` : '';
+  const head = o.goal ? `goal: ${o.goal}\nopened ${o.opened || '?'} · last activity ${o.lastActivity || '?'}${o.archived ? ` · ${o.archived} archived loop(s)` : ''}${profile.declared ? ` · profile ${profile.name}` : ''}\n` : '';
   const line = countsLine(o, profile);
   const width = o.by ? Math.max(...Object.keys(o.by.groups).map((k) => k.length), 1) : 0;
   const by = o.by ? [`by ${o.by.key}:`, ...Object.entries(o.by.groups).map(([k, g]) => `  ${k.padEnd(width)}  ${profile.statuses.map((st) => `${statusLabel(st)} ${g[st]}`).join(' · ')}`)] : [];
@@ -399,8 +390,6 @@ export function renderStatus(o, profile = DEFAULT_PROFILE) {
     ...(o.lines && o.lines.total ? [linesCountText(o.lines)] : []),
     ...(o.stages ? [`stages: ${Object.entries(o.stages).map(([k, v]) => `${v} ${k}`).join(' · ')}`] : []),
     ...(o.check ? checkLines(o.check) : []),
-    ...(o.scheduler ? [schedulerNote(o.scheduler)] : []),
-    ...(o.recordFormat && formatOffText(o.recordFormat) ? [formatOffText(o.recordFormat)] : []),
     ...by,
     ...(o.by && o.by.where && Object.keys(o.by.where).length ? ['where each repository is on this machine:', ...reposWhereLines(o.by.where)] : []),
     ...(o.by && o.by.key === 'repo' && o.check ?['merges by repository, with the check that decided each:', ...mergeCheckLines(o.check)] : []),

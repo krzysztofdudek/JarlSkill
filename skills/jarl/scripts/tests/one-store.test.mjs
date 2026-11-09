@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as R from '../record.mjs';
 import { gitRepo, jarl, loop as makeLoop, refuses, skillFiles, skillText, spawnJarl } from './helpers.mjs';
-import { oldJarl, oldJarlIsPinned, fileAsBefore } from './old-jarl.mjs';
+import { fileThreeDigits } from './helpers.mjs';
 import { sh } from './portable.mjs';
 
 const L = await import('../jarl-lib.mjs');
@@ -40,7 +40,7 @@ function withIssuesDirClosed(root, fn) {
 
 // A profile in a composer's shape, and the status names a script uses under each profile.
 const COMPOSER = {
-  'jarl-profile': 1, format: 1, name: 'composer-x',
+  'jarl-profile': 1, name: 'composer-x',
   statuses: {
     proposed: { flags: [], 'set-by': 'record' },
     queued: { flags: ['dispatchable'], 'set-by': 'record' },
@@ -49,7 +49,6 @@ const COMPOSER = {
     merged: { flags: ['settles-dependents', 'terminal', 'closes-record'], 'set-by': 'record' },
     dropped: ['settles-dependents', 'terminal', 'needs-reason'],
   },
-  'external-scheduler': 'composer-x.mjs tick',
   'done-gate': { approve: 'none', 'requires-merged': true },
 };
 const SHAPES = {
@@ -107,7 +106,7 @@ test('an issue the journal holds no filing and no move of has no folded state', 
   const profile = R.loadProfile(root);
   writeFileSync(join(dir, 'issues', '1-by-hand.md'), '# 1 · by hand\n\n**Status:** in-progress\n**Branch:** b\n');
   assert.equal(foldOf(dir, profile, '1'), null);
-  writeFileSync(join(dir, 'log.md'), '# Log\n\n- 2026-10-01 09:00 · 1 merged abc1234 · CI green\n- 2026-10-01 09:01 · 1 CI red\n');
+  writeFileSync(join(dir, 'log.md'), '# Log\n\n- 2026-10-01 09:00 key 20260101T0000-tstk by a-writer · 1 merged abc1234 · CI green\n- 2026-10-01 09:01 key 20260101T0000-tstk by a-writer · 1 CI red\n');
   assert.equal(foldOf(dir, profile, '1'), null, 'merge and CI lines alone do not hold an issue');
 });
 
@@ -184,26 +183,18 @@ test('a Merged header written by hand does not satisfy a done gate that wants a 
   assert.equal(R.findIssue(root, id).status, 'merged');
 });
 
-test('the views of a loop moved only through the tool read the same as the header they replace, and the frozen reader counts the same', () => {
+test('the views of a loop moved only through the tool read the same as the header they replace', () => {
   const root = makeLoop();
-  // Filed with three digits and no key (fileAsBefore), so the loop stays format 1 for the frozen reader, which knows no
   // tier light: the tier is written after.
-  fileAsBefore(root, 'one', { acceptance: 'a' });
-  fileAsBefore(root, 'two', { acceptance: 'a' });
-  fileAsBefore(root, 'three');
+  fileThreeDigits(root, 'one', { acceptance: '[read] a' });
+  fileThreeDigits(root, 'two', { acceptance: '[read] a' });
+  fileThreeDigits(root, 'three');
   jarl(root, 'field', '1-3', 'Tier', 'light');
   jarl(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-a', '--worker', 'w1', '--model', 'm1');
   jarl(root, 'set', '2', 'in-progress', '--worker', 'w2');
   jarl(root, 'set', '3', 'deferred', 'later');
   const loop = L.readLoop(R.jarlDir(root));
   for (const issue of loop.issues) assert.deepEqual(issue.onFile, { status: issue.status, ...Object.fromEntries(['branch', 'worker', 'model', 'since', 'merged', 'merge check', 'ci'].map((k) => [k, issue.fields[k] ?? null])) },`${issue.id}: the header and the record agree`);
-  assert.ok(oldJarlIsPinned());
-  const old = oldJarl(root, 'status', {});
-  assert.equal(old.ok, true);
-  const now = R.statusData(root);
-  for (const key of ['open', 'in-progress', 'done', 'dropped', 'deferred', 'waiting', 'inFlight', 'ready']) assert.equal(old.value[key], now[key], key);
-  const rows = (issues) => issues.map((i) => [i.id, i.status, i.fields.branch ?? null, i.fields.worker ?? null]);
-  assert.deepEqual(rows(oldJarl(root, 'list', { all: true }).value), rows(L.cmdList(root, { all: true })), 'the frozen reader lists the same issues in the same states');
 });
 
 // ---- the report of a header that disagrees -----------------------------------------------------------------
@@ -225,7 +216,7 @@ test('a hand edit of Status is reported by status, resume and show as one line t
   assert.deepEqual(recordLines(jarl(root, 'status')), [], 'a loop moved through the tool prints no such line');
   assert.equal(JSON.parse(jarl(root, 'status', '--json')).disagreements, undefined);
   editHeader(root, '1', (t) => t.replace('**Status:** in-progress', '**Status:** done'));
-  const line = 'record: 1 Status reads done in the file and in-progress in the log, which is the record — to follow the log, write **Status:** in-progress back into the header; to make the file\'s value the record, jarl.mjs set 1 done (a move into done, through its checks)';
+  const line = 'record: 1 Status reads done in the file and in-progress in the log, which is the record — to follow the log, write **Status:** in-progress back into the header; to make the file\'s value the record, jarl.mjs set 1 done --by "<who>" (a move into done, through its checks)';
   assert.deepEqual(recordLines(jarl(root, 'status')), [line]);
   assert.deepEqual(recordLines(jarl(root, 'resume')), [line]);
   assert.match(jarl(root, 'resume'), /## The files disagree with the log \(1\)\nrecord: 1 /);
@@ -268,7 +259,7 @@ for (const c of CASES) {
     if (c.make) {
       writeFileSync(issueFile(root, '1'), edited);
       const printed = /to make the file's value the record, (jarl\.mjs [^(]+?) \(/.exec(status[0])[1];
-      assert.deepEqual(printed.split(' ').slice(1), c.make);
+      assert.deepEqual(printed.split(' ').slice(1), [...c.make, '--by', '"<who>"']);
       jarl(root, ...c.make);
       assert.deepEqual(recordLines(jarl(root, 'status')), []);
       assert.deepEqual(recordLines(jarl(root, 'resume')), []);
@@ -283,7 +274,7 @@ test('an issue the journal holds no filing and no move of is reported as not in 
   const root = makeLoop();
   writeFileSync(join(R.jarlDir(root), 'issues', '1-by-hand.md'), '# 1 · by hand\n\n**Status:** open\n**Kind:** bug\n');
   const lines = recordLines(jarl(root, 'status'));
-  assert.deepEqual(lines, ['record: 1 is not in the log (it holds no filing and no move), so its header is read as it stands — to put it in the log: jarl.mjs set 1 open']);
+  assert.deepEqual(lines, ['record: 1 is not in the log (it holds no filing and no move), so its header is read as it stands — to put it in the log: jarl.mjs set 1 open --by "<who>"']);
   jarl(root, 'set', '1', 'open');
   assert.deepEqual(recordLines(jarl(root, 'status')), []);
 });
@@ -477,10 +468,10 @@ test('a reason is never searched for lease fields: reasons that open with a fiel
   ];
   for (const c of cases) {
     const { id } = R.newIssue(root, `reason ${c.reason}`, { acceptance: '[read] it works' });
-    jarl(root, 'set', id, 'in-progress', c.reason, ...c.flags);
+    jarl(root, 'set', id, 'in-progress', c.reason, ...(c.flags.includes('--worker') ? [] : ['--worker', 'w-named']), ...c.flags);
     const state = foldOf(R.jarlDir(root), R.loadProfile(root), id);
     assert.equal(state.branch, c.want.branch, `${c.reason}: branch`);
-    assert.equal(state.worker, c.want.worker, `${c.reason}: worker`);
+    assert.equal(state.worker, c.want.worker ?? 'w-named', `${c.reason}: worker`);
     if (c.want.model) assert.equal(state.model, c.want.model);
     assert.deepEqual(state, headerOf(issueFile(root, id)), `${c.reason}: the fold equals the header`);
   }
@@ -497,16 +488,16 @@ test('move lines in the shapes real loops hold read by position', () => {
   mkdirSync(join(dir, 'issues'));
   writeFileSync(join(dir, 'log.md'), [
     '# Log', '',
-    '- 2026-10-01 09:00 · filed 5 · a',
-    '- 2026-10-01 09:01 · 5 → in-progress · worker w5-gates claims gates, regression, fingerprint · branch w5-gates · worker w5-gates',
-    '- 2026-10-01 09:02 · filed 010 · b',
-    '- 2026-10-01 09:03 · 010 → in-progress · w3-text on branch w3-text · branch w3-text · worker w3-text',
-    '- 2026-10-01 09:04 · filed 011 · c',
-    '- 2026-10-01 09:05 · 011 → in-progress · on branch tools-misc: slice one · model m@high · worker w-x · worktree /p',
-    '- 2026-10-01 09:06 · filed 013 · d',
-    '- 2026-10-01 09:07 · 013 → in-progress · worker on branch threads-import builds the notes import, the rail and tests',
-    '- 2026-10-01 09:08 · filed 014 · e',
-    '- 2026-10-01 09:09 · 014 → in-progress · branch fix-picture · worker claude-opus-5-5 fix-picture · worktree /p',
+    '- 2026-10-01 09:00 key 20260101T0000-tstk by a-writer · filed 5 · a',
+    '- 2026-10-01 09:01 key 20260101T0000-tstk by a-writer · 5 → in-progress · worker w5-gates claims gates, regression, fingerprint · branch w5-gates · worker w5-gates',
+    '- 2026-10-01 09:02 key 20260101T0000-tstk by a-writer · filed 010 · b',
+    '- 2026-10-01 09:03 key 20260101T0000-tstk by a-writer · 010 → in-progress · w3-text on branch w3-text · branch w3-text · worker w3-text',
+    '- 2026-10-01 09:04 key 20260101T0000-tstk by a-writer · filed 011 · c',
+    '- 2026-10-01 09:05 key 20260101T0000-tstk by a-writer · 011 → in-progress · on branch tools-misc: slice one · model m@high · worker w-x · worktree /p',
+    '- 2026-10-01 09:06 key 20260101T0000-tstk by a-writer · filed 013 · d',
+    '- 2026-10-01 09:07 key 20260101T0000-tstk by a-writer · 013 → in-progress · worker on branch threads-import builds the notes import, the rail and tests',
+    '- 2026-10-01 09:08 key 20260101T0000-tstk by a-writer · filed 014 · e',
+    '- 2026-10-01 09:09 key 20260101T0000-tstk by a-writer · 014 → in-progress · branch fix-picture · worker claude-opus-5-5 fix-picture · worktree /p',
   ].join('\n') + '\n');
   const profile = L.DEFAULT_PROFILE;
   const by = L.eventsById(L.loopEvents(dir, profile));
@@ -533,7 +524,7 @@ for (const flag of ['worker', 'model', 'branch']) {
       const logBefore = logLinesOf(root).length;
       const fileBefore = readFileSync(issueFile(root, id), 'utf8');
       let wrote = true;
-      try { R.setStatus(root, id, 'in-progress', 'taking it', { [flag]: value }); } catch { wrote = false; }
+      try { R.setStatus(root, id, 'in-progress', 'taking it', { worker: 'w-named', [flag]: value }); } catch { wrote = false; }
       if (wrote) {
         accepted += 1;
         const state = foldOf(dir, profile, id);
@@ -600,10 +591,10 @@ test('a reason over the alphabet of separators, spaces and field names never rea
   for (const why of texts) {
     for (const flags of [{}, { branch: 'jarl/1-a', worker: 'w1', model: 'm1' }]) {
       const { id } = R.newIssue(root, 'reason', { acceptance: '[read] it works' });
-      R.setStatus(root, id, 'in-progress', why, flags);
+      R.setStatus(root, id, 'in-progress', why, { worker: 'w-named', ...flags });
       const move = L.loopEvents(dir, profile).filter((e) => e.id === id && e.type === 'move').pop();
       const state = foldOf(dir, profile, id);
-      assert.deepEqual([state.branch, state.worker, state.model], [flags.branch ?? null, flags.worker ?? null, flags.model ?? null], `${JSON.stringify(why)} ${JSON.stringify(flags)}`);
+      assert.deepEqual([state.branch, state.worker, state.model], [flags.branch ?? null, flags.worker ?? 'w-named', flags.model ?? null], `${JSON.stringify(why)} ${JSON.stringify(flags)}`);
       assert.equal(L.leaseOfMove(move.text, id, 'in-progress').reason, reasonModuloReplacement(why), `${JSON.stringify(why)}: the reason reads back`);
     }
   }
@@ -673,10 +664,10 @@ test('a phantom lease is not read from a reason: the units of a loop with such r
   mkdirSync(join(dir, 'issues'));
   writeFileSync(join(dir, 'log.md'), [
     '# Log', '',
-    '- 2026-10-01 09:00 · filed 012 · a',
-    '- 2026-10-01 09:01 · 012 → in-progress · worker did 013, 014, 015, 012 in one pass; awaiting fresh reviewer',
-    '- 2026-10-01 09:02 · filed 021 · b',
-    '- 2026-10-01 09:03 · 021 → in-progress · worker on branch fix-toolbox · branch fix-toolbox · worktree /p',
+    '- 2026-10-01 09:00 key 20260101T0000-tstk by a-writer · filed 012 · a',
+    '- 2026-10-01 09:01 key 20260101T0000-tstk by a-writer · 012 → in-progress · worker did 013, 014, 015, 012 in one pass; awaiting fresh reviewer',
+    '- 2026-10-01 09:02 key 20260101T0000-tstk by a-writer · filed 021 · b',
+    '- 2026-10-01 09:03 key 20260101T0000-tstk by a-writer · 021 → in-progress · worker on branch fix-toolbox · branch fix-toolbox · worktree /p',
   ].join('\n') + '\n');
   const by = L.eventsById(L.loopEvents(dir, L.DEFAULT_PROFILE));
   for (const id of ['012', '021']) assert.equal(by.get(id).find((e) => e.type === 'move').lease, null, `${id}: no worker was named, so no lease and no unit`);
@@ -692,7 +683,7 @@ test('the free log refuses an id and an arrow whatever follows, and a note of th
     assert.match(refuses(root, 'log', line), /has the shape of a move.*jarl\.mjs set "<ids>" "<status>"/, line);
     assert.throws(() => R.appendLog(root, line), /shape of a move/);
   }
-  appendFileSync(join(R.jarlDir(root), 'log.md'), '- 2026-10-01 09:00 · 1 → see 3 for context\n- 2026-10-01 09:01 · 1 → DONE\n');
+  appendFileSync(join(R.jarlDir(root), 'log.md'), '- 2026-10-01 09:00 key 20260101T0000-tstk by a-writer · 1 → see 3 for context\n- 2026-10-01 09:01 key 20260101T0000-tstk by a-writer · 1 → DONE\n');
   assert.deepEqual(recordLines(jarl(root, 'status')), []);
   assert.equal(JSON.parse(jarl(root, 'status', '--json')).disagreements, undefined);
 });
@@ -706,7 +697,7 @@ test('a bulk set that stopped after its journal lines is repaired by set --heade
   const lines = recordLines(jarl(root, 'status'));
   assert.ok(lines.length >= ids.length, 'each issue is reported');
   const shown = jarl(root, 'status');
-  assert.match(shown, /jarl\.mjs set 001 in-progress --header \(writes the header from the log\)/);
+  assert.match(shown, /jarl\.mjs set 001 in-progress --header --by "<who>" \(writes the header from the log\)/);
   const before = logLinesOf(root).length;
   jarl(root, 'set', ids.join(','), 'in-progress', '--header');
   assert.equal(logLinesOf(root).length, before, 'no second journal line');
@@ -737,7 +728,7 @@ test('a second filing line for an issue resets neither its status nor the window
   R.addEvidence(root, id, undefined, { line: 1, ran: 'node --test', saw: 'ok' });
   const dir = R.jarlDir(root);
   const rowsBefore = L.gateOf(L.readLoop(dir), id).rowsSince;
-  appendFileSync(join(dir, 'log.md'), `- 2026-10-19 10:00 · filed ${id} · filed twice\n`);
+  appendFileSync(join(dir, 'log.md'), `- 2026-10-19 10:00 key 20260101T0000-tstk by a-writer · filed ${id} · filed twice\n`);
   assert.equal(R.findIssue(root, id).status, 'in-progress');
   assert.equal(L.gateOf(L.readLoop(dir), id).rowsSince, rowsBefore, 'the row still counts');
   assert.equal(foldOf(dir, R.loadProfile(root), id).status, 'in-progress');
