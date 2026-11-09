@@ -9,7 +9,7 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import * as R from '../record.mjs';
-import { run, jarl, refuses, SPAWN_TIMEOUT } from './helpers.mjs';
+import { run, jarl, refuses, SCRIPT, SPAWN_TIMEOUT } from './helpers.mjs';
 import { fileThreeDigits } from './helpers.mjs';
 
 const L = await import('../jarl-lib.mjs');
@@ -774,4 +774,26 @@ test('a name written in another case is the one declared name when the disk igno
   assert.equal(r.status, 0, r.stderr);
   assert.match(w.issue(2), /^\*\*Repo:\*\* tool$/m);
   assert.equal(w.decl().split('\n').filter((l) => l.startsWith('- **')).length, 1);
+});
+
+test('a loop outside any repository is told apart without starting git, and a loop inside one still asks it', { skip: process.platform === 'win32' && 'a stand-in named git needs a shebang, and Windows runs none' }, () => {
+  const top = mkdtempSync(join(tmpdir(), 'jarl-no-repo-'));
+  // Only meaningful when no repository holds the temporary directory: a working tree above it would rightly be asked.
+  if (spawnSync('git', ['rev-parse', '--git-dir'], { cwd: top, encoding: 'utf8', timeout: SPAWN_TIMEOUT }).status === 0) return;
+  const bin = join(top, 'bin');
+  mkdirSync(bin);
+  const log = join(top, 'git-calls');
+  writeFileSync(join(bin, 'git'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\nPATH='${process.env.PATH}'\nexec git "$@"\n`, { mode: 0o755 });
+  const asked = (dir, cmd) => { writeFileSync(log, ''); const r = spawnSync(process.execPath, [SCRIPT, ...cmd, '--root', dir], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } }); assert.equal(r.status, 0, r.stderr); return readFileSync(log, 'utf8').split('\n').filter((l) => l === 'rev-parse --git-dir'); };
+  const outside = join(top, 'plain');
+  mkdirSync(outside);
+  jarl(outside, 'init', 'a goal');
+  jarl(outside, 'new', 'one', '--acceptance', '[read] it works');
+  assert.deepEqual(asked(outside, ['brief', '1', '--role', 'reviewer']), [], 'no process was started to ask');
+  const repo = join(top, 'repo');
+  mkdirSync(repo);
+  git(repo, 'init', '-q', '-b', 'main');
+  jarl(repo, 'init', 'a goal');
+  jarl(repo, 'new', 'one', '--acceptance', '[read] it works');
+  assert.ok(asked(repo, ['brief', '1', '--role', 'reviewer']).length >= 1, 'inside a repository git is asked');
 });

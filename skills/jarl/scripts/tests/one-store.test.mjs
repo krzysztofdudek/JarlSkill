@@ -585,21 +585,25 @@ function alphabetTexts(count, extra = []) {
 const reasonModuloReplacement = (why) => String(why).replace(/\s*·\s*/g, ' - ').trim();
 
 test('a reason over the alphabet of separators, spaces and field names never reads as a lease field, and reads back as the same text modulo the replacement', () => {
-  const root = makeLoop();
-  const dir = R.jarlDir(root);
-  const profile = R.loadProfile(root);
   const texts = alphabetTexts(300, ['a · · branch evil', 'x ·  · worker evil', ' ·  ·  · model evil', 'branch evil', 'worker raised', '(reason)', 'branch x · (reason)']);
-  for (const why of texts) {
-    for (const flags of [{}, { branch: 'jarl/1-a', worker: 'w1', model: 'm1' }]) {
-      const { id } = R.newIssue(root, 'reason', { acceptance: '[read] it works' });
-      R.setStatus(root, id, 'in-progress', why, { worker: 'w-named', ...flags });
-      const move = L.loopEvents(dir, profile).filter((e) => e.id === id && e.type === 'move').pop();
-      const state = foldOf(dir, profile, id);
-      assert.deepEqual([state.branch, state.worker, state.model], [flags.branch ?? null, flags.worker ?? 'w-named', flags.model ?? null], `${JSON.stringify(why)} ${JSON.stringify(flags)}`);
-      assert.equal(L.leaseOfMove(move.text, id, 'in-progress').reason, reasonModuloReplacement(why), `${JSON.stringify(why)}: the reason reads back`);
+  // A loop of its own for every forty texts: each read parses the whole log, and a log of hundreds of issues is what makes
+  // this test slow, not the texts.
+  for (let at = 0; at < texts.length; at += 40) {
+    const root = makeLoop();
+    const dir = R.jarlDir(root);
+    const profile = R.loadProfile(root);
+    for (const why of texts.slice(at, at + 40)) {
+      for (const flags of [{}, { branch: 'jarl/1-a', worker: 'w1', model: 'm1' }]) {
+        const { id } = R.newIssue(root, 'reason', { acceptance: '[read] it works' });
+        R.setStatus(root, id, 'in-progress', why, { worker: 'w-named', ...flags });
+        const move = L.loopEvents(dir, profile).filter((e) => e.id === id && e.type === 'move').pop();
+        const state = foldOf(dir, profile, id);
+        assert.deepEqual([state.branch, state.worker, state.model], [flags.branch ?? null, flags.worker ?? 'w-named', flags.model ?? null], `${JSON.stringify(why)} ${JSON.stringify(flags)}`);
+        assert.equal(L.leaseOfMove(move.text, id, 'in-progress').reason, reasonModuloReplacement(why), `${JSON.stringify(why)}: the reason reads back`);
+      }
     }
+    assert.deepEqual(recordLines(jarl(root, 'status')), []);
   }
-  assert.deepEqual(recordLines(jarl(root, 'status')), []);
 });
 
 test('a note the free log accepts over the same alphabet is read as a note, and never changes an issue', () => {

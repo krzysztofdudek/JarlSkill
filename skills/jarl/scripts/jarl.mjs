@@ -807,11 +807,13 @@ export function cliRoot(cmd, flags, env = process.env, cwd = process.cwd(), args
   return discoverLoop(cwd);
 }
 
-function main() {
-  if (process.argv[2] === 'merge-driver') mergeDriverMain(process.argv.slice(3));
-  if (process.argv.length === 3 && process.argv[2] === '--version') { console.log(installVersion()); process.exit(0); }
+// The command line, given its words: what it prints goes to the console, its status through process.exit. A test runs it
+// in its own process (tests/in-process.mjs) for the same reason a server runs dispatch: thousands of calls cost one start.
+export function cliMain(argv = process.argv.slice(2)) {
+  if (argv[0] === 'merge-driver') mergeDriverMain(argv.slice(1));
+  if (argv.length === 1 && argv[0] === '--version') { console.log(installVersion()); process.exit(0); }
   let parsed;
-  try { parsed = parseArgs(process.argv.slice(2)); } catch (e) { console.error(e.message); process.exit(1); }
+  try { parsed = parseArgs(argv); } catch (e) { console.error(e.message); process.exit(1); }
   const { positional, flags } = parsed;
   const [cmd, ...rest] = positional;
   if (!cmd || flags.help) { console.log(cmd && commandUsage(cmd) ? commandUsage(cmd) : shortUsage()); process.exit(flags.help ? 0 : 1); }
@@ -1092,4 +1094,4 @@ function decideNotes(root, slug, by, flags, warn) {
   }
 }
 
-if (isEntry(process.argv[1], fileURLToPath(import.meta.url))) main();
+if (isEntry(process.argv[1], fileURLToPath(import.meta.url))) cliMain();

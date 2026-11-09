@@ -10,7 +10,8 @@ import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSyn
 import { basename, join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { commandSpans, jarl, SCRIPT, withNames } from './helpers.mjs';
+import { commandSpans, jarl, withNames } from './helpers.mjs';
+import { runInProcess } from './in-process.mjs';
 import { bashBin, NO_EXCLUDES } from './portable.mjs';
 
 const J = await import('../jarl.mjs');
@@ -122,22 +123,35 @@ export function drop(cwd) {
   TOPS.delete(cwd);
   rmSync(top, { recursive: true, force: true, maxRetries: 3 });
 }
-export const run = (cwd, args) => spawnSync(process.execPath, [SCRIPT, ...withNames(args)], { cwd, encoding: 'utf8', timeout: 60000 });
+// One call, made where the walk stands, inside this process (tests/in-process.mjs): the walks make tens of thousands of
+// calls, and it is the same code a process would run.
+export const run = (cwd, args) => runInProcess(withNames(args), { cwd });
 
 // ---- the shells -------------------------------------------------------------------------------------------------------
 
-const unix = (p) => (process.platform === 'win32' ? p.replace(/\\/g, '/') : p);
 function shell(cwd, line, body) {
-  return spawnSync(bashBin(), ['-c', `jarl.mjs() { ${body}; }\n${line}`], { cwd, encoding: 'utf8', timeout: 60000, env: { ...process.env, JARL_NODE: unix(process.execPath), JARL_SCRIPT: unix(SCRIPT) } });
+  return spawnSync(bashBin(), ['-c', `jarl.mjs() { ${body}; }\n${line}`], { cwd, encoding: 'utf8', timeout: 60000 });
 }
 // The shells a printed line is pasted into: sh and zsh (zsh -f), where the machine has them, with an executable jarl.mjs
-// on the PATH that runs this script; bash with jarl.mjs a function where it has neither (Git for Windows).
+// on the PATH, bash with jarl.mjs a function where it has neither (Git for Windows). Each shell reads the line for real
+// (its quoting, its expansions, its command separators); jarl.mjs records the words it was given, and the calls recorded
+// are then made in this process, in the order they were made (see run), so a walk spawns a shell and no node per line.
 export const SHELLS = process.platform === 'win32' ? ['bash'] : ['/bin/sh', ...(existsSync('/bin/zsh') ? ['/bin/zsh'] : [])];
-const sq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
-const BIN = process.platform === 'win32' ? null : (() => { const d = mkdtempSync(join(tmpdir(), 'jarl-refusals-bin-')); writeFileSync(join(d, 'jarl.mjs'), `#!/bin/sh\nexec ${sq(process.execPath)} ${sq(SCRIPT)} "$@"\n`, { mode: 0o755 }); return d; })();
+const PASTED = join(mkdtempSync(join(tmpdir(), 'jarl-refusals-paste-')), 'calls');
+const RECORDING = 'for a in "$@"; do printf \'%s\\037\' "$a"; done >> "$JARL_PASTED"; printf \'\\036\' >> "$JARL_PASTED"; exit 1';
+const BIN = process.platform === 'win32' ? null : (() => { const d = mkdtempSync(join(tmpdir(), 'jarl-refusals-bin-')); writeFileSync(join(d, 'jarl.mjs'), `#!/bin/sh\n${RECORDING}\n`, { mode: 0o755 }); return d; })();
 export function runPrinted(cwd, line, sh = SHELLS[0]) {
-  if (sh === 'bash') return shell(cwd, line, '"$JARL_NODE" "$JARL_SCRIPT" "$@"');
-  return spawnSync(sh, [...(sh.endsWith('zsh') ? ['-f'] : []), '-c', line], { cwd, encoding: 'utf8', timeout: 60000, env: { ...process.env, PATH: `${BIN}:${process.env.PATH}` } });
+  writeFileSync(PASTED, '');
+  const env = { ...process.env, JARL_PASTED: PASTED };
+  const pasted = sh === 'bash'
+    ? spawnSync(bashBin(), ['-c', `jarl.mjs() { ${RECORDING.replace('exit 1', 'return 1')}; }\n${line}`], { cwd, encoding: 'utf8', timeout: 60000, env })
+    : spawnSync(sh, [...(sh.endsWith('zsh') ? ['-f'] : []), '-c', line], { cwd, encoding: 'utf8', timeout: 60000, env: { ...env, PATH: `${BIN}:${process.env.PATH}` } });
+  let result = { status: pasted.status, stdout: pasted.stdout ?? '', stderr: pasted.stderr ?? '' };
+  for (const words of readFileSync(PASTED, 'utf8').split('\x1e').slice(0, -1).map((c) => c.split('\x1f').slice(0, -1))) {
+    const r = runInProcess(words, { cwd });
+    result = { status: r.status, stdout: result.stdout + r.stdout, stderr: result.stderr + r.stderr };
+  }
+  return result;
 }
 // The calls of a printed line as a shell passes them to jarl.mjs: each one's words, jarl.mjs left out; null where the shell
 // does not run the line.

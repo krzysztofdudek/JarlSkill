@@ -11,12 +11,16 @@ import * as R from '../record.mjs';
 import { printedLine, shellWord } from '../jarl-lib.mjs';
 import * as J from '../jarl.mjs';
 import { NO_EXCLUDES } from './portable.mjs';
+import { runInProcess } from './in-process.mjs';
 
 // The command line and the server read JARL_ROOT when a call names no loop. A shell that exports it would send every call
 // a test makes without --root (from a checkout, through a shell, or to a server it starts) to that loop, and write into
 // it: the variable is taken out of this process's environment once, here, so nothing a test starts inherits it. A test
 // that means a JARL_ROOT passes it to the call it starts.
 delete process.env.JARL_ROOT;
+// The host's plugin root is out of the environment of every call for the same reason: a call sees it only when a test sets
+// it, and a test that sets it spawns the call with an environment of its own.
+delete process.env.CLAUDE_PLUGIN_ROOT;
 
 export const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 export const SPAWN_TIMEOUT = 120_000;
@@ -77,11 +81,12 @@ export function withNames(args, { bare = false } = {}) {
 }
 // One run of the command line against the loop in `root`: the result of spawnSync, both streams as written. `env` is
 // added to the environment of the process.
-// The host's plugin root is taken out of the environment of every run, so a run sees it only when the test sets it.
-export function spawnJarl(root, args, { env, timeout = SPAWN_TIMEOUT, bare = false } = {}) {
-  const inherited = { ...process.env };
-  delete inherited.CLAUDE_PLUGIN_ROOT;
-  return spawnSync(process.execPath, [SCRIPT, ...withNames(args, { bare }), '--root', root], { encoding: 'utf8', timeout, env: { ...inherited, ...env } });
+// One call runs inside this process (tests/in-process.mjs), the same code a process would run, unless it gives an
+// environment or a timeout of its own or `real`: then it is a process.
+export function spawnJarl(root, args, { env, timeout = SPAWN_TIMEOUT, bare = false, real = false } = {}) {
+  const words = [...withNames(args, { bare }), '--root', root];
+  if (!real && env === undefined && timeout === SPAWN_TIMEOUT) return runInProcess(words);
+  return spawnSync(process.execPath, [SCRIPT, ...words], { encoding: 'utf8', timeout, env: { ...process.env, ...env } });
 }
 // The same, as { status, stdout, stderr } with both streams trimmed. Every command the call prints (a view's row, a note,
 // a step a reason names, a form) carries the call's --root, which every call of these tests gives: it is taken out, so a
