@@ -241,10 +241,12 @@ const IS_REPO = new Set();
 // Whether git could answer for `dir` at all: a working tree, a repository or a bare repository somewhere up its path,
 // or a GIT_DIR in the environment. The path is read as git reads it, with its links followed. Where none is, a directory outside any repository is told apart without starting a
 // process, which on a loop kept out of git would be one process per command.
+// A .git that git would take: a file (a linked worktree, a submodule), or a directory that holds HEAD. An empty directory of that name is passed over, by git and here.
+const holdsGitDir = (d) => { const g = join(d, '.git'); return existsSync(g) && (!statSync(g).isDirectory() || existsSync(join(g, 'HEAD'))); };
 function maybeGitRepo(dir) {
   if (process.env.GIT_DIR) return true;
   for (let d = canonical(resolve(dir)); ; d = dirname(d)) {
-    if (existsSync(join(d, '.git')) || (existsSync(join(d, 'HEAD')) && existsSync(join(d, 'objects')))) return true;
+    if (holdsGitDir(d) || (existsSync(join(d, 'HEAD')) && existsSync(join(d, 'objects')))) return true;
     if (dirname(d) === d) return false;
   }
 }
