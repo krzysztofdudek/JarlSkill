@@ -25,7 +25,7 @@ Every turn, in order:
 1. **Boot.** `resume`, the whole state read live, then `branches` (a worker branch ahead of its base is a report, whether or not the worker said so). Open questions first: the owner may have answered.
 2. **File.** Anything anybody saw becomes an issue before anything else happens.
 3. **Pick.** `next --as <who>` lists what is on you, each move with its command; `next` lists what can start now.
-4. **Lease.** `set <ids> in-progress "<text>" --branch <worker-branch> --worker <name> --model <model-id> --by <who>`, then make the worktree (see [Parallel workers](repositories.md#parallel-workers-in-worktrees)). An issue tagged `in-place` writes only its declared files, with no branch (see [Worked in place](commands.md#worked-in-place)).
+4. **Lease.** `set <ids> in-progress "<text>" --branch <worker-branch> --worker <name> --model <model-id> --by <who>`, then make its worktree in the repository the work lands in, outside the checkout, on a branch named `jarl/<first-issue>-<slug>` for the lease's first issue: `git worktree add <path> -b <worker-branch> <base-branch>` (`--root` still names the loop: see [Parallel workers](repositories.md#parallel-workers-in-worktrees)). An issue tagged `in-place` writes only its declared files, with no branch (see [Worked in place](commands.md#worked-in-place)).
 5. **Raise the worker** with the output of `brief <ids>`, its model set explicitly ([Which model sits where](models.md#which-model-sits-where)). It spawns nothing and reads nothing else.
 6. **Examine.** A worker's report is a hypothesis. Raise a fresh one-shot examiner for every branch with `brief <ids> --role reviewer`: never the worker, never the merger. Its brief gives its depth and its model tier, computed from the lines. Three rules reach it:
    - Every round, re-check every acceptance line of the issue, not only the findings of the round before.
@@ -56,7 +56,7 @@ A good issue has a Why, checkable lines with methods, Files or Resources, a Tier
 
 A line with no mark reads as `read`. An `[owner]` line is agreed with him while the backlog is written, so he is handed the stage instead of having to call a pause.
 
-`--after <ids>` holds an issue until those are settled; a blocked issue never sits in-progress. A text that cites an unfinished issue by number with no After between them draws a note from `verify`, `new` and `field`. A piece easier done smaller becomes sub-issues: file them, then `split <id> --line <n>=<id>... --by <who>` shares the parent's lines out and refuses to lose one. A parent keeps a line of its own that proves the whole. Research findings come through `import` and repeated shapes from templates: see [Research import](commands.md#research-import) and [Templates](commands.md#templates).
+`--after <ids>` holds an issue until those are settled, and `next` never offers it. `set` still lets you lease it, so leave a blocked issue open instead of parking it in-progress. A text that cites an unfinished issue by number with no After between them draws a note from `verify`, `new` and `field`. A piece easier done smaller becomes sub-issues: file them, then `split <id> --line <n>=<id>... --by <who>` shares the parent's lines out and refuses to lose one. A parent keeps a line of its own that proves the whole. Research findings come through `import` and repeated shapes from templates: see [Research import](commands.md#research-import) and [Templates](commands.md#templates).
 
 ## The shape of the work
 
@@ -123,7 +123,7 @@ Add a slice when you hold more than you can read reports for. The goal's `Coordi
 
 Counts are never pushed up: the jarl reads them with `status --slice <name>`. Pull before leasing and push right after when the loop is shared between clones. An issue's scope does not grow once it is leased: a new ask becomes a new issue.
 
-The goal's `Merger: <name>` line names the one holder, the jarl or one coordinator, that raises the merger; `Merger (<coordinator>): <name>` gives a slice its own, into its own integration branch, in a worktree of its own. Mergers never share a checkout, and only the holder of the main checkout commits `.jarl/`. Every agent names itself with `--by`. A coordinator that cannot spawn writes each brief to a file and sends the jarl one line per spawn (`spawn <role> <id> tier=<tier> worktree=<path> brief=<path>`); the jarl raises from that line and forwards the report's last line back.
+The goal's `Merger: <name>` line names the one holder, the jarl or one coordinator, that raises the merger; `Merger (<coordinator>): <name>` gives a slice its own, into its own integration branch, in a worktree of its own. Mergers never share a checkout, and only the holder of the main checkout commits `.jarl/`. Every agent names itself with `--by`. A coordinator does not guess whether it can raise agents: at boot it looks for a spawn tool in its reach, or makes one real attempt on its first worker. If it cannot, it reports `no-spawn` to the jarl in one line, and for the rest of the loop writes each brief to a file and sends one line per spawn (`spawn <role> <id> tier=<tier> worktree=<path> brief=<path>`), or `resume <id> brief=<path>` for a second round or to feed the merger again; the jarl raises or resumes from that line without reading the brief and forwards the report's last line back.
 
 ## Closing the branch
 

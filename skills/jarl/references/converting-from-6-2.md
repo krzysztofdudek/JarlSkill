@@ -23,6 +23,7 @@ Nobody else writes the loop while it is converted: stop the workers and any othe
 |---|---|---|
 | `goal.md` | no `Format:` line | one line `Format: 4`, alone on its line, after the goal's paragraph and before `## Assumptions`, added last of all (see [The order of the work](#the-order-of-the-work)) |
 | `goal.md` | a check line written in words: `Check: <command> (in <name>)` | `Check (<name>): <command>`, with `<name>` the repository as an issue's `Repo` value ends: `Check (JarlSkill): cd skills/jarl/scripts && npm test`, for `Repo: ../../../JarlSkill`. A check of the loop's own repository stays bare: `Check: <command>`. A line naming a repository no issue names and no `Repo` value ends with is written the same way, under the name the line gives |
+| `goal.md` | a list item naming the repository first: ``- Check: <name>, `<command>` `` with any words after the closing backtick | `Check (<name>): <command>`, the text inside the backticks only, under `<name>` as an issue's `Repo` value ends (`- Check: Jarl, ...` where issues name `JarlSkill` becomes `Check (JarlSkill): ...`), and a bare `Check: <command>` for the loop's own repository |
 | `goal.md` | `Check:`, `Model (<tier>):`, `Coordinators:` lines in the grammar above | stay as they are |
 | `issues/<n>-<slug>.md` | no key | one line `**Key:** <yyyymmdd>T<hhmm>-<four-letters>`, directly above `**Tags:**`: the stamp of the issue's filing line in `log.md`, the minute of it, and four random lower-case letters, a different key for every issue |
 | `issues/<n>-<slug>.md` | evidence rows: `- **ran:** <command> · **saw:** <printed>`, and struck through, `- ~~**ran:** ... **saw:** ...~~` | `- **ran (history):** ...`, `- ~~**ran (history):** ...`: the word `(history)` goes after `ran`, inside the bold, on every row, and nothing else in the row changes. A row of this format named no acceptance line, so it proves none |
@@ -43,6 +44,7 @@ Go through `log.md` from the top. The heading `# Log` and blank lines stay.
 | a dated line about an issue: `- <stamp> · <text>`, `<text>` beginning, as a whole word, with `filed <n>` or `<n>` where a file in `issues/` carries that number (`031`, `31` and `0031` are one number) | `- <stamp> key <key> by unrecorded · <text>`, `<key>` the key of that issue's file |
 | a line that is neither dated, nor a heading, nor blank: part of a text of several lines written whole under a driver older than 6.2 (`opened`'s goal and the check lines it copied, for one), sometimes after a blank line | joined to the dated line above it with ` ⏎ ` between them, the line and any blank lines before it removed |
 | a dated line that reads `<n> evidence row · <command>` | the same with `(history)`: `- <stamp> key <key> by unrecorded · <n> evidence row (history) · <command>` |
+| a dated line whose text was struck through by hand: `- <stamp> · ~~<struck text>~~ <anything after>` | a note about the loop: `- <stamp> by unrecorded · struck through by hand: <struck text> <anything after>`, the `~~` marks gone. A strike never voided anything, so the line must not read as the verdict or move it shows; the words stay, for whoever reads the log |
 
 Every other dated line, a move, a round, a verdict, a merge, a body change, a retraction, a note, keeps its text; only its head changes. A line a later Jarl wrote (one that already holds `key <key>` or `by <who>`) stays as it is, and a row that already names `(line <digest>)` keeps it and proves its line.
 
@@ -52,7 +54,7 @@ The last line of the file is new, written after everything above, with the stamp
 - <stamp> by <who> · converted
 ```
 
-`<who>` is the converting agent's name; `<stamp>` is `yyyy-mm-dd hh:mm`, UTC, as every other line's. No other line is added, moved or reworded. This line is what the record reads as the boundary: an issue closed before it is not read against today's gate.
+`<who>` is the converting agent's name; `<stamp>` is `yyyy-mm-dd hh:mm`, UTC, as every other line's. No other line is added, moved or reworded beyond what the table above says. This line is what the record reads as the boundary: an issue closed before it is not read against today's gate.
 
 ## The order of the work
 
@@ -66,7 +68,7 @@ Adding `Format: 4` last means a conversion that stops halfway is refused like an
 
 ## How you know it worked
 
-Run `verify` on the loop, with `--root <loop-root>`: it is clean, or it names each line it could not place, and each line it names is fixed in the file, not explained away. A row that `verify` names as naming no line was missed in step 2; a line named as `not a line of the current shape` was missed in the log pass. Then `status`: the counts of issues and of their statuses are what they were, and `resume` prints the goal and the questions as before. A `done` issue remains done: the record closes it before the `converted` line.
+Run `verify` on the loop, with `--root <loop-root>`: it is clean, or it names each line it could not place, and each line it names is fixed in the file, not explained away. A row that `verify` names as naming no line was missed in step 2; a line named as `not a line of the current shape` was missed in the log pass. Then `status`: the counts of issues and of their statuses are what they were, and `resume` prints the goal and the questions as before. A `done` issue remains done: the record closes it before the `converted` line. A finding of `verify` under "open issues citing a superseded ruling" is about the loop's content, not its format: `field <id> What "<text>" --by <who>` (or Why, or Acceptance) writes the slug of the ruling in force that replaced it in place of the old one; where that ruling was superseded in turn, `verify` names it again, so repeat until it is clean. An unmarked acceptance line is refused by `field`: give it its method first.
 
 ## What changes for the work in progress
 
