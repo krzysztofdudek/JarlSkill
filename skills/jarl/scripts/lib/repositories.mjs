@@ -5,7 +5,7 @@ import { existsSync, statSync } from 'node:fs';
 import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
 import { afterView, echoWord, fieldText, hole, jarlLine, need, noSeparators, splitList } from './base.mjs';
 import { git, gitHere } from './git.mjs';
-import { canonical, jarlDir, normalPath, portablePath } from './where.mjs';
+import { canonical, jarlDir, nativePath, normalPath, portablePath } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { branchNameProblem } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
@@ -220,7 +220,7 @@ function worktreesOf(dir) {
   // The value of an attribute: the text after its name and a space, '' for a name alone, undefined when absent.
   const value = (lines, name) => { const l = lines.find((x) => x === name || x.startsWith(`${name} `)); return l === undefined ? undefined : l.slice(name.length + 1); };
   return blocks.map((lines) => ({
-    path: value(lines, 'worktree') || undefined, branch: /^refs\/heads\/(.+)$/s.exec(value(lines, 'branch') ?? '')?.[1] || null, bare: lines.includes('bare'),
+    path: value(lines, 'worktree') ? nativePath(value(lines, 'worktree')) : undefined, branch: /^refs\/heads\/(.+)$/s.exec(value(lines, 'branch') ?? '')?.[1] || null, bare: lines.includes('bare'),
     locked: value(lines, 'locked') !== undefined, reason: value(lines, 'locked') || undefined, prunable: value(lines, 'prunable') !== undefined,
   })).filter((e) => e.path).map((e, k) => {
     if (k !== 0 || e.bare || !existsSync(join(e.path, 'HEAD')) || existsSync(join(e.path, '.git'))) return e;
@@ -238,20 +238,8 @@ function worktreesOf(dir) {
 // resolve, is asked again, so a refusal always names the current state.
 const IS_REPO = new Set();
 
-// Whether git could answer for `dir` at all: a working tree, a repository or a bare repository somewhere up its path,
-// or a GIT_DIR in the environment. The path is read as git reads it, with its links followed. Where none is, a directory outside any repository is told apart without starting a
-// process, which on a loop kept out of git would be one process per command.
-function maybeGitRepo(dir) {
-  if (process.env.GIT_DIR) return true;
-  for (let d = canonical(resolve(dir)); ; d = dirname(d)) {
-    if (existsSync(join(d, '.git')) || (existsSync(join(d, 'HEAD')) && existsSync(join(d, 'objects')))) return true;
-    if (dirname(d) === d) return false;
-  }
-}
-
 function isGitRepo(dir) {
   if (IS_REPO.has(dir)) return true;
-  if (!maybeGitRepo(dir)) return false;
   const ok = git(dir, ['rev-parse', '--git-dir']) !== null;
   if (ok) IS_REPO.add(dir);
   return ok;

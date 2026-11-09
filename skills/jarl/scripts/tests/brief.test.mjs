@@ -11,6 +11,7 @@ import { gitRepo, jarl, posixForms, refuses, spawnJarl, loop as makeLoop } from 
 import { shellWord } from '../jarl-lib.mjs';
 import * as R from '../record.mjs';
 import { FINDINGS } from './findings.mjs';
+import { filesInMemory } from './files-in-memory.mjs';
 import { fileThreeDigits, filePlain } from './helpers.mjs';
 
 const { pairsInAnyOrder } = await import('../lib/brief.mjs');
@@ -621,10 +622,16 @@ function checkHistories(sequences, table) {
   let ambiguous = 0;
   let outOfOrder = 0;
   let pointing = 0;
+  const shown = (o) => [o.findings, o.notes];
+  const file = issueFile(root);
+  const memory = filesInMemory();
+  memory.on();
+  try {
   for (const letters of sequences) {
     const L = reviewsOf(letters, table);
     if (!L) continue;
-    writeFileSync(log, `${baseLog.replace(/\n*$/, '\n')}${L.map((r, k) => `${reviewLine(id, key, r, `10:0${k}`)}\n`).join('')}`);
+    const logged = `${baseLog.replace(/\n*$/, '\n')}${L.map((r, k) => `${reviewLine(id, key, r, `10:0${k}`)}\n`).join('')}`;
+    memory.put(log, logged);
     // Every subset of the entries kept, in the log's order; with two or more kept, each pair of neighbours swapped too. A
     // writer that keeps only the log wrote no entry.
     for (let mask = 0; mask < 2 ** L.length; mask += 1) {
@@ -633,9 +640,18 @@ function checkHistories(sequences, table) {
       const orders = [kept, ...(letters.length < 4 ? kept.slice(1).map((_, k) => [...kept.slice(0, k), kept[k + 1], kept[k], ...kept.slice(k + 2)]) : [])];
       for (const [o, E] of orders.entries()) {
         const section = E.length ? `## Reviews\n${E.map(reviewEntry).join('\n')}\n\n` : '';
-        writeFileSync(issueFile(root), baseFile.replace('\n## Evidence', `\n${section}## Evidence`));
+        const issue = baseFile.replace('\n## Evidence', `\n${section}## Evidence`);
+        memory.put(file, issue);
         const want = expected(id, L, E);
         const got = R.briefData(root, id, { role: 'reviewer' });
+        // One history in 97 is read from the disk as well, and reads the same.
+        if (histories % 97 === 0) {
+          memory.off();
+          writeFileSync(log, logged);
+          writeFileSync(file, issue);
+          assert.deepEqual(shown(R.briefData(root, id, { role: 'reviewer' })), shown(got), 'on the disk as in memory');
+          memory.on();
+        }
         const what = `${letters.join(' ')}; kept ${mask.toString(2).padStart(L.length, '0')}${o ? `, swapped at ${o}` : ''}`;
         assert.deepEqual(got.findings.map((f) => [f.by, f.kind, f.day, f.text, f.fileOnly === true]), want.findings, what);
         assert.deepEqual(got.notes.filter((n) => /Reviews section/.test(n)), want.notes, what);
@@ -657,6 +673,7 @@ function checkHistories(sequences, table) {
       }
     }
   }
+  } finally { memory.off(); }
   return { histories, ambiguous, pointing, outOfOrder };
 }
 

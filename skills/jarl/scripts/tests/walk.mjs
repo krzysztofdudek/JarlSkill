@@ -101,9 +101,7 @@ export const ROOT_EMPTY = 'releases/r2';
 export const EMPTY = (() => { const dir = mkdtempSync(join(tmpdir(), 'jarl-refusals-empty-')); mkdirSync(join(dir, '.git')); return { dir, cwd: '' }; })();
 
 // A fresh copy of a checkout, with a profile written into its loop and the calls of `pre` run first: the directory a call
-// runs in. snapshot reads every loop of the copy, wherever in it the call runs. A walk makes thousands of them, so each is
-// given back with drop as soon as its call is checked: a copy is never reused, and the folders alive at once are the few
-// one call holds.
+// runs in. snapshot reads every loop of the copy, wherever in it the call runs.
 const TOPS = new Map();
 export function copy(loop, { profile, pre } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'jarl-refusals-call-'));
@@ -123,43 +121,102 @@ export function drop(cwd) {
   TOPS.delete(cwd);
   rmSync(top, { recursive: true, force: true, maxRetries: 3 });
 }
+// The copies a walk calls on. Nearly every call of a walk is refused and writes nothing, and making and removing a copy
+// is what costs on Windows, so a copy nothing changed (the same record and the same files beside it, read after each
+// call) goes to the next call of the same loop, and one anything changed is removed. A copy holds one repository all
+// along, so git is asked once per question (tests/in-process.mjs, memo).
+const POOLS = new Map();
+const GIT_MEMO = new Map();
+function poolOf(loop, opts) {
+  const key = JSON.stringify([loop.dir, loop.cwd, opts.profile ?? null, opts.pre ?? null]);
+  if (!POOLS.has(key)) {
+    const dir = copy(loop, opts);
+    POOLS.set(key, { before: JSON.stringify(snapshot(dir)), files: JSON.stringify(filesIn(dir)), free: [dir] });
+  }
+  return POOLS.get(key);
+}
+function withCopy(loop, opts, fn) {
+  const pool = poolOf(loop, opts);
+  const dir = pool.free.pop() ?? copy(loop, opts);
+  let value;
+  try { value = fn(dir); } catch (e) { drop(dir); throw e; }
+  const written = JSON.stringify(snapshot(dir)) !== pool.before;
+  if (written || JSON.stringify(filesIn(dir)) !== pool.files) drop(dir); else pool.free.push(dir);
+  return { value, written };
+}
+const inCopy = (dir, args) => runInProcess(withNames(args), { cwd: dir, memo: GIT_MEMO });
+
 // One call, made where the walk stands, inside this process (tests/in-process.mjs): the walks make tens of thousands of
 // calls, and it is the same code a process would run.
 export const run = (cwd, args) => runInProcess(withNames(args), { cwd });
 
 // ---- the shells -------------------------------------------------------------------------------------------------------
 
-function shell(cwd, line, body) {
-  return spawnSync(bashBin(), ['-c', `jarl.mjs() { ${body}; }\n${line}`], { cwd, encoding: 'utf8', timeout: 60000 });
-}
 // The shells a printed line is pasted into: sh and zsh (zsh -f), where the machine has them, with an executable jarl.mjs
 // on the PATH, bash with jarl.mjs a function where it has neither (Git for Windows). Each shell reads the line for real
 // (its quoting, its expansions, its command separators); jarl.mjs records the words it was given, and the calls recorded
-// are then made in this process, in the order they were made (see run), so a walk spawns a shell and no node per line.
+// are then made in this process, so a pasted line starts no node. Starting a shell is what costs on Windows, so the lines
+// of a walk are read by one process of each shell (readInShell), each line once, in a subshell of its own.
 export const SHELLS = process.platform === 'win32' ? ['bash'] : ['/bin/sh', ...(existsSync('/bin/zsh') ? ['/bin/zsh'] : [])];
 const PASTED = join(mkdtempSync(join(tmpdir(), 'jarl-refusals-paste-')), 'calls');
-const RECORDING = 'for a in "$@"; do printf \'%s\\037\' "$a"; done >> "$JARL_PASTED"; printf \'\\036\' >> "$JARL_PASTED"; exit 1';
-const BIN = process.platform === 'win32' ? null : (() => { const d = mkdtempSync(join(tmpdir(), 'jarl-refusals-bin-')); writeFileSync(join(d, 'jarl.mjs'), `#!/bin/sh\n${RECORDING}\n`, { mode: 0o755 }); return d; })();
-export function runPrinted(cwd, line, sh = SHELLS[0]) {
+const RECORD = 'for a in "$@"; do printf \'%s\\037\' "$a"; done >> "$JARL_PASTED"; printf \'\\036\' >> "$JARL_PASTED"';
+const BIN = process.platform === 'win32' ? null : (() => { const d = mkdtempSync(join(tmpdir(), 'jarl-refusals-bin-')); writeFileSync(join(d, 'jarl.mjs'), `#!/bin/sh\n${RECORD}\nexit 1\n`, { mode: 0o755 }); return d; })();
+const sq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+const between = (text, mark) => { const parts = text.split(mark); return Array.from({ length: (parts.length - 1) / 2 }, (_, i) => parts[2 * i + 2]); };
+// What one shell makes of each line, run where `cwd` is: for each, the calls of jarl.mjs (each one's words), and the status
+// and output of the shell itself. In bash jarl.mjs is a function answering `answer`; elsewhere the script on the PATH.
+function readLines(sh, cwd, lines, answer = 1) {
   writeFileSync(PASTED, '');
+  const script = `${PASTED}.sh`;
+  const stub = sh === 'bash' ? `jarl.mjs() { ${RECORD}; return ${answer}; }\n` : '';
+  writeFileSync(script, `${stub}${lines.map((line, i) => `printf '\\035${i}\\035' >> "$JARL_PASTED"; printf '\\035${i}\\035'; printf '\\035${i}\\035' >&2; ( eval ${sq(line)} ); printf '\\034%s\\034' "$?"`).join('\n')}\n`);
   const env = { ...process.env, JARL_PASTED: PASTED.replaceAll('\\', '/') };   // Git for Windows' bash reads a path with slashes
-  const pasted = sh === 'bash'
-    ? spawnSync(bashBin(), ['-c', `jarl.mjs() { ${RECORDING.replace('exit 1', 'return 1')}; }\n${line}`], { cwd, encoding: 'utf8', timeout: 60000, env })
-    : spawnSync(sh, [...(sh.endsWith('zsh') ? ['-f'] : []), '-c', line], { cwd, encoding: 'utf8', timeout: 60000, env: { ...env, PATH: `${BIN}:${process.env.PATH}` } });
-  let result = { status: pasted.status, stdout: pasted.stdout ?? '', stderr: pasted.stderr ?? '' };
-  for (const words of readFileSync(PASTED, 'utf8').split('\x1e').slice(0, -1).map((c) => c.split('\x1f').slice(0, -1))) {
-    const r = runInProcess(words, { cwd });
+  const r = sh === 'bash'
+    ? spawnSync(bashBin(), [script.replaceAll('\\', '/')], { cwd, encoding: 'utf8', timeout: 300_000, maxBuffer: 2 ** 28, env })
+    : spawnSync(sh, [...(sh.endsWith('zsh') ? ['-f'] : []), script], { cwd, encoding: 'utf8', timeout: 300_000, maxBuffer: 2 ** 28, env: { ...env, PATH: `${BIN}:${process.env.PATH}` } });
+  const [recorded, out, err] = [between(readFileSync(PASTED, 'utf8'), '\x1d'), between(r.stdout ?? '', '\x1d'), between(r.stderr ?? '', '\x1d')];
+  assert.equal(out.length, lines.length, `${sh} read ${out.length} of ${lines.length} lines: ${r.error ?? r.stderr}`);
+  return lines.map((_, i) => {
+    const [stdout, status] = out[i].split('\x1c');
+    return { calls: recorded[i].split('\x1e').slice(0, -1).map((c) => c.split('\x1f').slice(0, -1)), status: Number(status), stdout, stderr: err[i] };
+  });
+}
+function replay(read, cwd, memo = null) {
+  let result = { status: read.status, stdout: read.stdout, stderr: read.stderr };
+  for (const words of read.calls) {
+    const r = runInProcess(words, { cwd, memo });
     result = { status: r.status, stdout: result.stdout + r.stdout, stderr: result.stderr + r.stderr };
   }
   return result;
 }
-// The calls of a printed line as a shell passes them to jarl.mjs: each one's words, jarl.mjs left out; null where the shell
-// does not run the line.
-export function printedCalls(line) {
-  const r = shell(tmpdir(), line, "printf '\\036'; printf '%s\\037' \"$@\"");
-  if (r.status !== 0) return null;
-  return r.stdout.split('\x1e').slice(1).map((c) => c.split('\x1f').slice(0, -1));
+export function runPrinted(cwd, line, sh = SHELLS[0]) { return replay(readLines(sh, cwd, [line])[0], cwd); }
+
+// What each shell made of each line of a walk, by the loop it is pasted on. The lines of one loop are read in one copy of
+// it: a line that created or changed anything there leaves the whole batch out, and each is then pasted on its own, where
+// the walk names the one that did.
+const READ = new Map();
+const readKey = (sh, loop, line) => JSON.stringify([sh, loop.dir, loop.cwd, line]);
+function readInShell(sh, loop, lines) {
+  const missing = [...new Set(lines)].filter((l) => !READ.has(readKey(sh, loop, l)));
+  if (!missing.length) return;
+  const dir = copy(loop);
+  const before = [JSON.stringify(snapshot(dir)), JSON.stringify(filesIn(dir))];
+  const read = readLines(sh, dir, missing);
+  const clean = before[0] === JSON.stringify(snapshot(dir)) && before[1] === JSON.stringify(filesIn(dir));
+  drop(dir);
+  if (clean) missing.forEach((l, i) => READ.set(readKey(sh, loop, l), read[i]));
 }
+const pastedOn = (loop, dir, line, sh) => { const read = READ.get(readKey(sh, loop, line)); return replay(read ?? readLines(sh, dir, [line])[0], dir, GIT_MEMO); };
+
+// The calls of a printed line as a shell passes them to jarl.mjs: each one's words, jarl.mjs left out; null where the shell
+// does not run the line. Each line is read once, and a walk reads all of its lines in one bash.
+const PRINTED = new Map();
+function readPrinted(lines) {
+  const missing = [...new Set(lines)].filter((l) => !PRINTED.has(l));
+  if (!missing.length) return;
+  readLines('bash', tmpdir(), missing, 0).forEach((r, i) => PRINTED.set(missing[i], r.status === 0 ? r.calls : null));
+}
+export function printedCalls(line) { readPrinted([line]); return PRINTED.get(line); }
 
 // Every file of every loop in the copy a call ran in (each .jarl/ in it, at any depth) but the lock, with what changes
 // from one run to another (a time, an issue's random key) masked.
@@ -355,29 +412,21 @@ export function formProblems(args, said, loop, opts = {}, wrong = null) {
     if (form.some((w) => HOLE.test(w))) {
       const first = (t) => t.replace(/\n+$/, '').split('\n')[0];
       const tried = fillings(form);
-      const same = (words) => { const dir = copy(loop, opts); const again = run(dir, words); drop(dir); return again.status !== 0 && first(again.stderr) === first(reason); };
+      const same = (words) => withCopy(loop, opts, (dir) => { const again = inCopy(dir, words); return again.status !== 0 && first(again.stderr) === first(reason); }).value;
       if (tried.every(same)) problems.push(`filled, the form is refused again for the same reason: ${tried[0].map(shellQuote).join(' ')}`);
     }
   }
   // Pasted as printed into each shell, on a fresh copy: each command refused for its placeholder, and nothing written in
   // any loop; the whole message pasted creates no file and writes nothing either.
-  const fresh = copy(loop, opts);
-  const before = JSON.stringify(snapshot(fresh));
-  drop(fresh);
   for (const sh of SHELLS) {
     for (const line of commands) {
-      const dir = copy(loop, opts);
-      const r = runPrinted(dir, line, sh);
-      if (JSON.stringify(snapshot(dir)) !== before) problems.push(`pasted into ${sh}, it writes: ${line}`);
+      const { value: r, written } = withCopy(loop, opts, (dir) => pastedOn(loop, dir, line, sh));
+      if (written) problems.push(`pasted into ${sh}, it writes: ${line}`);
       if (HOLE.test(line) && (r.status === 0 || !/placeholder/.test(r.stderr))) problems.push(`pasted into ${sh}, it is not refused for its placeholder: ${line} — ${r.stderr.trim().split('\n')[0]}`);
-      drop(dir);
     }
-    const dir = copy(loop, opts);
-    const files = filesIn(dir);
-    runPrinted(dir, said, sh);
-    if (JSON.stringify(snapshot(dir)) !== before) problems.push(`the whole message pasted into ${sh} writes: ${lines.at(-1)}`);
-    if (JSON.stringify(filesIn(dir)) !== JSON.stringify(files)) problems.push(`the whole message pasted into ${sh} makes a file (${filesIn(dir).filter((f) => !files.includes(f)).join(', ')}): ${reason.split('\n')[0].slice(0, 120)}`);
-    drop(dir);
+    const { value: made, written } = withCopy(loop, opts, (dir) => { const files = filesIn(dir); pastedOn(loop, dir, said, sh); return filesIn(dir).filter((f) => !files.includes(f)); });
+    if (written) problems.push(`the whole message pasted into ${sh} writes: ${lines.at(-1)}`);
+    if (made.length) problems.push(`the whole message pasted into ${sh} makes a file (${made.join(', ')}): ${reason.split('\n')[0].slice(0, 120)}`);
   }
   return problems;
 }
@@ -386,24 +435,26 @@ export function formProblems(args, said, loop, opts = {}, wrong = null) {
 // { args, wrong, loop, pre, profile }.
 export function walk(cases, loop, { mustRefuse }) {
   const found = [];
-  let refused = 0;
+  const refusals = [];
   for (const c of cases) {
     const { args, wrong = null, pre, profile, loop: own } = Array.isArray(c) ? { args: c } : c;
     const opts = { pre, profile };
     const on = own || loop;
     // A case whose first calls the loop cannot take (an issue it does not hold) is not one of this loop.
-    let dir;
-    try { dir = copy(on, opts); } catch { continue; }
-    const before = JSON.stringify(snapshot(dir));
-    const r = run(dir, args);
-    const wrote = r.status !== 0 && JSON.stringify(snapshot(dir)) !== before;
-    drop(dir);
+    try { poolOf(on, opts); } catch { continue; }
+    const { value: r, written } = withCopy(on, opts, (dir) => inCopy(dir, args));
     if (r.status === 0) { if (mustRefuse) found.push(`${JSON.stringify(args)}: went through`); continue; }
-    refused += 1;
-    if (wrote) found.push(`${JSON.stringify(args)}: refused and wrote`);
-    for (const p of formProblems(args, r.stderr, on, opts, wrong)) found.push(`${JSON.stringify(args)}: ${p}`);
+    if (written) found.push(`${JSON.stringify(args)}: refused and wrote`);
+    refusals.push({ args, said: r.stderr, on, opts, wrong });
   }
-  return { found, refused };
+  // Every line of every refusal is read by each shell once, before the refusals are checked.
+  readPrinted(refusals.flatMap((r) => partsOf(r.said).commands));
+  for (const on of new Set(refusals.map((r) => r.on))) {
+    const lines = refusals.filter((r) => r.on === on).flatMap((r) => [...partsOf(r.said).commands, r.said]);
+    for (const sh of SHELLS) readInShell(sh, on, lines);
+  }
+  for (const { args, said, on, opts, wrong } of refusals) for (const p of formProblems(args, said, on, opts, wrong)) found.push(`${JSON.stringify(args)}: ${p}`);
+  return { found, refused: refusals.length };
 }
 
 // ---- the commands of answers, notes and views ---------------------------------------------------------------------------
@@ -437,15 +488,15 @@ export function outputProblems(args, out, loop, opts = {}) {
     for (const sh of SHELLS) {
       for (const [pasted, filledIn] of [[line, false], [`jarl.mjs ${L.printedLine(filled(words))}`, true]]) {
         if (filledIn && !holed) continue;
-        const dir = copy(loop, opts);
-        const prefix = loopNamed(dir, given);
-        const before = snapshot(dir);
-        const r = runPrinted(dir, pasted, sh);
-        const after = snapshot(dir);
-        const outside = changedOutside(before, after, prefix);
-        if (outside.length) problems.push(`pasted ${filledIn ? 'filled ' : ''}into ${sh}, it writes outside the loop the call named (${outside.join(', ')}): ${pasted}`);
-        if (!filledIn && holed && (r.status === 0 || !/placeholder/.test(r.stderr) || JSON.stringify(after) !== JSON.stringify(before))) problems.push(`pasted into ${sh}, it is not refused for its placeholder: ${pasted} — ${r.stderr.trim().split('\n')[0]}`);
-        drop(dir);
+        withCopy(loop, opts, (dir) => {
+          const prefix = loopNamed(dir, given);
+          const before = snapshot(dir);
+          const r = pastedOn(loop, dir, pasted, sh);
+          const after = snapshot(dir);
+          const outside = changedOutside(before, after, prefix);
+          if (outside.length) problems.push(`pasted ${filledIn ? 'filled ' : ''}into ${sh}, it writes outside the loop the call named (${outside.join(', ')}): ${pasted}`);
+          if (!filledIn && holed && (r.status === 0 || !/placeholder/.test(r.stderr) || JSON.stringify(after) !== JSON.stringify(before))) problems.push(`pasted into ${sh}, it is not refused for its placeholder: ${pasted} — ${r.stderr.trim().split('\n')[0]}`);
+        });
       }
     }
   }
@@ -455,16 +506,26 @@ export function outputProblems(args, out, loop, opts = {}) {
 export function walkOutputs(cases, loop) {
   const found = [];
   let commands = 0;
+  const answers = [];
   for (const c of cases) {
     const { args, pre, profile, loop: own } = Array.isArray(c) ? { args: c } : c;
     const on = own || loop;
     const opts = { pre, profile };
-    const dir = copy(on, opts);
-    const r = run(dir, args);
-    drop(dir);
+    const { value: r } = withCopy(on, opts, (dir) => inCopy(dir, args));
     // verify and scope answer with exit 2 when they find something: that is their answer, printed whole.
     if (r.status !== 0 && !(r.status === 2 && ['verify', 'scope'].includes(J.callOfArgv(args.map(String)).cmd))) { found.push(`${JSON.stringify(args)}: did not go through: ${r.stderr.trim().split('\n')[0]}`); continue; }
-    const checked = outputProblems(args, `${r.stdout}\n${r.stderr}`, on, opts);
+    answers.push({ args, out: `${r.stdout}\n${r.stderr}`, on, opts });
+  }
+  // Every command printed is read by each shell once, as printed and filled, before the answers are checked.
+  const printed = answers.map((a) => ({ on: a.on, raw: commandSpans(a.out).map((s) => s.raw) }));
+  readPrinted(printed.flatMap((p) => p.raw));
+  for (const on of new Set(printed.map((p) => p.on))) {
+    const raw = printed.filter((p) => p.on === on).flatMap((p) => p.raw);
+    const lines = [...raw, ...raw.filter((l) => HOLE.test(l) && printedCalls(l)?.length === 1).map((l) => `jarl.mjs ${L.printedLine(filled(printedCalls(l)[0]))}`)];
+    for (const sh of SHELLS) readInShell(sh, on, lines);
+  }
+  for (const { args, out, on, opts } of answers) {
+    const checked = outputProblems(args, out, on, opts);
     commands += checked.commands;
     for (const p of checked.problems) found.push(`${JSON.stringify(args)}: ${p}`);
   }

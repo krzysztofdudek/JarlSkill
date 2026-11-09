@@ -125,6 +125,25 @@ test('the suite runner fails a suite that leaves an entry in the empty temporary
   assert.deepEqual(readdirSync(tmp), []);
 });
 
+test('the shards of the Windows job together run every test file once, each through the runner that guards leftovers', (t) => {
+  const tmp = scratch(t);
+  const dir = scratch(t);
+  const names = Array.from({ length: 11 }, (_, i) => `file-${String(i).padStart(2, '0')}`);
+  for (const name of names) writeFileSync(join(dir, `${name}.test.mjs`), `import test from 'node:test'; test('ran ${name}', () => {});`);
+  const ran = [1, 2, 3].map((shard) => {
+    const r = spawnSync(process.execPath, [SUITE, '--test-reporter=spec', `--test-shard=${shard}/3`], { cwd: dir, encoding: 'utf8', timeout: SPAWN_TIMEOUT, env: envWith(tmp) });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    return [...r.stdout.matchAll(/ran (file-\d+)/g)].map((m) => m[1]);
+  });
+  assert.deepEqual(ran.flat().sort(), names, 'every file once');
+  assert.ok(ran.every((files) => files.length >= 3), JSON.stringify(ran));
+  assert.deepEqual(readdirSync(tmp), [], 'each shard leaves nothing');
+  const job = readFileSync(new URL('../../../../.github/workflows/ci.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n').split('\n  test-windows:\n')[1].split('\n\n  # ')[0];
+  assert.match(job, /^ {8}shard: \[1, 2, 3\]$/m);
+  assert.match(job, /^ {8}run: npm test -- --test-shard=\$\{\{ matrix\.shard \}\}\/3$/m);
+  assert.match(job, /^ {6}fail-fast: false$/m);
+});
+
 test('the suite runner passes the failing exit status of the suite through', (t) => {
   const tmp = scratch(t);
   const failing = join(tmp, 'failing.mjs');
