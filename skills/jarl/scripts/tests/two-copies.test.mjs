@@ -303,8 +303,8 @@ test('a lone opening marker is no conflict, and a conflict after it is still ref
 // A real pull whose conflict holds, on one side, a marker line the tool did not write (a hand edit, or text written raw):
 // `edit` turns the text the tool wrote on that side into the text with the stray line.
 for (const [shape, side, edit] of [
-  ['an opening marker after the separator', 'a', (t) => t.replace('the text on A\n', 'the text on A\n<<<<<<< lone line\n')],
-  ['a closing marker before the separator', 'b', (t) => t.replace('the text on B\n', 'the text on B\n>>>>>>> lone line\n')],
+  ['an opening marker after the separator', 'a', (t) => t.replace(/the text on A(\r?\n)/, 'the text on A$1<<<<<<< lone line$1')],
+  ['a closing marker before the separator', 'b', (t) => t.replace(/the text on B(\r?\n)/, 'the text on B$1>>>>>>> lone line$1')],
 ]) {
   test(`verify refuses a real git conflict whose side holds ${shape}`, () => {
     const a = committedLoop();

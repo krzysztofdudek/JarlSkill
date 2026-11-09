@@ -2,7 +2,7 @@
 
 import { existsSync } from 'node:fs';
 import { relative, isAbsolute } from 'node:path';
-import { fieldText, shellWord, splitList } from './base.mjs';
+import { fieldText, printCommand, splitList } from './base.mjs';
 import { git, gitRun } from './git.mjs';
 import { canonical } from './where.mjs';
 import { loadProfile } from './profile.mjs';
@@ -88,7 +88,7 @@ export function cleanUpAfterMerge(root, issues, sha, repoPath, named = []) {
       // git deletes ignored files together with a worktree, so a worktree that holds any is left for a person to look at.
       const ignored = lines.map((l) => l.slice(3));
       if (ignored.length) {
-        keep(`its worktree holds ignored files: ${ignored.slice(0, 5).join(', ')}${ignored.length > 5 ? `, and ${ignored.length - 5} more` : ''}`, { commands: [`git -C ${shellWord(repo)} worktree remove --force ${shellWord(ws.path)}`, `git -C ${shellWord(repo)} branch -d ${shellWord(branch)}`] });
+        keep(`its worktree holds ignored files: ${ignored.slice(0, 5).join(', ')}${ignored.length > 5 ? `, and ${ignored.length - 5} more` : ''}`, { commands: [printCommand(['git', '-C', repo, 'worktree', 'remove', '--force', ws.path], { globals: [] }), printCommand(['git', '-C', repo, 'branch', '-d', branch], { globals: [] })] });
         continue;
       }
       const gone = gitRun(repo, ['worktree', 'remove', ws.path]);

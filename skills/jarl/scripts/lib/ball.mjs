@@ -1,7 +1,7 @@
 // What is on whom: every open thing of the loop has one holder who must move next, derived from the record and never
 // stored, and next --as <holder> lists what is on that one, each line with the command that moves it.
 
-import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need, shellWord, slugify } from './base.mjs';
+import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need, printCommand, slugify } from './base.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
 import { carriesCode, gateOf, holderKey, inFlightMark, leaseConflictForm, leaseConflictOf, leaseConflictText, roundSinceLease, sameHolder, sentBack, statusWith, worksInPlace } from './gate.mjs';
@@ -535,7 +535,7 @@ export function ballRows(root, flags = {}) {
   const rows = ROW_SOURCES.flatMap((s) => s(ctx));
   // The holder of a row is who runs its command, so a write printed for it names that writer: all but a wait, held by an
   // outside person whose answer someone else records.
-  for (const r of rows) if (typeof r.command === 'string' && r.holder && r.what !== 'wait') r.command = r.command.replaceAll('--by "<who>"', () => `--by ${shellWord(r.holder)}`);
+  for (const r of rows) if (typeof r.command === 'string' && r.holder && r.what !== 'wait') r.command = r.command.replaceAll('--by "<who>"', () => `--by ${printCommand([r.holder], { globals: [] })}`);
   // Who each issue holds up: the issues in play whose After names it, not settled yet, and for a question the issues it holds.
   const active = loop.issues.filter((i) => profile.active(i.status));
   const dependents = new Map();
