@@ -612,7 +612,7 @@ const approvedStep = (loop, issue) => { const again = mergeAgainWhy(loop, issue)
 // An issue that owes no row reads the same in every view: nothing asks its worker for proof.
 const NO_ROW_OWED = 'at work: no row is owed for read lines, and a fresh examiner is raised when it reports';
 const SENT_BACK_NO_ROW = 'sent back by a round, back with the worker: no row is owed for read lines';
-const CHANGES_NO_ROW = 'changes requested, back with the worker, who fixes it: no row is owed for read lines';
+const CHANGES_NO_ROW = 'changes requested — back with the worker, who fixes it: no row is owed for read lines';
 const stepOf = (loop, mark, issue) => (mark === 'approved' && worksInPlace(issue) ? APPROVED_IN_PLACE : mark === 'approved' && !carriesCode(issue) ? APPROVED_NO_CODE : mark === 'approved' ? approvedStep(loop, issue) : sentBack(loop, issue, mark) ? SENT_BACK : IN_FLIGHT_MARKS[mark]);
 const inFlightStep = (loop, mark, issue) => {
   if (noRowOwed(issue)) {

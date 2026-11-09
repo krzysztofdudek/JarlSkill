@@ -81,7 +81,7 @@ test('in-flight rows carry one derived fact, in status and resume, text and json
   assert.deepEqual(Object.fromEntries(st.inFlightRows.map((r) => [r.id, r.mark])),
     { '1': 'no-rows', '2': 'rows-no-verdict', '3': 'changes-requested', '4': 'approved' }, 'an issue waiting on After is not in flight');
   const text = jarl(root, 'status');
-  assert.match(text, /^in flight 1 · no evidence rows since the start/m);
+  assert.match(text, /^in flight 1 · at work: no row is owed for read lines/m);
   assert.match(text, /^in flight 2 · evidence rows recorded, no verdict .* waits for a reviewer$/m);
   assert.match(text, /^in flight 3 · changes requested .* back with the worker/m);
   assert.match(text, /^in flight 4 · approved and queued .* then set it done$/m);

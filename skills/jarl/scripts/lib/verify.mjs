@@ -154,7 +154,7 @@ function carriedOver(loop, events, issue, by) {
   const convertedAt = events.findLast((e) => e.type === 'converted')?.n ?? -1;
   if (convertedAt < 0) return false;
   const superseded = events.findLast((e) => e.id === null && e.text.startsWith(`decided ${by} ·`))?.n ?? -1;
-  const written = (loop.eventsById.get(issue.id) || []).filter((e) => e.type === 'body' && /what|why|acceptance/.test(e.part)).pop()?.n ?? -1;
+  const written = (loop.eventsById.get(issue.id) || []).filter((e) => e.type === 'body' && ['what', 'why', 'acceptance'].some((p) => e.part.includes(p))).pop()?.n ?? -1;
   return superseded < convertedAt && written < convertedAt;
 }
 

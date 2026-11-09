@@ -14,18 +14,14 @@ import { repoNames } from './repositories.mjs';
 import { gateOf } from './gate.mjs';
 import { readLoop } from './loop.mjs';
 import { needOwnerLine, ownerLineStates } from './owner-lines.mjs';
+import { MARK, MECHANICAL, METHODS, PAIR, SEPARATOR, noRowOwed, readLine } from './line-read.mjs';
 
-export const METHODS = Object.freeze(['test', 'check', 'compare', 'read', 'owner']);
-const MECHANICAL = new Set(['test', 'check', 'compare']);
+export { METHODS, noRowOwed, readLine };
+
 export const METHODS_TEXT = 'test, check, compare, read or owner';
-// Whether an issue owes no row at all: its lines are read lines, judged by a verdict, and owner lines, proved by his tick.
-export const noRowOwed = (issue) => acceptanceLines(issue).every((l) => !MECHANICAL.has(readLine(l).method));
 // The form a refusal of a line ends with: the five, the placeholder of the requirement, and no value of the caller's.
 export const LINE_FORM = hole('<test-check-compare-read-or-owner-line>');
 const COMPARE_FORM = hole('<compare-line-with-by-command>');
-const MARK = /^\[([^\]]*)\]\s*(.*)$/s;
-const SEPARATOR = / · |^· /;
-const PAIR = /^([a-z][a-z-]*):\s*(.*)$/;
 const PLACEHOLDER = /^<.*>$/;
 // The keys a line of each method may name after its text: any other key is refused, so a typo is never taken for the
 // proof it was meant to name. `by` is the command that proves the line, read by the examiner; an owner line's material and
@@ -36,16 +32,6 @@ const KEYS = Object.freeze({ test: ['by'], check: ['by'], compare: ['by'], read:
 // them is another requirement.
 export const lineDigest = (text) => createHash('sha256').update(String(text)).digest('hex').slice(0, 12);
 
-// One acceptance line read: { text, method, marked, what, by }. A line with no mark, or a mark that is none of the five,
-// reads as read, and marked false; keys are read by their place, as much as the line holds.
-export function readLine(text) {
-  const m = MARK.exec(text);
-  const method = m && METHODS.includes(m[1].toLowerCase()) ? m[1].toLowerCase() : null;
-  if (!method) return { text, method: 'read', marked: false, what: text, by: null };
-  const parts = m[2].split(SEPARATOR).map((p) => p.trim());
-  const key = (name) => parts.slice(1).map((p) => PAIR.exec(p)).filter(Boolean).find(([, k]) => k === name)?.[2]?.trim() || null;
-  return { text, method, marked: true, what: parts[0], by: key('by') };
-}
 
 // Why a line given to new or field is refused, or null: as `[method] text · key: value`, one of the five, a text, every
 // part after it a key this method takes with a value, a compare naming its command. An owner line is read by its own reader.

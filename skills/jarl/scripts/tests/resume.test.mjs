@@ -70,7 +70,7 @@ test('resume assembles every section live from the loop and the repositories its
   assert.match(t, /^# Resume · ship the export command\nopened \S+ \S+ · last activity \S+ \S+\nopen 4 · in flight 2 · waiting 1 · done 0 · dropped 0 · deferred 0 · questions 1 · to ratify 1 · merged, CI pending 1 · CI red 1\n/);
   assert.match(t, /\n1 ruling\(s\) in force: jarl\.mjs decisions --live; resume --as <who> adds the rules that match whoever asks\n\n## Rules for the whole loop \(0\)\n- \(none\)\n\n/);
   assert.doesNotMatch(t, /old-way ·/, 'a superseded ruling is not in force');
-  assert.match(t, /## In flight \(2\)\n- 1 in flight one · branch jarl\/1-one · worker w1 · model test-model · since \S+ \S+\n {2}→ no evidence rows since the start[^\n]*\n- 5 queued five · branch jarl\/5-five · worker w5 · model test-model · since \S+ \S+\n {2}→ approved and queued[^\n]*\n/);
+  assert.match(t, /## In flight \(2\)\n- 1 in flight one · branch jarl\/1-one · worker w1 · model test-model · since \S+ \S+\n {2}→ at work: no row is owed for read lines[^\n]*\n- 5 queued five · branch jarl\/5-five · worker w5 · model test-model · since \S+ \S+\n {2}→ approved and queued[^\n]*\n/);
   assert.match(t, /## Waiting — After not settled \(1\)\n- 2 waits for one \(after 1\)\n/);
   assert.match(t, /## Questions to the owner \(1\)\n- a-1 \(stuck\) issue 3 · which flag name\?\n/);
   assert.match(t, /## To ratify \(1\)\n- a-2 \(issue 1\) · kept the old default under the mandate\n/);
@@ -97,7 +97,7 @@ test('resume assembles every section live from the loop and the repositories its
   // JSON: the same sections as data.
   const o = JSON.parse(run(hub, ['resume', '--json'], { JARL_GH: ghStub(parent) }).stdout);
   assert.deepEqual(Object.keys(o), ['goal', 'opened', 'lastActivity', 'archived', 'status', 'rulings', 'unsettled', 'rules', 'inFlight', 'waiting', 'questions', 'escalations', 'proposed', 'ratify', 'held', 'kept', 'next', 'readyTotal', 'queue', 'merged', 'tips', 'uncommitted', 'log', 'legacyHandoff']);
-  assert.deepEqual(o.inFlight[0], { id: '1', title: 'in flight one', branch: 'jarl/1-one', worker: 'w1', model: 'test-model', since: o.inFlight[0].since, stale: [], mark: 'no-rows' });
+  assert.deepEqual(o.inFlight[0], { id: '1', title: 'in flight one', branch: 'jarl/1-one', worker: 'w1', model: 'test-model', since: o.inFlight[0].since, stale: [], mark: 'no-rows', next: 'at work: no row is owed for read lines, and a fresh examiner is raised when it reports' });
   assert.deepEqual(o.merged.map((m) => [m.id, m.ci]), [['6', 'pending'], ['7', 'red']]);
   assert.equal(o.tips.ci, false);
   assert.equal(o.legacyHandoff, null);
@@ -111,7 +111,7 @@ test('resume assembles every section live from the loop and the repositories its
   const st = JSON.parse(jarl(hub, 'status', '--json'));
   assert.deepEqual([st.ready, st.inFlight, st.waiting], [6, 1, 2]);
   assert.match(w, /\nopen 6 · in flight 1 · waiting 2 · /);
-  assert.match(w, /## In flight \(1\)\n- 1 in flight one · branch jarl\/1-one · worker w1 · model test-model · since \S+ \S+\n {2}→ no evidence rows since the start[^\n]*\n\n/);
+  assert.match(w, /## In flight \(1\)\n- 1 in flight one · branch jarl\/1-one · worker w1 · model test-model · since \S+ \S+\n {2}→ at work: no row is owed for read lines[^\n]*\n\n/);
   assert.match(w, /## Waiting — After not settled \(2\)\n- 2 waits for one \(after 1\)\n- 5 queued five \(after 8\) · in progress · branch jarl\/5-five · worker w5 · model test-model · since \S+ \S+\n/);
   assert.match(w, /## Held — files in flight \(2\)\n- 3  P1  ready two \(open question a-1\)\n- 9  P2  held nine \(tool\/src\/a\.mjs held by 1\)\n/);
   assert.match(w, /## Next ready \(4 of 4\)\n/);

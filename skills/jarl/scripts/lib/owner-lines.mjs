@@ -16,7 +16,7 @@ import { OWNER, needNoOwnersWords, rulingAuthor } from './owner.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { appendLogLines } from './journal.mjs';
 import { acceptanceLines, evidenceRows, findIssue } from './issues.mjs';
-import { noRowOwed } from './lines.mjs';
+import { noRowOwed } from './line-read.mjs';
 import { issueRepoPaths, worktreeState } from './repositories.mjs';
 import { gateOf, gateWindow, wholeOf } from './gate.mjs';
 import { readLoop } from './loop.mjs';
