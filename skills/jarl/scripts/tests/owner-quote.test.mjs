@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { jarl, refuses, loop, run } from './helpers.mjs';
 import { loadDecisions } from '../lib/journal.mjs';
+import { logChanges } from '../lib/body.mjs';
 import * as R from '../record.mjs';
 import * as L from '../jarl-lib.mjs';
 
@@ -318,6 +319,43 @@ test('the owner\'s word in the singular with a quotation mark after it is refuse
   }
   for (const text of honest) jarl(root, 'evidence', '1', text);
   assert.match(jarl(root, 'retract', '1', 'note-1', '--by', 'jarl', honest[0]), /retracted/);
+});
+
+test('a part whose old text ends in the owner\'s word is changed like any other, and a new text that holds the marker is still refused', () => {
+  const root = loop({ via: 'cli' });
+  const ending = 'Published first, on the owner\'s word.';
+  jarl(root, 'new', ending, '--what', ending, '--acceptance', `[read] ${ending}`);
+  jarl(root, 'new', 'second', '--acceptance', `[read] ${ending}`);
+  jarl(root, 'field', '1', 'Title', 'thing');
+  jarl(root, 'field', '1', 'What', 'it changed');
+  jarl(root, 'field', '1', 'Acceptance', '[read] it works');
+  jarl(root, 'field', '2', 'Acceptance', '[read] it works', '--add');
+  const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
+  assert.match(log, /1 body · title · was "Published first, on the owner's word\."/);
+  assert.match(log, /1 body · what · was "Published first, on the owner's word\."/);
+  assert.match(log, /1 body · acceptance · was "\[read\] Published first, on the owner's word\."/);
+  assert.match(refuses(root, 'field', '1', 'What', 'The owner\'s word: "yes, ship it"'), REFUSED);
+  assert.match(refuses(root, 'field', '1', 'Title', 'the owner\'s word "yes"'), REFUSED);
+});
+
+test('the old text a body line carries ends at its closing quotation mark, so a name after it is still checked', () => {
+  const root = loop({ via: 'cli' });
+  const line = (rest) => `1 body · title · was "Published first, on the owner's word."${rest}`;
+  logChanges(root, [line('')]);
+  logChanges(root, [line(' (37 characters) · by someone')]);
+  assert.throws(() => logChanges(root, [line(' · by The owner\'s words: "ship it')]), REFUSED);
+  assert.throws(() => logChanges(root, [line(' (37 characters) · by The owner\'s word "ship it')]), REFUSED);
+});
+
+test('a --by that holds the marker is refused where the name is read, even when it wraps an old text the line carries', () => {
+  const root = loop({ via: 'cli' });
+  const forged = '"[read] The owner\'s words": "ship it"';
+  jarl(root, 'new', 'parent', '--acceptance', '[read] The owner\'s words');
+  jarl(root, 'new', 'child', '--acceptance', '[read] it works');
+  jarl(root, 'field', '2', 'Parent', '1');
+  assert.match(refuses(root, 'split', '1', '--line', '1=2', '--by', forged), REFUSED);
+  assert.throws(() => L.cmdSplit(root, '1', { line: '1=2', by: forged }), REFUSED);
+  assert.doesNotMatch(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /ship it/);
 });
 
 test('the library keeps the author of a ruling as the one name the owner has, and refuses a name that holds his', () => {

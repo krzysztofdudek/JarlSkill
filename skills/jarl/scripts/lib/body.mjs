@@ -1,7 +1,7 @@
 // The commands that change the description of an issue: body, source and after, and the log lines a change leaves.
 
 import { fieldText, hole, need } from './base.mjs';
-import { needNoOwnersWords } from './owner.mjs';
+import { carryingOwnersWords, needNoOwnersWords } from './owner.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { idRe } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
@@ -38,6 +38,7 @@ export function editorOf(by) {
   need(typeof by === 'string' && name, '--by needs a name: who makes this write', () => ({ flag: '--by', value: '<who>' }));
   need(!/[\r\n]/.test(String(by).trim()), `--by is one name on one line (got ${JSON.stringify(String(by))})`, () => ({ flag: '--by', value: '<one-name>' }));
   need(!name.includes('·'), `--by is one name — not a phrase with "·" in it (got "${name}")`, () => ({ flag: '--by', value: '<one-name>' }));
+  needNoOwnersWords('--by', name);
   return name;
 }
 
@@ -91,10 +92,14 @@ export function rowsLostNote(issue, was, now) {
 }
 
 
+// The old text a body line quotes. It is the record's own text, and the closing quotation mark bodyLine puts after it
+// would turn an honest "on the owner's word." into the shape of the owner's quote.
+const quotedOldText = (line) => line.match(/ body · [^·]+ · was ("[^·]*")(?: \(\d+ characters\))?(?: · by .*)?$/)?.[1];
+
 // The lines of a description change that are not null, appended in one write; nothing when every part was unchanged.
 export function logChanges(root, lines) {
   const kept = lines.filter(Boolean);
-  if (kept.length) appendLogLines(root, kept);
+  if (kept.length) carryingOwnersWords(kept.map(quotedOldText), () => appendLogLines(root, kept));
 }
 
 // What a header field of an issue holds as written, '' when the header has none.
