@@ -183,11 +183,11 @@ test('a tip line is written by evidence, review and merged, right after their ow
   const { root, g } = leased();
   const tip = g('rev-parse', 'jarl/1-x').trim();
   const raw = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n');
-  const lines = raw.map((l) => l.replace(/^- \S+ \S+(?: key \S+)?(?: tip)? · /, ''));
+  const lines = raw.map((l) => l.replace(/^- \S+ \S+(?: key \S+)?(?: tip)? by [^·]+ · /, ''));
   const after = (re) => lines[lines.findIndex((l) => re.test(l)) + 1];
   assert.equal(after(/^1 evidence row(?: \(line [0-9a-f]+\))? · /), `1 tip ${tip}`);
   assert.equal(after(/^1 review approve · /), `1 tip ${tip}`);
-  for (const l of raw.filter((x) => / · 1 tip /.test(x))) assert.match(l, /^- \S+ \S+(?: key \S+)? tip · 1 tip [0-9a-f]+$/, 'every tip line carries the mark');
+  for (const l of raw.filter((x) => / · 1 tip /.test(x))) assert.match(l, /^- \S+ \S+(?: key \S+)? tip by [^·]+ · 1 tip [0-9a-f]+$/, 'every tip line carries the mark');
   assert.match(refuses(root, 'log', `1 tip ${tip}`), /reads as a tip line/);
 });
 
@@ -197,8 +197,8 @@ test('verify names the tip mark on a line that is no tip line, and the reader re
   const log = join(root, '.jarl', 'log.md');
   const lines = readFileSync(log, 'utf8').trimEnd().split('\n');
   const at = lines.findIndex((l) => / · 1 evidence row(?: \(line [0-9a-f]+\))? · npm test$/.test(l));
-  lines[at] = lines[at].replace(/ · 1 evidence row/, ' tip · 1 evidence row');
-  writeFileSync(log, `${lines.join('\n')}\n- 2026-11-08 12:00 tip · a note with the tip mark\n`);
+  lines[at] = lines[at].replace(/(?= by [^·]+ · 1 evidence row)/, ' tip');
+  writeFileSync(log, `${lines.join('\n')}\n- 2026-11-08 12:00 tip by a-writer · a note with the tip mark\n`);
   assert.deepEqual(fresh(), [1, true], 'the row with the mark is read as the row it is');
   const verified = run(root, ['verify']);
   assert.equal(verified.status, 2, verified.stdout);

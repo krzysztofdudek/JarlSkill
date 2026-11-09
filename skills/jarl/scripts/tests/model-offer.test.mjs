@@ -22,7 +22,8 @@ let seq = 0;
 const lease = (root, { model = 'some-model' } = {}) => {
   seq += 1;
   const id = JSON.parse(jarl(root, 'new', `change ${seq}`, '--acceptance', '[read] it works', '--files', `f${seq}.mjs`, '--json')).id;
-  const args = ['set', id, 'in-progress', 'go', '--worker', `w${seq}`, '--branch', `jarl/${id}-x`, ...(model ? ['--model', model] : [])];
+  if (!model) { R.setStatus(root, id, 'in-progress', 'go', { worker: `w${seq}`, branch: `jarl/${id}-x`, by: 'jarl' }); return { stderr: '' }; }
+  const args = ['set', id, 'in-progress', 'go', '--worker', `w${seq}`, '--branch', `jarl/${id}-x`, '--model', model];
   return run(root, args);
 };
 
@@ -88,7 +89,7 @@ test('a note in the shape of a line the lease or the path note writes is refused
   for (const text of ['models offered · the goal declares no Model line at a lease', 'models offer closed · the goal declares a Model line at a lease', 'repo path ./inner noted · elsewhere']) {
     const said = refuses(root, 'log', text);
     assert.match(said, /^log writes a note, and ".*" has the shape of a line (a lease|a filing or a field call) writes to remember what it said: /, text);
-    assert.match(said, /\njarl\.mjs (set "<ids>" "<status>" "<why>"|field "<id>" Repo "<name-or-path>")\n$/, text);
+    assert.match(said, /\njarl\.mjs (set "<ids>" "<status>" "<why>"|field "<id>" Repo "<name-or-path>") --by "<who>"\n$/, text);
   }
   assert.equal(offers(root) + closes(root), 0);
   assert.equal(log(root).includes('repo path'), false);

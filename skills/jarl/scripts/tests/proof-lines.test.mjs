@@ -55,7 +55,7 @@ test('a --line the issue has no line for, a number that is no line, a --line on 
   const before = () => [log(root), readFileSync(issueFile(root, '1'), 'utf8'), readFileSync(issueFile(root, '2'), 'utf8')];
   const was = before();
   const over = refuses(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass', '--line', '1,4');
-  assert.match(over, /^1 has 3 acceptance lines: there is no line 4\njarl\.mjs evidence "<ids>" --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by "<who>"\n$/);
+  assert.match(over, /^1 has 3 acceptance lines: there is no line 4\njarl\.mjs evidence "<ids>" --by "<who>" --ran "<command>" --saw "<what-it-printed>" --line "<line-number>"\n$/);
   assert.match(refuses(root, 'evidence', '1,2', '--ran', 'npm test', '--saw', 'pass', '--line', '5'), /^1 has 3 acceptance lines: there is no line 5 — nothing was written\n/);
   for (const bad of ['0', 'two', '-1x']) assert.match(refuses(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass', `--line=${bad}`), /--line takes the number of an acceptance line, 1 for the first, got|an item cannot start with -/, bad);
   assert.match(refuses(root, 'evidence', '1', 'a note', '--line', '1'), /^--line names the acceptance lines a --ran\/--saw row proves, and a free-text note or an attachment proves none: record the row, or leave --line out\njarl\.mjs evidence "<ids>" "<text>" --by "<who>"\n$/);
@@ -147,7 +147,7 @@ test('the number of an acceptance line has a placeholder of its own, apart from 
   const root = makeRoot();
   jarl(root, 'new', 'no acceptance yet');
   jarl(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 3', '--line', '1');
-  assert.match(refuses(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass', '--line', '4'), /\njarl\.mjs evidence "<ids>" --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by "<who>"\n$/);
+  assert.match(refuses(root, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass', '--line', '4'), /\njarl\.mjs evidence "<ids>" --by "<who>" --ran "<command>" --saw "<what-it-printed>" --line "<line-number>"\n$/);
   assert.match(refuses(root, 'evidence', '2', '--ran', 'npm test', '--saw', 'pass', '--line', '1'), /write the acceptance first, jarl\.mjs field 2 Acceptance "<line>"\n/);
   assert.match(refuses(root, 'tick', '1', 'two', '--by', 'owner'), /\njarl\.mjs tick "<id>" "<line-number>"/);
   assert.match(jarl(root, 'brief', '1'), /--line "<line-number>"/);

@@ -19,7 +19,7 @@ export function cmdInit(root, goal, flags = {}) {
   need(flags.committed === undefined || flags.committed === true, '--committed takes no value — put the goal first: init "<goal>" --committed', () => ({ rename: '--committed', to: hole('<no-flag-here>') }));
   need(flags.permanent === undefined || flags.permanent === true, '--permanent takes no value — put the goal first: init "<goal>" --permanent', () => ({ rename: '--permanent', to: hole('<no-flag-here>') }));
   need(goal, 'init requires "<goal>"', () => ({ arg: 0, value: '<goal>' }));
-  need(!holdsFormatLine(goal), `the goal holds a line that starts with "Format:", which reads as the record's format line, the one line of goal.md Jarl alone writes — say it another way`, () => ({ arg: 0, value: hole('<goal>') }));
+  need(!holdsFormatLine(goal), `the goal holds a line that starts with "Format:", which reads as the record's format line, a line only Jarl writes — say it another way`, () => ({ arg: 0, value: hole('<goal>') }));
   need(!hasLiveLoop(root), '.jarl/ already exists here with a live loop — resume it, or archive it first', ['jarl.mjs', 'archive', '<slug>']);
   // The profile is read and checked before anything is written: a bad one leaves no half-opened loop behind.
   const prof = flags.profile !== undefined ? readProfileFile(flags.profile) : null;

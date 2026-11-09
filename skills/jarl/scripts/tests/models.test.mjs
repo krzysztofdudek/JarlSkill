@@ -103,7 +103,7 @@ test('review --model [--relayed] writes the model and the relay mark after the k
   assert.match(issueText(root, id), /^- \*\*approve\*\* · by rev-d \(fresh\) · \d{4}-\d{2}-\d{2} · model small-model$/m);
   const bare = R.review(root, id, 'approve', 'a third look, nothing found', { by: 'rev-e' });
   assert.equal(bare.model, undefined, 'no model given, none reported');
-  assert.match(log(root), /001 review approve · by rev-e \(fresh\) · a third look, nothing found/);
+  assert.match(log(root), /001 review approve · by rev-e \(fresh\) · (?:model test-model · )?a third look, nothing found/);
   assert.throws(() => R.review(root, id, 'approve', 'a fourth look, nothing found', { by: 'rev-f', model: '  ' }), /--model needs a value/);
 });
 
@@ -172,13 +172,12 @@ test('Model (<tier>) lines are read like Check lines: plain, list item, bold; th
 
 function notes(root, cmd, rest, flags) { return J.dispatch(root, cmd, rest, { by: 'test-writer', ...(cmd === 'set' && flags.worker !== undefined && flags.model === undefined ? { model: 'test-model' } : {}), ...flags }).warn.join('\n'); }
 
-test('notes on a lease and on a verdict without --model, and on an approve of the same model or a lower rank, only in a loop with model lines', () => {
+test('notes on an approve of the same model or a lower rank, only in a loop with model lines', () => {
   const root = loop({ lines: true });
   const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works', tier: 'strong' });
-  assert.match(notes(root, 'set', [id, 'in-progress', 'go'], { branch: 'jarl/001-a', worker: 'w-one' }), /no --model/, 'a lease without a model');
   assert.doesNotMatch(notes(root, 'set', [id, 'in-progress', 'go'], { branch: 'jarl/001-a', worker: 'w-one', model: BIG }), /--model/);
   R.addEvidence(root, id, undefined, { line: 1, ran: 'npm test', saw: 'pass' });
-  assert.match(notes(root, 'review', [id, 'changes', 'Important: the case is missing'], { by: 'rev-1' }), /no --model/, 'a verdict without a model');
+  notes(root, 'review', [id, 'changes', 'Important: the case is missing'], { by: 'rev-1', model: SMALL });
   R.addRound(root, id, 'the case is handled now');
   assert.match(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-2', model: BIG }), /same model as the worker's/, 'the worker model leased on the issue');
   assert.match(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-3', model: SMALL }), /ranks below the worker's model/, 'a lower rank');
@@ -186,12 +185,12 @@ test('notes on a lease and on a verdict without --model, and on an approve of th
   assert.equal(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-5', model: 'big-model@low' }), '', 'another value of the same rank is neither the same model nor a lower one');
 });
 
-test('no note at all in a loop without model lines', () => {
+test('in a loop without model lines a lease offers them, and a verdict says nothing', () => {
   const root = loop();
   const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works' });
-  assert.equal(notes(root, 'set', [id, 'in-progress', 'go'], { branch: 'jarl/001-a', worker: 'w-one' }), '');
+  assert.match(notes(root, 'set', [id, 'in-progress', 'go'], { branch: 'jarl/001-a', worker: 'w-one', model: MID }), /the goal declares no Model line/);
   R.addEvidence(root, id, undefined, { line: 1, ran: 'npm test', saw: 'pass' });
-  assert.equal(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-1' }), '');
+  assert.equal(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-1', model: MID }), '');
   assert.equal(notes(root, 'review', [id, 'approve', 'read it all, nothing found'], { by: 'rev-2', model: MID }), '');
 });
 
@@ -676,7 +675,7 @@ function reviewedUnit(root, findings, extra = {}) {
 test('findings that open like a model field are not read as one: no reviewer model appears', () => {
   const root = loop();
   const id = reviewedUnit(root, 'model fake-1 · looks fine here and nothing found');
-  assert.match(log(root), /001 review approve · by rev-one \(fresh\) · findings: model fake-1 · looks fine/);
+  assert.match(log(root), /001 review approve · by rev-one \(fresh\) · (?:model test-model · )?findings: model fake-1 · looks fine/);
   R.recordMerged(root, id, { sha: 'abc1234' }); R.setStatus(root, id, 'done', 'merged', {});
   const m = L.cmdModels(root, {});
   assert.deepEqual(m.reviewers.map((r) => r.model), [null]);

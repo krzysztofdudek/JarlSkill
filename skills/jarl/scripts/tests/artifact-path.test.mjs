@@ -224,7 +224,7 @@ test('the review command writes each accepted value as given into the verdict li
   assert.deepEqual(verdicts.map((e) => e.artifact), stored, 'the verdict lines');
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   for (const v of stored) assert.ok(log.includes(`${id} review approve · by rev-a (fresh) · artifact ${v} · ${FINDINGS}`), `the verdict line names ${v}`);
-  const entries = (text) => [...text.matchAll(/^- \*\*approve\*\* · by rev-a \(fresh\) · \d{4}-\d\d-\d\d · artifact (.+)$/gm)].map((m) => m[1]);
+  const entries = (text) => [...text.matchAll(/^- \*\*approve\*\* · by rev-a \(fresh\) · \d{4}-\d\d-\d\d · (?:model test-model · )?artifact (.+)$/gm)].map((m) => m[1]);
   assert.deepEqual(entries(readFileSync(issueFile, 'utf8')), stored, 'the Reviews entries');
   assert.deepEqual(entries(jarl(root, 'show', id)), stored, 'show');
   assert.deepEqual(entries(JSON.parse(jarl(root, 'show', id, '--json')).sections.reviews), stored, 'show --json');

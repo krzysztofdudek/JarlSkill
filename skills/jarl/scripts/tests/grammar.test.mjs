@@ -103,7 +103,7 @@ test('field writes Resources and the fields a profile declares; set takes status
   assert.equal(refuses(root, 'set', '1', 'Note', 'x', '--worker', 'w').trim(), "Note is a field, not a status: field writes it\njarl.mjs field \"<ids>\" Note \"<value>\" --by \"<who>\"");
   assert.equal(refuses(root, 'set', '1', 'Files', 'x').trim(), 'Files is a field, not a status: field writes it\njarl.mjs field "<ids>" Files "<paths>" --by "<who>"');
   assert.match(refuses(root, 'set', '1', 'bogus', 'x'), /status must be one of: /);
-  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Resources · gate, db · was \(none\)\n.*· 2 field Resources · gate, db · was \(none\)\n/);
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Resources · gate, db · was \(none\) · by test-writer\n.*· 2 field Resources · gate, db · was \(none\) · by test-writer\n/);
 });
 
 test('set given a field is refused with the field call that writes it, on the command line and through the tool, and writes nothing', () => {

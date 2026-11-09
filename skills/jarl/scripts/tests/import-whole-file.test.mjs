@@ -71,5 +71,5 @@ test('a flag the filing refuses is refused before the first write, with the form
   const file = findingsFile([good(1), good(2)]);
   const said = refusedImport(root, file, '--adopt', '--tier', 'huge');
   assert.match(said, /--tier must be one of: light, standard, strong \(got "huge"\)/);
-  assert.match(said, /\njarl\.mjs import "<findings\.json>" --source "?[^ \n]+"? --adopt --tier "<tier>" --by "<who>"\n$/);
+  assert.match(said, /\njarl\.mjs import "<findings\.json>" --by "<who>" --source "?[^ \n]+"? --adopt --tier "<tier>"\n$/);
 });

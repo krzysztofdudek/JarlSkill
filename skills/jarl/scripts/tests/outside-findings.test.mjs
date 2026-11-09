@@ -47,7 +47,7 @@ test('an approve with a finding outside the issue files that finding as a new is
   assert.match(fileOf(root, '1'), /^ {2}outside the issue, filed as 2: Important: the json export drops the header row$/m);
   assert.match(fileOf(root, '1'), /^ {2}outside the issue, filed as 3: Minor: the docs name the old flag$/m);
   assert.match(logText(root), /· filed 2 · Important: the json export drops the header row$/m);
-  assert.match(logText(root), /· 1 review approve · by rev-a \(fresh\) · read the diff/m);
+  assert.match(logText(root), /· 1 review approve · by rev-a \(fresh\) · (?:model test-model · )?read the diff/m);
   jarl(root, 'set', '1', 'done', 'proved and approved');
   assert.equal(json(root, 'show', '1').status, 'done');
 });
@@ -58,7 +58,7 @@ test('a changes verdict whose only Critical or Important findings are outside th
   const said = refuses(root, 'review', '1', 'changes', 'read the diff, Minor: a comment is stale', '--by', 'rev-a', '--outside', 'Important: the json export drops the header row');
   assert.match(said, /its only Critical or Important findings are outside the issue/);
   const form = said.trim().split('\n').pop();
-  assert.match(form, /^jarl\.mjs review "<ids>" "<verdict>" "<what-was-read-and-found>" --by "<reviewer>" --outside "<finding-outside-the-issue>" --model "<model-id>"$/);
+  assert.match(form, /^jarl\.mjs review "<ids>" "<verdict>" "<what-was-read-and-found>" --model "<model-id>" --by "<reviewer>" --outside "<finding-outside-the-issue>"$/);
   assert.equal(logText(root), before, 'a refused review writes no line');
   assert.deepEqual(issueFiles(root), ['1'], 'and files nothing');
 });

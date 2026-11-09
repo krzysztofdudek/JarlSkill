@@ -33,7 +33,7 @@ import { STAMP_SRC, TIP_MARK, UNRECORDED, appendLog, headerKey, logPath, oneLine
 //                  right after the number, so no text of its line can stand in the bracket. A round line without a standing
 //                  is read as the takeover its writer printed (see takeoverStanding)
 //   row            one --ran/--saw evidence row; lines, the digests of the acceptance lines it names; history, on a row
-//                  from before the record named its lines: such a row counts for no line
+//                  marked as history: such a row counts for no line
 //   verdict        a review: verdict (approve|changes), by, kind (as recorded), model, relayed, batch, the id one verdict
 //                  given on several issues writes on each of its lines (null on a verdict on one issue), and artifact,
 //                  the path of the render or file the verdict judged (null where it names none)
@@ -154,7 +154,7 @@ export const lineDigests = (text) => (text ? text.split(', ') : []);
 // The mark a row that names `lines` adds after "ran" in the issue file and after "evidence row" in its log line: none for
 // a row that names no line.
 export const rowLinesText = (lines) => (lines && lines.length ? ` (line ${lines.join(', ')})` : '');
-// The mark of a row a conversion carried over from before the record named its lines: it counts for no line.
+// The mark of a row that names no line, written by a conversion: it counts for no line.
 export const HISTORY_ROW_MARK = ' (history)';
 // The head of a row's log line, `<id> evidence row (line a1b2c3d4e5f6) · `, before the row's command: the id as the line
 // writes it, the head's length and the digests of the lines it names. No text of the command reaches the head. Null for any
@@ -321,7 +321,7 @@ export function loopEvents(dir, profile, skipped, keys) {
     const parsed = id === null ? (text === CONVERTED_LINE ? { type: 'converted' } : { type: 'other' }) : parse(written, text, lastStatus.get(thread) ?? null);
     // A tip counts only with the tip mark: a line of its text without it is a note, whoever wrote it.
     const unmarked = parsed.type === 'tip' && mark === null;
-    // A line that carries state about an issue names the issue's key: one that does not is of an older shape, and is no state.
+    // A line that carries state about an issue names the issue's key: one that does not is no state.
     const unkeyed = key === null && written !== null && parsed.type !== 'other' && carriesKey.has(idKey(written));
     const body = unmarked || unkeyed ? { type: 'other' } : parsed;
     if (skipped && unkeyed) skipped.push({ n: n + 1, text: l, reason: 'a line about an issue that names no key: a line about an issue is "- yyyy-mm-dd hh:mm key <key> by <who> · <text>", and this one is read as a note' });

@@ -70,7 +70,7 @@ test('resume assembles every section live from the loop and the repositories its
   assert.match(t, /^# Resume · ship the export command\nopened \S+ \S+ · last activity \S+ \S+\nopen 4 · in flight 2 · waiting 1 · done 0 · dropped 0 · deferred 0 · questions 1 · to ratify 1 · merged, CI pending 1 · CI red 1\n/);
   assert.match(t, /\n1 ruling\(s\) in force: jarl\.mjs decisions --live; resume --as <who> adds the rules that match whoever asks\n\n## Rules for the whole loop \(0\)\n- \(none\)\n\n/);
   assert.doesNotMatch(t, /old-way ·/, 'a superseded ruling is not in force');
-  assert.match(t, /## In flight \(2\)\n- 1 in flight one · branch jarl\/1-one · worker w1 · model not recorded · since \S+ \S+\n {2}→ no evidence rows since the start[^\n]*\n- 5 queued five · branch jarl\/5-five · worker w5 · model not recorded · since \S+ \S+\n {2}→ approved and queued[^\n]*\n/);
+  assert.match(t, /## In flight \(2\)\n- 1 in flight one · branch jarl\/1-one · (?:model test-model · )?worker w1 · model not recorded · since \S+ \S+\n {2}→ no evidence rows since the start[^\n]*\n- 5 queued five · branch jarl\/5-five · (?:model test-model · )?worker w5 · model not recorded · since \S+ \S+\n {2}→ approved and queued[^\n]*\n/);
   assert.match(t, /## Waiting — After not settled \(1\)\n- 2 waits for one \(after 1\)\n/);
   assert.match(t, /## Questions to the owner \(1\)\n- a-1 \(stuck\) issue 3 · which flag name\?\n/);
   assert.match(t, /## To ratify \(1\)\n- a-2 \(issue 1\) · kept the old default under the mandate\n/);
@@ -111,8 +111,8 @@ test('resume assembles every section live from the loop and the repositories its
   const st = JSON.parse(jarl(hub, 'status', '--json'));
   assert.deepEqual([st.ready, st.inFlight, st.waiting], [6, 1, 2]);
   assert.match(w, /\nopen 6 · in flight 1 · waiting 2 · /);
-  assert.match(w, /## In flight \(1\)\n- 1 in flight one · branch jarl\/1-one · worker w1 · model not recorded · since \S+ \S+\n {2}→ no evidence rows since the start[^\n]*\n\n/);
-  assert.match(w, /## Waiting — After not settled \(2\)\n- 2 waits for one \(after 1\)\n- 5 queued five \(after 8\) · in progress · branch jarl\/5-five · worker w5 · model not recorded · since \S+ \S+\n/);
+  assert.match(w, /## In flight \(1\)\n- 1 in flight one · branch jarl\/1-one · (?:model test-model · )?worker w1 · model not recorded · since \S+ \S+\n {2}→ no evidence rows since the start[^\n]*\n\n/);
+  assert.match(w, /## Waiting — After not settled \(2\)\n- 2 waits for one \(after 1\)\n- 5 queued five \(after 8\) · in progress · branch jarl\/5-five · (?:model test-model · )?worker w5 · model not recorded · since \S+ \S+\n/);
   assert.match(w, /## Held — files in flight \(2\)\n- 3  P1  ready two \(open question a-1\)\n- 9  P2  held nine \(tool\/src\/a\.mjs held by 1\)\n/);
   assert.match(w, /## Next ready \(4 of 4\)\n/);
   const wo = JSON.parse(jarl(hub, 'resume', '--json'));
@@ -123,8 +123,8 @@ test('resume assembles every section live from the loop and the repositories its
   // A lease that went wrong is flagged in place, in flight or waiting.
   sh(tool, 'git branch -D jarl/1-one jarl/5-five');
   const gone = jarl(hub, 'resume');
-  assert.match(gone, /- 1 in flight one · branch jarl\/1-one · worker w1 · model not recorded · since \S+ \S+ · STALE: branch gone: jarl\/1-one\n/);
-  assert.match(gone, /- 5 queued five \(after 8\) · in progress · branch jarl\/5-five · worker w5 · model not recorded · since \S+ \S+ · STALE: branch gone: jarl\/5-five\n/);
+  assert.match(gone, /- 1 in flight one · branch jarl\/1-one · (?:model test-model · )?worker w1 · model not recorded · since \S+ \S+ · STALE: branch gone: jarl\/1-one\n/);
+  assert.match(gone, /- 5 queued five \(after 8\) · in progress · branch jarl\/5-five · (?:model test-model · )?worker w5 · model not recorded · since \S+ \S+ · STALE: branch gone: jarl\/5-five\n/);
 
   // --log 0 leaves the log out.
   assert.doesNotMatch(jarl(hub, 'resume', '--log', '0'), /log line|empty log/);

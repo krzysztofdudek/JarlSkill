@@ -157,7 +157,7 @@ const REFUSED = [
   { reviewer: 'model-rank', approve: [], said: /^1's live approve by rev-x names no model — / },
   { reviewer: 'model-rank', model: 'm-strong', approve: ['--model', 'm-light'], said: /^1's live approve is by rev-x on m-light, which ranks below the worker's model \(m-strong\) — / },
 ];
-const approveAs = (root, flags) => jarl(root, 'review', '1', 'approve', '--by', 'rev-x', ...flags, 'read the diff and the rows, nothing found');
+const approveAs = (root, flags) => (flags.length ? jarl(root, 'review', '1', 'approve', '--by', 'rev-x', ...flags, 'read the diff and the rows, nothing found') : R.review(root, '1', 'approve', 'read the diff and the rows, nothing found', { by: 'rev-x' }));
 const mergeTip = (root, g) => jarl(root, 'merged', '1', '--sha', g('rev-parse', 'jarl/1-move').trim(), '--ci', 'none', '--keep', '--by', 'jarl');
 
 for (const c of REFUSED) {

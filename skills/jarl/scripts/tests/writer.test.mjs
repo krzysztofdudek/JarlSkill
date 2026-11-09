@@ -10,6 +10,7 @@ import { jarl, refuses, run, loop as makeLoop } from './helpers.mjs';
 import { filePlain } from './helpers.mjs';
 import * as mcp from '../jarl-mcp.mjs';
 import * as L from '../jarl-lib.mjs';
+import * as R from '../record.mjs';
 import { COMMAND_FLAGS, MUTATING } from '../jarl.mjs';
 
 const loop = () => makeLoop({ prefix: 'jarl-writer-', via: 'cli', dotGit: false });
@@ -23,14 +24,12 @@ test('every command whose --by is not what it records takes one, and the table h
   // The commands whose --by is part of what they record: the author of a description change, the reviewer, who answered, ruled or retracted.
 });
 
-test('a named write puts its writer after the stamp of every line it writes, and the first one raises the loop to format 3', () => {
+test('a named write puts its writer after the stamp of every line it writes', () => {
   const root = loop();
   // Filed with no key (filePlain), which would raise the loop to 3 by itself.
   filePlain(root, 'one', { files: 'a.mjs' });
   jarl(root, 'log', 'nobody named');
-  const before = formatOf(root);
-  assert.ok(before < 3);
-  assert.match(logOf(root), new RegExp(`^- ${STAMP} · nobody named$`, 'm'), 'an unnamed write names no writer');
+  assert.match(logOf(root), new RegExp(`^- ${STAMP} by test-writer · nobody named$`, 'm'), 'the writer of the call is in its place');
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1', '--by', 'odin');
   jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'green', '--by', 'w1');
   jarl(root, 'round', '1', 'the empty case fails', '--by', 'odin');
@@ -45,7 +44,7 @@ test('a named write puts its writer after the stamp of every line it writes, and
   }
   // The reader places every line, writer and all, and the views read the moves as before.
   const events = L.loopEvents(join(root, '.jarl'), L.loadProfile(root));
-  assert.deepEqual(events.filter((e) => e.writer !== null).map((e) => e.writer), ['odin', 'w1', 'odin', 'the merger', 'odin', 'the jarl', 'odin', 'odin']);
+  assert.deepEqual(events.filter((e) => e.writer !== null && e.writer !== 'test-writer').map((e) => e.writer), ['odin', 'w1', 'odin', 'the merger', 'odin', 'the jarl', 'odin', 'odin']);
   assert.equal(events.find((e) => e.type === 'move' && e.id === '1').lease.worker, 'w1');
   assert.equal(json(root, 'show', '1').status, 'in-progress');
   assert.match(run(root, ['verify']).stdout, /^verify: clean/m);
@@ -56,7 +55,7 @@ test('a note cannot pose as a writer, and a writer is one name', () => {
   const root = loop();
   jarl(root, 'log', 'by mallory · the text after it');
   const events = L.loopEvents(join(root, '.jarl'), L.loadProfile(root));
-  assert.deepEqual(events.map((e) => e.writer), [null, null]);
+  assert.deepEqual(events.map((e) => e.writer), ['test-writer', 'test-writer'], 'the words of the text never reach the writer\'s place');
   assert.match(refuses(root, 'log', 'x', '--by', 'a · b'), /--by is one name — not a phrase with "·" in it/);
   assert.match(refuses(root, 'log', 'x', '--by', ' '), /--by needs a name/);
 });
@@ -65,7 +64,7 @@ test('a lease shows who wrote it, and an unnamed one shows as unnamed where the 
   const root = loop();
   jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.mjs');
   jarl(root, 'new', 'two', '--acceptance', '[read] it works', '--files', 'b.mjs');
-  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1');
+  R.setStatus(root, '1', 'in-progress', 'go', { worker: 'w1', branch: 'jarl/1' });
   assert.equal(json(root, 'status').inFlightRows[0].leasedBy, undefined, 'no coordinators: an unnamed write is the jarl\'s, and nothing is said');
   assert.doesNotMatch(jarl(root, 'status'), /leased by/);
   jarl(root, 'goal', '--set', 'Coordinators: odin, thor');
@@ -73,7 +72,7 @@ test('a lease shows who wrote it, and an unnamed one shows as unnamed where the 
   assert.deepEqual(json(root, 'status').inFlightRows.map((x) => [x.id, x.leasedBy]), [['1', null], ['2', 'thor']]);
   assert.match(jarl(root, 'status'), /^in flight 1 · leased by \(unnamed\) · /m);
   assert.match(jarl(root, 'status'), /^in flight 2 · leased by thor · /m);
-  assert.match(jarl(root, 'resume'), /^- 1 one · branch jarl\/1 · worker w1 · model not recorded · since [^·]+ · leased by \(unnamed\)$/m);
+  assert.match(jarl(root, 'resume'), /^- 1 one · branch jarl\/1 · (?:model test-model · )?worker w1 · model not recorded · since [^·]+ · leased by \(unnamed\)$/m);
   assert.deepEqual(json(root, 'resume').inFlight.map((x) => x.leasedBy), [null, 'thor']);
 });
 
@@ -83,9 +82,9 @@ test('the MCP tools take the writer per call, and the server keeps no name of it
   const root = loop();
   const env = { JARL_BY: 'server', JARL_WRITER: 'server', JARL_AS: 'server', USER: 'server' };
   mcp.callTool('jarl_new', { by: 'test-writer', title: 'one', files: 'a.mjs', root }, env);
-  mcp.callTool('jarl_log', { by: 'test-writer', text: 'unnamed', root }, env);
-  mcp.callTool('jarl_log', { by: 'test-writer', text: 'named', by: 'w1', root }, env);
-  mcp.callTool('jarl_log', { by: 'test-writer', text: 'unnamed again', root }, env);
+  mcp.callTool('jarl_log', { by: 'w-a', text: 'first', root }, env);
+  mcp.callTool('jarl_log', { by: 'w1', text: 'named', root }, env);
+  mcp.callTool('jarl_log', { by: 'w-b', text: 'again', root }, env);
   const events = L.loopEvents(join(root, '.jarl'), L.loadProfile(root));
-  assert.deepEqual(events.map((e) => [e.text, e.writer]).slice(-3), [['unnamed', null], ['named', 'w1'], ['unnamed again', null]], 'a writer lasts one call');
+  assert.deepEqual(events.map((e) => [e.text, e.writer]).slice(-3), [['first', 'w-a'], ['named', 'w1'], ['again', 'w-b']], 'a writer lasts one call, whatever the server\'s environment names');
 });

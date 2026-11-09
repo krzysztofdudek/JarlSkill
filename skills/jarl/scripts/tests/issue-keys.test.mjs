@@ -17,12 +17,12 @@ const issueText = (root, n) => readFileSync(join(root, '.jarl', 'issues', readdi
 const keyOf = (root, n) => /^\*\*Key:\*\* (\S+)$/m.exec(issueText(root, n))?.[1] ?? null;
 const STAMP = '(\\d{4})-(\\d{2})-(\\d{2}) (\\d{2}):(\\d{2})';
 
-test('new writes a key made of the filing stamp and four random letters into the header and the filed line, and raises the loop to format 3', () => {
+test('new writes a key made of the filing stamp and four random letters into the header and the filed line', () => {
   const root = loop();
   jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.mjs');
   const key = keyOf(root, 1);
   assert.match(key ?? '', /^\d{8}T\d{4}-[a-z]{4}$/, issueText(root, 1));
-  const filed = new RegExp(`^- ${STAMP} key (\\S+) · filed 1 · one$`, 'm').exec(logOf(root));
+  const filed = new RegExp(`^- ${STAMP} key (\\S+) by test-writer · filed 1 · one$`, 'm').exec(logOf(root));
   assert.ok(filed, logOf(root));
   assert.equal(filed[6], key, 'the filed line carries the header\'s key');
   assert.equal(key.slice(0, 13), `${filed[1]}${filed[2]}${filed[3]}T${filed[4]}${filed[5]}`, 'the key opens with the filing stamp');
@@ -43,7 +43,7 @@ test('every log line about a keyed issue carries its key after the stamp, and a 
   const lines = logOf(root).split('\n').filter((l) => l.startsWith('- '));
   for (const l of lines.filter((x) => / · (filed )?1\b/.test(x))) assert.match(l, new RegExp(`^- ${STAMP} key ${key}( by \\S+)? · `), l);
   assert.match(logOf(root), new RegExp(`^- ${STAMP} key ${key} by odin · 1 → in-progress`, 'm'), 'the key comes before the writer');
-  assert.match(logOf(root), new RegExp(`^- ${STAMP} · about the loop$`, 'm'));
+  assert.match(logOf(root), new RegExp(`^- ${STAMP} by test-writer · about the loop$`, 'm'));
   const shown = json(root, 'show', '1');
   assert.equal(shown.status, 'in-progress', 'the keyed lines are read as the issue\'s own');
   assert.equal(shown.fields.worker, 'w1');
@@ -55,7 +55,7 @@ test('the key is the tool\'s: no profile declares it, field refuses to write it,
   jarl(root, 'new', 'one', '--acceptance', '[read] it works');
   assert.match(refuses(root, 'field', '1', 'Key', 'x'), /Key/);
   jarl(root, 'log', 'key 20260101T0000-abcd · a note that names a key');
-  assert.match(logOf(root), new RegExp(`^- ${STAMP} · key 20260101T0000-abcd · a note that names a key$`, 'm'), 'text never reaches the key\'s place');
+  assert.match(logOf(root), new RegExp(`^- ${STAMP} by test-writer · key 20260101T0000-abcd · a note that names a key$`, 'm'), 'text never reaches the key\'s place');
   const file = join(mkdtempSync(join(tmpdir(), 'jarl-keys-p-')), 'p.json');
   writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, statuses: { open: ['dispatchable'], 'in-progress': ['holds-claim'], done: ['terminal', 'closes-record', 'settles-dependents'] }, fields: { Key: {} } }));
   assert.throws(() => R.readProfileFile(file), /it declares the field Key, which Jarl reserves for an issue's key — rename it in the profile/);

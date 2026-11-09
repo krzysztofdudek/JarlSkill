@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { gitRepo, jarl, refuses, run, loop } from './helpers.mjs';
+import { gitRepo, jarl, refuses, run, spawnJarl, loop } from './helpers.mjs';
 import { fileThreeDigits } from './helpers.mjs';
 import * as R from '../record.mjs';
 
@@ -28,8 +28,8 @@ test('a second lease on an issue another lease holds is refused, names the holde
   const before = logText(root);
   const said = refuses(root, 'set', '1', 'in-progress', 'B', '--branch', 'jarl/1-one-b', '--worker', 'wB');
   assert.match(said, /1 is leased already \(worker wA, branch jarl\/1-one, since /);
-  assert.match(said, /set 1 in-progress "<why-the-worker-changed>" --branch jarl\/1-one-b --worker wB --handover/, 'the reason names the command that hands the issue over');
-  assert.equal(said.trim().split('\n').at(-1), "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --branch \"<worker-branch>\" --worker \"<the-new-worker>\" \"<--handover-or-none>\"", 'the refusal ends with its form, the handover the caller\'s to give');
+  assert.match(said, /set 1 in-progress "<why-the-worker-changed>" --branch jarl\/1-one-b --model test-model --worker wB --handover/, 'the reason names the command that hands the issue over');
+  assert.equal(said.trim().split('\n').at(-1), "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --by \"<who>\" --model \"<model-id>\" --branch \"<worker-branch>\" --worker \"<the-new-worker>\" \"<--handover-or-none>\"", 'the refusal ends with its form, the handover the caller\'s to give');
   assert.equal(logText(root), before, 'nothing was written');
   const one = JSON.parse(jarl(root, 'show', '1', '--json'));
   assert.equal(one.fields.worker, 'wA');
@@ -40,10 +40,10 @@ test('the same holder restating its lease, or a move that names no lease, is not
   const { root } = twoOnOneFile();
   jarl(root, 'set', '1', 'in-progress', 'A', '--branch', 'jarl/1-one', '--worker', 'wA');
   jarl(root, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/1-one', '--worker', 'wA', '--model', 'some-model');
-  jarl(root, 'set', '1', 'in-progress', 'still going');
+  assert.equal(spawnJarl(root, ['set', '1', 'in-progress', 'still going', '--by', 'jarl'], { bare: true }).status, 0);
   // A lease that names no worker yet is filled in, not replaced.
   jarl(root, 'field', '2', 'files', 'g.txt');
-  jarl(root, 'set', '2', 'in-progress', 'reserved');
+  jarl(root, 'set', '2', 'in-progress', 'reserved', '--worker', 'w-held');
   jarl(root, 'set', '2', 'in-progress', 'raised', '--branch', 'jarl/2-two', '--worker', 'wC');
   assert.equal(JSON.parse(jarl(root, 'show', '2', '--json')).fields.worker, 'wC');
 });
@@ -193,7 +193,7 @@ test('a handover with its reason is accepted and logged, and the new lease repla
   const out = JSON.parse(jarl(root, 'set', '1', 'in-progress', 'context grew far beyond the others', '--branch', 'jarl/1-one-b', '--worker', 'wB', '--handover', '--json'));
   assert.equal(out.handover, true);
   assert.equal(out.worker, 'wB');
-  assert.match(logText(root), /· 1 → in-progress · context grew far beyond the others · handover · branch jarl\/1-one-b · worker wB\n/);
+  assert.match(logText(root), /· 1 → in-progress · context grew far beyond the others · handover · branch jarl\/1-one-b · (?:model test-model · )?worker wB\n/);
   const one = JSON.parse(jarl(root, 'show', '1', '--json'));
   assert.equal(one.fields.worker, 'wB');
   assert.equal(one.fields.branch, 'jarl/1-one-b');

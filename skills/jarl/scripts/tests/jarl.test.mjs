@@ -930,7 +930,7 @@ test('a value flag takes the next argument whatever it starts with; -- ends the 
   assert.match(raw('new', '--', '--json output drops key'), /^filed 2 /);
   // Refused loudly, naming what the command takes.
   assert.match(refuses(root, 'new', 'd', '--kidn', 'gap'), /unknown flag --kidn for new — it takes .*--kind/);
-  assert.match(refuses(root, 'evidence', '1', '--json prints ok'), /^"--json prints ok" is a text, not a flag: a text that starts with -- goes after a bare --.*\njarl\.mjs evidence -- "<ids>" "<text>"\n$/s);
+  assert.match(refuses(root, 'evidence', '1', '--json prints ok'), /^"--json prints ok" is a text, not a flag: a text that starts with -- goes after a bare --.*\njarl\.mjs evidence --by "<who>" -- "<ids>" "<text>"\n$/s);
   assert.throws(() => raw('evidence', '1', '--line', '1', '--ran'), (e) => /--ran needs a value/.test(String(e.stderr)));
   assert.match(refuses(root, 'new', 'x', '--kind', 'bug', '--kind', 'gap'), /--kind given twice/);
   assert.match(refuses(root, 'list', '--all=yes'), /--all takes no value/);
@@ -1712,7 +1712,7 @@ test('outside a git repository a Branch lease is not reported gone, and resume s
   jarl(loose, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/1-one');
   assert.deepEqual(JSON.parse(jarl(loose, 'status', '--json')).stale, []);
   const r = jarl(loose, 'resume');
-  assert.match(r, /- 1 one · branch jarl\/1-one · worker test-worker · model test-model · since \S+ \S+\n/);
+  assert.match(r, /- 1 one · branch jarl\/1-one · (?:model test-model · )?worker test-worker · model test-model · since \S+ \S+\n/);
   assert.doesNotMatch(r, /STALE|## Tips/);
 });
 

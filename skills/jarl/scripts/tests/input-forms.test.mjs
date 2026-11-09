@@ -30,7 +30,7 @@ test('a root that is not absolute is refused with the form of the call and the r
   const e = refusal(() => mcp.callTool('jarl_new', { by: 'test-writer', title: 't', root: 'some/loop' }));
   assert.equal(e.code, -32602);
   assert.match(e.message, /"root" must be the absolute path/);
-  assert.deepEqual(formOf(e.message, 'jarl_new'), { title: '<title>', root: '<loop-root>' });
+  assert.deepEqual(formOf(e.message, 'jarl_new'), { title: '<title>', by: '<who>', root: '<loop-root>' });
   assert.deepEqual(formOf(refusal(() => mcp.callTool('jarl_status', { root: '' })).message, 'jarl_status'), { root: '<loop-root>' });
   assert.deepEqual(formOf(refusal(() => mcp.callTool('jarl_decide', { by: 'test-writer', slug: 's', text: 't', by: 'jarl', root: 5 })).message, 'jarl_decide'), { slug: '<slug>', text: '<text>', by: '<who>', root: '<loop-root>' });
 });
@@ -45,7 +45,7 @@ test('a field the tool does not take, a wrong type and a missing argument are re
   const root = loopDir();
   let e = refusal(() => mcp.callTool('jarl_set', { by: 'test-writer', ids: '1', status: 'done', bogus: 1, root }));
   assert.match(e.message, /unknown field "bogus"/);
-  assert.deepEqual(formOf(e.message, 'jarl_set', root), { ids: '<ids>', status: '<status>', root });
+  assert.deepEqual(formOf(e.message, 'jarl_set', root), { ids: '<ids>', status: '<status>', by: '<who>', root });
   e = refusal(() => mcp.callTool('jarl_decisions', { live: 'true', root, json: true }));
   assert.match(e.message, /"live" must be true or false/);
   assert.deepEqual(formOf(e.message, 'jarl_decisions', root), { root, json: true });

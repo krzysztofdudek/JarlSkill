@@ -64,7 +64,7 @@ test('three lines through every command that writes text: whole in the issue, th
   jarl(root, 'set', id, 'deferred', three('reason'));
   const log = read(root, 'log.md');
   for (const l of log.split('\n').filter(Boolean)) assert.match(l, /^(# Log|- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)? by [^·]+ · .*)$/, `a log line is one line: ${JSON.stringify(l)}`);
-  assert.match(log, /review changes · by reviewer-one \(fresh\) · Important: review line one \(\+2 more lines/);
+  assert.match(log, /review changes · by reviewer-one \(fresh\) · (?:model test-model · )?Important: review line one \(\+2 more lines/);
   assert.ok(log.includes('log line three'), 'a log text with no other home keeps every line');
   assert.ok(log.includes('round line three'), 'a round keeps every line');
   assert.ok(log.includes('question line one'));

@@ -111,11 +111,11 @@ test('extend refuses the profile of a loop a composer runs, naming the composer\
   const dir = mkdtempSync(join(tmpdir(), 'jarl-extend-composed-'));
   mkdirSync(join(dir, '.git'));
   const file = join(mkdtempSync(join(tmpdir(), 'jarl-extend-profile-')), 'profile.json');
-  writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: BUILTIN_STATUSES }));
+  writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: BUILTIN_STATUSES, lifecycle: { close: 'record', command: 'composer tick' } }));
   jarl(dir, 'init', 'a composed goal', '--profile', file);
   const held = snapshot(dir);
   const said = refuses(dir, 'extend', 'section', 'Risks');
-  assert.match(said, /this loop is run by a composer \(its profile, composed, names an external scheduler\), and its profile is the composer's: extend changes nothing in it — nothing was written/);
+  assert.match(said, /this loop is run by a tool of its own \(its profile, composed, keeps its lifecycle to the record\), and its profile is that tool's: extend changes nothing in it — nothing was written/);
   assert.equal(lastLine(said), 'composer tick');
   assert.deepEqual(snapshot(dir), held);
 });

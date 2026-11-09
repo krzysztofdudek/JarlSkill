@@ -17,7 +17,8 @@ const L = await import('../jarl-lib.mjs');
 const mcp = await import('../jarl-mcp.mjs');
 const R = await import('../record.mjs');
 
-const tool = (root, name, input = {}) => mcp.callTool(name, { root, ...input }).content[0].text;
+const tool = (root, name, input = {}) => mcp.callTool(name, { root, ...(J.MUTATING.has(name.slice(5)) ? { by: 'test-writer' } : {}), ...input }).content[0].text;
+const J = await import('../jarl.mjs');
 const markerPath = (root) => join(root, '.jarl', 'profile.json');
 const formatOf = (root) => (existsSync(markerPath(root)) ? JSON.parse(readFileSync(markerPath(root), 'utf8')).format : 1);
 

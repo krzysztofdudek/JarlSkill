@@ -30,7 +30,7 @@ test('an issue worked in place is leased with no branch on the files it declares
   assert.match(jarl(root, 'next', '--as', 'jarl'), /jarl\.mjs set 1 in-progress --worker "<name>" --model "<model-id>"/, 'the ready row leases it with no branch');
   let said = refuses(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-guide', '--worker', 'w1', '--by', 'jarl');
   assert.match(said, /^1 is worked in place: its worker writes the files it declares in the checkout of their repository, as it is checked out, with no branch and no worktree of its own/);
-  assert.equal(lastLine(said), 'jarl.mjs set "<ids>" "<status>" --worker "<the-new-worker>" --by "<who>" --model "<model-id>"');
+  assert.equal(lastLine(said), 'jarl.mjs set "<ids>" "<status>" --model "<model-id>" --worker "<the-new-worker>" --by "<who>"');
   said = refuses(root, 'set', '3', 'in-progress', '--worker', 'w3', '--by', 'jarl');
   assert.match(said, /^3 is worked in place and declares no files: it names the files it writes before it is leased/);
   assert.equal(lastLine(said), 'jarl.mjs field 3 Files "<paths>" --by "<who>"');

@@ -335,7 +335,7 @@ function fieldedLoop() {
 
 test('new writes the declared fields after Where, the extra sections after Acceptance, under the profile\'s heading', () => {
   const root = fieldedLoop();
-  assert.match(refuses(root, 'new', 't'), /^Area-2 is required by this loop's profile — give it \(one of: core, cli\)\njarl\.mjs new "<title>" --field "<name=value>" --by "<who>"\n$/);
+  assert.match(refuses(root, 'new', 't'), /^Area-2 is required by this loop's profile — give it \(one of: core, cli\)\njarl\.mjs new "<title>" --by "<who>" --field "<name=value>"\n$/);
   assert.match(refuses(root, 'new', 't', '--field', 'Area-2=web'), /Area-2 must be one of: core, cli \(got "web"\)/);
   assert.match(refuses(root, 'new', 't', '--field', 'Bogus=1'), /Bogus is not a field this loop's profile declares — it declares Area-2, Class, Note/);
   assert.match(refuses(root, 'new', 't', '--field', 'Area-2'), /--field takes <name>=<value>/);
@@ -355,7 +355,7 @@ test('an issue written with the aliased heading by another tool counts its accep
   jarl(root, 'set', '1', 'queued', 'ok');
   const path = join(root, '.jarl', 'issues', '1-x.md');
   writeFileSync(path, readFileSync(path, 'utf8').replace('## Acceptance — evidence\n\n', '## Acceptance — evidence\n- one\n- two\n'));
-  jarl(root, 'set', '1', 'running', 'go');
+  jarl(root, 'set', '1', 'running', 'go', '--worker', 'w1');
   assert.deepEqual(JSON.parse(jarl(root, 'status', '--json')).noAcceptance, []);
   jarl(root, 'field', '1', 'Acceptance', '[read] three');
   jarl(root, 'field', '1', 'Ports', 'in: a; out: b');
@@ -383,7 +383,7 @@ test('field <ids> <field> <value> writes a declared field, checked against its v
   assert.match(refuses(root, 'field', '1', 'Note', 'x', '--worker', 'w'), /unknown flag --worker for field/);
   assert.equal(refuses(root, 'set', '1', 'Note', 'x').trim(), "Note is a field, not a status: field writes it\njarl.mjs field \"<ids>\" Note \"<value>\" --by \"<who>\"");
   assert.equal(refuses(root, 'set', '1', 'Files', 'x').trim(), 'Files is a field, not a status: field writes it\njarl.mjs field "<ids>" Files "<paths>" --by "<who>"');
-  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Area-2 · cli · was core\n.*· 2 field Area-2 · cli · was core\n/);
+  assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /· 1 field Area-2 · cli · was core · by test-writer\n.*· 2 field Area-2 · cli · was core · by test-writer\n/);
   // A field line is not a status move: the done gate's replay does not read it as one.
   assert.equal(JSON.parse(jarl(root, 'show', '1', '--json')).status, 'proposed');
 });

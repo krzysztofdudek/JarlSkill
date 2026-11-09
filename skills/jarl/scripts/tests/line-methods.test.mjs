@@ -160,7 +160,7 @@ test('with no lease on record one named row proves a mechanical line, and a row 
   assert.equal(stateOf(root)[2], 'proved');
   assert.equal(jarl(root, 'set', '1', 'done', 'by the director'), '1 → done');
   const unnamed = loopOf('[test] the export is written');
-  jarl(unnamed, 'evidence', '1', '--ran', 'npm test', '--saw', 'pass 3', '--line', '1');
+  R.addEvidence(unnamed, '1', undefined, { line: 1, ran: 'npm test', saw: 'pass 3' });
   approve(unnamed, 'jarl');
   assert.match(refuses(unnamed, 'set', '1', 'done', 'try'), /line 1 \[test\] unproved: a counted row by a named writer/);
   const compared = loopOf('[compare] the report is unchanged · by: node report.mjs');

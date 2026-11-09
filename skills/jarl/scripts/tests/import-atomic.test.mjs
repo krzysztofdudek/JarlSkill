@@ -32,7 +32,7 @@ test('a required field of the profile that a finding would leave empty refuses t
   const file = findingsFile([good(1), good(2)]);
   const said = refusedImport(root, file, '--adopt');
   assert.match(said, /^finding "finding-2" cannot be filed: Area is required by this loop's profile/);
-  assert.match(said, /\njarl\.mjs import "<findings\.json>" --source "?[^ \n]+"? --adopt --field "<name=value>" --by "<who>"\n$/);
+  assert.match(said, /\njarl\.mjs import "<findings\.json>" --by "<who>" --source "?[^ \n]+"? --adopt --field "<name=value>"\n$/);
   assert.match(imports(root, file, '--adopt', '--field', 'Area=api'), /adopted 1/);
 });
 

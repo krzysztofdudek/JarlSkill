@@ -36,7 +36,7 @@ test('a verdict names its artifact: the line, the Reviews entry and show carry t
   assert.match(shown, /^- \*\*changes\*\* · by rev-a \(fresh\) · \d{4}-\d\d-\d\d · model m-1 · artifact renders\/home page\.png$/m);
   jarl(root, 'round', id, 'the header overlaps the menu');
   jarl(root, 'review', id, 'approve', '--by', 'rev-b', '--artifact', './renders/home.png', FINDINGS);
-  assert.match(jarl(root, 'show', id), /^- \*\*approve\*\* · by rev-b \(fresh\) · \d{4}-\d\d-\d\d · artifact \.\/renders\/home\.png$/m);
+  assert.match(jarl(root, 'show', id), /^- \*\*approve\*\* · by rev-b \(fresh\) · \d{4}-\d\d-\d\d · (?:model test-model · )?artifact \.\/renders\/home\.png$/m);
   const verdicts = loopEvents(join(root, '.jarl'), loadProfile(root)).filter((e) => e.type === 'verdict');
   assert.deepEqual(verdicts.map((e) => [e.verdict, e.artifact, e.model]), [['changes', 'renders/home page.png', 'm-1'], ['approve', './renders/home.png', null]]);
   assert.match(JSON.parse(jarl(root, 'show', id, '--json')).sections.reviews, /artifact renders\/home page\.png/);

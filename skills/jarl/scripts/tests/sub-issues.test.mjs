@@ -89,7 +89,7 @@ test('field Parent names the parent of an issue, a sub-issue has sub-issues of i
   // Cleared, the issue has no parent, and the loop stays in the format it was raised to.
   jarl(root, 'field', '3', 'Parent', '--clear');
   assert.equal(json(root, 'show', '3').parent, null);
-  assert.match(logText(root), /^- \S+ \S+ · 003 field Parent · \(cleared\) · was 002$/m);
+  assert.match(logText(root), /^- \S+ \S+ key \S+ by test-writer · 003 field Parent · \(cleared\) · was 002 · by test-writer$/m);
 });
 
 test('a parent the loop does not hold, the issue itself, one of its own sub-issues and a wait in a circle are refused, with nothing written', () => {
@@ -183,7 +183,7 @@ test('a split moves each acceptance line to a named issue or keeps it on the par
   assert.deepEqual(['2', '3'].map((id) => json(root, 'show', id).parent), ['1', '1']);
   const log = logText(root);
   assert.match(log, /^- \S+ \S+ key \S+ by odin · 2 field Parent · 1 · was \(none\) · by odin$/m);
-  assert.match(log, /^- \S+ \S+ key \S+ · 1 body · acceptance · was "- \[read\] it writes csv.*" · by odin$/m);
+  assert.match(log, /^- \S+ \S+ key \S+ by odin · 1 body · acceptance · was "- \[read\] it writes csv.*" · by odin$/m);
   assert.match(log, /^- \S+ \S+ key \S+ · 3 body · acceptance · was "\[read\] json is valid" · by odin$/m);
   // A sub-issue can be split in turn: the tree goes deeper, and the ids stay flat numbers.
   jarl(root, 'new', 'the csv header', '--acceptance', '[read] it works');                                                                   // 4
@@ -297,7 +297,7 @@ test('a parent is dropped or deferred with its unfinished sub-issues in the same
   jarl(root, 'set', '3', 'dropped', 'not needed');
   jarl(root, 'new', 'late', '--acceptance', '[read] it works');    // 4
   finish(root, '1');
-  assert.match(refuses(root, 'field', '4', 'Parent', '1'), /^1 is done: its own acceptance was checked against a whole that a sub-issue added now would not be part of — reopen it first\njarl\.mjs set 1 open "<why>"\njarl\.mjs field "<ids>" Parent "<id>" --by "<who>"\n$/);
+  assert.match(refuses(root, 'field', '4', 'Parent', '1'), /^1 is done: its own acceptance was checked against a whole that a sub-issue added now would not be part of — reopen it first\njarl\.mjs set 1 open "<why>" --by "<who>"\njarl\.mjs field "<ids>" Parent "<id>" --by "<who>"\n$/);
 });
 
 test('list shows the tree, each sub-issue indented under its parent, and one whose parent it does not list names it; show and report name the parent and the sub-issues', () => {

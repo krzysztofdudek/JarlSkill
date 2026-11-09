@@ -25,13 +25,14 @@ function modelLoop(reviewer) {
   jarl(root, 'goal', '--set', 'Model (light): m-light');
   jarl(root, 'goal', '--set', 'Model (strong): m-strong');
   jarl(root, 'new', 'a change', '--acceptance', '[read] it works');
-  jarl(root, 'new', 'a refactor', '--acceptance', '[read] the output is the same', '--tags', 'identical-output');
+  jarl(root, 'new', 'a refactor', '--acceptance', '[compare] the output is the same · by: node report.mjs');
   for (const id of ['1', '2']) {
     jarl(root, 'set', id, 'in-progress', '--worker', `w${id}`, '--model', 'm-strong', '--by', 'jarl');
     jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass 4, fail 0', '--by', `w${id}`);
   }
-  // The change meant to alter nothing holds the row that names its comparison, which its light review depends on.
-  jarl(root, 'evidence', '2', '--line', '1', '--ran', 'cmp before.txt after.txt', '--saw', 'cmp printed nothing, exit 0', '--by', 'w2');
+  // The change meant to alter nothing holds its comparison: two rows of its worker that print the same, and one by another.
+  jarl(root, 'evidence', '2', '--line', '1', '--ran', 'npm test', '--saw', 'pass 4, fail 0', '--by', 'w2');
+  jarl(root, 'evidence', '2', '--line', '1', '--ran', 'npm test', '--saw', 'pass 4, fail 0', '--by', 'rev-m-light');
   return root;
 }
 const approve = (root, id, model) => run(root, ['review', id, 'approve', '--by', `rev-${model}`, '--model', model, 'read the diff and the rows, nothing found']);
@@ -62,13 +63,13 @@ test('"other-model": the note says done refuses a same-model approve, done refus
   assert.match(jarl(root, 'set', '1', 'done', 'another model approved', '--by', 'jarl'), /1 → done/);
 });
 
-test('"model-rank": done refuses an approve ranked below the worker\'s model, except on a change meant to alter nothing', () => {
+test('"model-rank": done refuses an approve ranked below the worker\'s model, except on a change whose lines are all comparisons', () => {
   const root = modelLoop('model-rank');
   const low = approve(root, '1', 'm-light');
   assert.match(low.stderr, /1: m-light ranks below the worker's model \(m-strong\) — a gate in this loop: done refuses this approve/);
   assert.match(refuses(root, 'set', '1', 'done', 'x', '--by', 'jarl'), /ranks below the worker's model \(m-strong\) — this loop's profile asks for a reviewer of a model ranked at least as the worker's \(done-gate "reviewer": "model-rank"\)/);
   const tagged = approve(root, '2', 'm-light');
-  assert.match(tagged.stderr, /2: a change meant to alter nothing \(tag identical-output\): a light review may clear it/);
+  assert.match(tagged.stderr, /2: every line is a comparison, so a light review may clear it/);
   assert.match(jarl(root, 'set', '2', 'done', 'the light review covers the comparison', '--by', 'jarl'), /2 → done/);
   approve(root, '1', 'm-strong');
   assert.match(jarl(root, 'set', '1', 'done', 'approved at the worker\'s rank', '--by', 'jarl'), /1 → done/);
@@ -78,18 +79,16 @@ test('"model-rank": done refuses an approve ranked below the worker\'s model, ex
 function unknownWorkerLoop(reviewer) {
   const root = modelLoop(reviewer);
   jarl(root, 'new', 'a change leased with no model', '--acceptance', '[read] it works');
-  jarl(root, 'set', '3', 'in-progress', '--worker', 'w3', '--by', 'jarl');
+  R.setStatus(root, '3', 'in-progress', '', { worker: 'w3', by: 'jarl' });
   jarl(root, 'evidence', '3', '--line', '1', '--ran', 'npm test', '--saw', 'pass 4, fail 0', '--by', 'w3');
   return root;
 }
 
 for (const rule of ['other-model', 'model-rank']) {
-  test(`"${rule}": an approve that names no model is refused by done, as its note says, whether or not the lease names a model, and the refusal ends with the form that names one`, () => {
+  test(`"${rule}": an approve the library recorded with no model is refused by done, whether or not the lease names a model, and the refusal ends with the form that names one`, () => {
     for (const id of ['3', '1']) {
       const root = unknownWorkerLoop(rule);
-      const bare = run(root, ['review', id, 'approve', '--by', 'rev-x', 'read the diff and the rows, nothing found']);
-      assert.equal(bare.status, 0, bare.stderr);
-      assert.match(bare.stderr, new RegExp(`${id}: no --model on this verdict — .*done refuses an approve that names no model`));
+      R.review(root, id, 'approve', 'read the diff and the rows, nothing found', { by: 'rev-x' });
       const said = refuses(root, 'set', id, 'done', 'proof and approve', '--by', 'jarl');
       assert.match(said, new RegExp(`^${id}'s live approve by rev-x names no model — `), `issue ${id}`);
       assert.match(said, /\njarl\.mjs review "<ids>" "<verdict>" "<what-was-read-and-found>" --by "<a-fresh-reviewer>" --model "<model-id>"\n$/, `issue ${id}`);
@@ -121,8 +120,8 @@ const nextLine = (said) => (/ · next: (.*)$/m.exec(said.stdout) || [])[1];
 const modelForm = (root, id) => refuses(root, 'set', id, 'done', 'x', '--by', 'jarl').trim().split('\n').pop();
 
 for (const [rule, own, label] of [['other-model', 'm-strong', 'the worker\'s own model'], ['model-rank', 'm-light', 'a model ranked below the worker\'s']]) {
-  test(`"${rule}": the line after an approve with no model, or with ${label}, names the review form that carries the model, not done`, () => {
-    for (const given of [[], ['--model', own]]) {
+  test(`"${rule}": the line after an approve with ${label} names the review form that carries the model, not done`, () => {
+    for (const given of [['--model', own]]) {
       const root = modelLoop(rule);
       const said = run(root, ['review', '1', 'approve', '--by', 'rev-x', ...given, 'read the diff and the rows, nothing found']);
       assert.equal(said.status, 0, said.stderr);

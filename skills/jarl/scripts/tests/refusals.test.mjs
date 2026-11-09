@@ -28,7 +28,7 @@ test('the check of a refusal catches what a form may not be: a composed call tha
   const check = (args, line, wrong = 'Deferred', reason = 'status must be one of: open, deferred (got "Deferred")', loop = PLAIN) => formProblems(args, `${reason}\n${line}`, loop, {}, wrong);
   // A form that holds.
   assert.deepEqual(check(['set', '1', 'Deferred', 'later'], "jarl.mjs set \"<ids>\" \"<status>\" \"<why>\" --by \"<who>\""), []);
-  assert.deepEqual(check(['set', '--root', ROOT_ARG, '1', 'Deferred', 'later'], `jarl.mjs set "<ids>" "<status>" --by "<who>" "<why>" --root ${ROOT_ARG}`, 'Deferred', undefined, ROOTED), []);
+  assert.deepEqual(check(['set', '--root', ROOT_ARG, '1', 'Deferred', 'later'], `jarl.mjs set "<ids>" "<status>" "<why>" --by "<who>" --root ${ROOT_ARG}`, 'Deferred', undefined, ROOTED), []);
   // The call corrected and composed for the caller: it runs when pasted.
   assert.ok(check(['set', '1', 'Deferred', 'later'], 'jarl.mjs set 1 deferred later').some((p) => /no placeholder/.test(p)));
   // A step and the call joined, the call after it.
@@ -82,7 +82,7 @@ test('a removed command, given words it does not read or a value twice, ends wit
     [['body', '4', '--what', 'T', '--why'], "jarl.mjs field \"<ids>\" \"<part>\" \"<value>\" --by \"<who>\""],
     [['tag', '1', '-core', '+"quoted"'], "jarl.mjs field \"<ids>\" Tags \"<tag>\" --add --by \"<who>\""],
     [['body', '1', '--title', 'X', '--section', 'Design=x'], "jarl.mjs field \"<ids>\" \"<part>\" \"<value>\" --by \"<who>\""],
-    [['tag', '1', '-core'], "jarl.mjs field \"<ids>\" Tags \"<tag>\" --remove --by \"<who>\" --by \"<who>\" --by \"<who>\""],
+    [['tag', '1', '-core'], "jarl.mjs field \"<ids>\" Tags \"<tag>\" --remove --by \"<who>\""],
   ];
   for (const [args, form] of cases) assert.equal(refusal(args, { wrong: args[0] }).ready, form, args.join(' '));
   // A part given to body with no value of its own takes the next word: the form is the field call of that part, its value
@@ -109,7 +109,7 @@ test('a step the call needs first is its own command on its own line, never join
   assert.equal(close.ready, "jarl.mjs ask \"<question-for-the-owner>\" --by jarl");
   assert.equal(close.commands.length, 1);
   const wait = refusal(['field', '1', 'Kind', 'wait'], { loop: PLAIN, wrong: 'wait' });
-  assert.deepEqual(wait.commands, ["jarl.mjs field \"<ids>\" Person \"<name>\" --by \"<who>\" --by \"<who>\"", "jarl.mjs field \"<ids>\" 'Check when' \"<date-or-event>\" --by \"<who>\" --by \"<who>\"", "jarl.mjs field \"<ids>\" Kind \"<kind>\" --by \"<who>\" --by \"<who>\""]);
+  assert.deepEqual(wait.commands, ["jarl.mjs field \"<ids>\" Person \"<name>\" --by \"<who>\"", "jarl.mjs field \"<ids>\" 'Check when' \"<date-or-event>\" --by \"<who>\"", "jarl.mjs field \"<ids>\" Kind \"<kind>\" --by \"<who>\""]);
   for (const line of wait.commands) assert.equal(printedCalls(line).length, 1, line);
   const opened = refusal(['init', 'g'], { loop: PLAIN });
   assert.equal(opened.ready, "jarl.mjs archive \"<slug>\" --by \"<who>\"");
@@ -121,7 +121,7 @@ test('a step the call needs first is its own command on its own line, never join
 test('a part field does not write ends with the form whose part is a placeholder, never the part given, so filled it is a call that runs', () => {
   for (const part of ['Notes', 'Status', 'Evidence', 'Reviews', 'Branch', 'Merged', 'Worker', 'Bogus']) {
     const r = refusal(['field', '1', part, 'x'], { loop: PLAIN, wrong: part });
-    assert.equal(r.ready, "jarl.mjs field \"<ids>\" \"<a-part-of-the-description>\" \"<value>\" --by \"<who>\" --by \"<who>\" --by \"<who>\"", part);
+    assert.equal(r.ready, "jarl.mjs field \"<ids>\" \"<a-part-of-the-description>\" \"<value>\" --by \"<who>\"", part);
   }
   const dir = copy(PLAIN);
   assert.equal(run(dir, ['field', '1', 'What', 'a value']).status, 0, 'filled with a part field writes, the form is a call that runs');
@@ -136,11 +136,11 @@ test('a form holds every flag its command needs beside the ones the call gave, a
     [['answer', 'a-1', '--option', 'A', '--by', 'owner'], "jarl.mjs answer \"<question>\" \"<text>\" --by \"<who>\""],
     [['field', '1'], "jarl.mjs field \"<ids>\" \"<part>\" \"<value>\" --by \"<who>\""],
     [['renumber', '99'], "jarl.mjs renumber \"<id>\" --by \"<who>\" --key \"<key>\""],
-    [['merged'], "jarl.mjs merged \"<ids>\" --sha \"<sha>\" --by \"<who>\""],
+    [['merged'], "jarl.mjs merged \"<ids>\" --by \"<who>\" --sha \"<sha>\""],
     [['merged', '1', '--ran', 'npm test'], "jarl.mjs merged \"<ids>\" --by \"<who>\" --ran \"<command>\" --saw \"<what-it-printed>\" --sha \"<sha>\""],
-    [['evidence', '1', '--slot', 'y'], "jarl.mjs evidence \"<ids>\" --slot \"<slot>\" --file \"<path-under-the-loop-root>\""],
+    [['evidence', '1', '--slot', 'y'], "jarl.mjs evidence \"<ids>\" --by \"<who>\" --slot \"<slot>\" --file \"<path-under-the-loop-root>\""],
     [['new', 't', '--tier', 'light', '--person', 'someone'], "jarl.mjs new \"<title>\" --by \"<who>\" --tier \"<tier>\" --person \"<name>\" --kind \"<kind>\" --check-when \"<date-or-event>\""],
-    [['ask', 'which?', '--until'], "jarl.mjs ask \"<text>\" --until \"<date-or-id>\" --applies-to \"<selectors>\" --kind \"<ask-kind>\""],
+    [['ask', 'which?', '--until'], "jarl.mjs ask \"<text>\" --by \"<who>\" --until \"<date-or-id>\" --applies-to \"<selectors>\" --kind \"<ask-kind>\""],
     [['decide', 's1', 'a ruling', '--by', 'jarl', '--reach'], "jarl.mjs decide \"<slug>\" \"<a-ruling>\" --by \"<who>\" --reach \"<number-of-files>\" --area \"<type>\""],
     [['round', '1', 'x', '--findings'], "jarl.mjs round \"<id>\" \"<what-failed>\" --findings \"<count>\""],
   ];
@@ -149,7 +149,7 @@ test('a form holds every flag its command needs beside the ones the call gave, a
   // an option or words, a value or --clear; goal with no --set is the goal read.
   const pairs = [
     [['evidence', '1', '--line', '1', '--ran', 'a', '--ran', 'b', '--saw', 'c'], 'jarl.mjs evidence "<ids>" --line "<line-number>" --ran "<command>" --saw "<what-it-printed>" --ran "<command>" --saw "<what-it-printed>"'],
-    [['merged', '1', '--sha', 'abc1234', '--ran', 'a', '--saw', 'b', '--saw', 'c'], 'jarl.mjs merged "<ids>" --sha "<sha>" --by "<who>" --ran "<command>" --saw "<what-it-printed>" --ran "<command>" --saw "<what-it-printed>"'],
+    [['merged', '1', '--sha', 'abc1234', '--ran', 'a', '--saw', 'b', '--saw', 'c'], 'jarl.mjs merged "<ids>" --by "<who>" --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" --ran "<command>" --saw "<what-it-printed>"'],
     [['evidence', '1', 'a note', '--ran', 'a', '--saw', 'b'], 'jarl.mjs evidence "<ids>" --ran "<command>" --saw "<what-it-printed>"'],
     [['goal', 'x'], 'jarl.mjs goal'],
   ];
@@ -190,7 +190,7 @@ test('done refused names the step its cause asks for, never an act of someone el
     ['no proof and no approve on a read line', {}, "jarl.mjs review \"<ids>\" \"<verdict>\" \"<what-was-read-and-found>\" --by \"<a-fresh-reviewer>\" --model \"<model-id>\""],
     ['no approve', { pre: proved }, "jarl.mjs review \"<ids>\" \"<verdict>\" \"<what-was-read-and-found>\" --by \"<a-fresh-reviewer>\" --model \"<model-id>\""],
     ['an owner line not ticked', { pre: approved }, "jarl.mjs ask \"<question-for-the-owner>\" --issue \"<id>\" --by \"<who>\""],
-    ['no merge', { pre: approved, profile: merging }, "jarl.mjs merged \"<ids>\" --sha \"<sha>\" --by \"<who>\" --by \"<who>\" --by \"<who>\""],
+    ['no merge', { pre: approved, profile: merging }, "jarl.mjs merged \"<ids>\" --sha \"<sha>\" --by \"<who>\""],
   ];
   for (const [cause, opts, step] of cases) {
     const r = refusal(['set', '3', 'done', 'all done'], { loop: PLAIN, ...opts });

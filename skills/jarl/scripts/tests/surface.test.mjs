@@ -91,7 +91,7 @@ test('field adds and removes the items of a list field, each issue keeping what 
   assert.equal(logLines(root).length, count, 'an item held already, or not held at all, writes nothing');
   assert.match(refuses(root, 'field', '1', 'Priority', '1', '--add'), /^Priority holds one value, so it is replaced, never added to or taken from \(got "1"\); .*\njarl\.mjs field "<ids>" Priority "<the-whole-new-value>" --by "<who>"\n$/);
   assert.match(refuses(root, 'field', '1', 'Tags', 'a', '--add', '--clear'), /field takes one of --add, --remove and --clear, not --add and --clear/);
-  assert.match(refuses(root, 'field', '1', 'Tags', '--add'), /^field Tags needs a value, or --clear to empty it\njarl\.mjs field "<ids>" Tags "<tag>" --add --by "<who>"\n$/);
+  assert.match(refuses(root, 'field', '1', 'Tags', '--add'), /^field Tags needs a value, or --clear to empty it\njarl\.mjs field "<ids>" Tags "<tag>" --by "<who>" --add\n$/);
 });
 
 test('a slice: tag keeps its one-slice rule through --add, and the refusal names the two steps that move the issue, each a form', () => {
@@ -125,8 +125,8 @@ test('the commands that wrote one part each are refused with the reason, then on
   const root = fieldedLoop();
   const cases = [
     [['prio', '1', '3'], "prio is not a command; the priority is a field\njarl.mjs field \"<ids>\" Priority \"<prio>\" --by \"<who>\""],
-    [['tag', '1', '+a', '-b'], "tag is not a command; tags are a field: field adds them with --add and takes them off with --remove, one call each\njarl.mjs field \"<ids>\" Tags \"<tag>\" --add"],
-    [['tag', '1', '-b'], "tag is not a command; tags are a field: field adds them with --add and takes them off with --remove, one call each\njarl.mjs field \"<ids>\" Tags \"<tag>\" --remove"],
+    [['tag', '1', '+a', '-b'], "tag is not a command; tags are a field: field adds them with --add and takes them off with --remove, one call each\njarl.mjs field \"<ids>\" Tags \"<tag>\" --add --by \"<who>\""],
+    [['tag', '1', '-b'], "tag is not a command; tags are a field: field adds them with --add and takes them off with --remove, one call each\njarl.mjs field \"<ids>\" Tags \"<tag>\" --remove --by \"<who>\" --by \"<who>\""],
     [['files', '1', 'a.mjs', 'b.mjs'], "files is not a command; the files are a field\njarl.mjs field \"<ids>\" Files \"<paths>\""],
     [['source', '1', 'r/x#1'], "source is not a command; the source is a field\njarl.mjs field \"<ids>\" Source \"<report-dir#finding-id>\""],
     [['after', '1', '2'], "after is not a command; the issues an issue waits on are a field\njarl.mjs field \"<ids>\" After \"<ids-it-waits-on>\""],
@@ -156,7 +156,7 @@ test('set takes statuses only: a field given to it is refused with the field cal
 test('base is the command that changes the base branch of a declared repository', () => {
   const root = makeLoop({ prefix: 'jarl-surface-base-', via: 'cli' });
   // A loop that declares no repository: the step that declares one first, then the call's own form, each with placeholders.
-  assert.match(refuses(root, 'base', 'nothing-here', 'main'), /^nothing-here is not declared in this loop; Jarl declares a repository the first time an issue names it \(jarl\.mjs field "<id>" Repo "<name-or-path>"\)\njarl\.mjs field "<id>" Repo "<name-or-path>"\njarl\.mjs base "<name>" "<branch>" --by "<who>"\n$/);
+  assert.match(refuses(root, 'base', 'nothing-here', 'main'), /^nothing-here is not declared in this loop; Jarl declares a repository the first time an issue names it \(jarl\.mjs field "<id>" Repo "<name-or-path>"\)\njarl\.mjs field "<id>" Repo "<name-or-path>" --by "<who>"\njarl\.mjs base "<name>" "<branch>" --by "<who>"\n$/);
   assert.match(refuses(root, 'base', 'nothing-here'), /^base requires its branch: the form below has a placeholder for each value\njarl\.mjs base "<name>" "<branch>"\n$/);
 });
 
@@ -274,7 +274,7 @@ test('free text has one name, text, in every tool, and one place in every comman
 
 test('a tool call writes its free text through the field text', () => {
   const root = fieldedLoop();
-  const call = (name, input) => { const r = mcp.callTool(`jarl_${name}`, { ...input, root }); assert.equal(r.isError, false, `${name}: ${r.content[0].text}`); return r; };
+  const call = (name, input) => { const r = mcp.callTool(`jarl_${name}`, { by: 'test-writer', ...input, root }); assert.equal(r.isError, false, `${name}: ${r.content[0].text}`); return r; };
   call('evidence', { ids: '1', text: 'a note' });
   call('round', { id: '1', text: 'the check failed' });
   call('set', { ids: '2', status: 'deferred', text: 'later' });
@@ -465,7 +465,7 @@ test('a tool refuses a field it does not take whose value another field or tool 
   assert.ok(refused('jarl_status', { by: 'repo' }).endsWith(rooted));
   assert.match(refused('jarl_models', { by: 'tag' }), /"by" is not a field of this tool — its value goes in "group"/);
   assert.ok(refused('jarl_resume', { ci: true }).endsWith(`jarl_resume {"gh":true${rooted}`));
-  assert.ok(refused('jarl_set', { ids: '1', status: 'deferred', why: 'later' }).endsWith(`"why" is not a field of this tool — its value goes in "text": jarl_set {"ids":"<ids>","status":"<status>","text":"<text>"${rooted}`));
+  assert.ok(refused('jarl_set', { ids: '1', status: 'deferred', why: 'later' }).endsWith(`"why" is not a field of this tool — its value goes in "text": jarl_set {"ids":"<ids>","status":"<status>","text":"<text>","by":"<who>"${rooted}`));
   assert.ok(refused('jarl_set', { ids: '1', status: 'deferred', why: 'later', json: true }).endsWith(`jarl_set {"ids":"<ids>","status":"<status>","text":"<text>","json":true${rooted}`));
   assert.match(refused('jarl_review', { ids: '1', verdict: 'approve', by: 'rev', findings: 'read it all here', model: 'test-model' }), /"findings" is not a field of this tool — its value goes in "text"/);
   assert.match(refused('jarl_evidence', { ids: '1', retract: '2', by: 'jarl', text: 'the row ran elsewhere' }), /^jarl_evidence: "retract" is not a field of this tool — a row or a note is taken back with jarl_retract, and by names who takes it back: jarl_retract \{"id":"<id>","entry":"<n-or-note-n>","by":"<who>","text":"<why>","root":/);

@@ -53,11 +53,11 @@ test('a range that is not declared, a range with no number left and a Range line
   const before = files(root);
   let said = refuses(root, 'new', 'x', '--range', 'film');
   assert.match(said, /the goal declares no range "film", nor any other/);
-  assert.equal(lastLine(said), "jarl.mjs goal --set 'Range (<name>): <from-to>' --by "<who>"");
+  assert.equal(lastLine(said), 'jarl.mjs goal --set \'Range (<name>): <from-to>\' --by "<who>"');
   jarl(root, 'goal', '--set', 'Range (tiny): 7000-7000');
   said = refuses(root, 'new', 'x', '--range', 'film');
   assert.match(said, /the goal declares no range "film": its ranges are tiny \(7000-7000\)/);
-  assert.equal(lastLine(said), 'jarl.mjs new "<title>" --range "<name>" --by "<who>"');
+  assert.equal(lastLine(said), 'jarl.mjs new "<title>" --by "<who>" --range "<name>"');
   assert.equal(filed(root, 'the only one', '--range', 'tiny'), '7000');
   said = refuses(root, 'new', 'one too many', '--range', 'tiny');
   assert.match(said, /the range tiny \(7000-7000\) has no number left: widen it in the goal/);
