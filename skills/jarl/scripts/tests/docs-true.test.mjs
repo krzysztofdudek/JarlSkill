@@ -11,7 +11,8 @@ import { spawnSync } from 'node:child_process';
 import { SCRIPT, SKILL_DIR, SPAWN_TIMEOUT, gitRepo, jarl, loop, refuses, run, skillFiles, skillLines, skillText } from './helpers.mjs';
 import { LEFT_THE_FAMILY } from './left-the-family.mjs';
 
-const { COMMAND_FLAGS, INTERNAL_COMMANDS, MUTATING, USAGE } = await import('../jarl.mjs');
+const J = await import('../jarl.mjs');
+const { COMMAND_FLAGS, INTERNAL_COMMANDS, MUTATING, USAGE } = J;
 const mcp = await import('../jarl-mcp.mjs');
 const { RECORD_API } = await import('../record.mjs');
 const { renderSplit } = await import('../lib/gate.mjs');
@@ -116,6 +117,16 @@ test('the repositories reference ties a takeover to the goal\'s limit, not to a 
   assert.match(md, /A takeover, after as many red rounds as the goal's limit allows \(three unless it says otherwise\), is a handover too\./);
 });
 
+test('ask without --kind says, on stderr, that it filed the question as stuck, the default kind', () => {
+  const { dir } = gitRepo({ prefix: 'jarl-docs-ask-note-' });
+  jarl(dir, 'init', 'g');
+  const r = run(dir, ['ask', 'which way?', '--by', 'jarl']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /asked as stuck, the default kind/);
+  assert.match(USAGE, /of kind stuck unless --kind says otherwise/);
+  assert.doesNotMatch(run(dir, ['ask', 'another', '--kind', 'stop', '--by', 'jarl']).stderr, /default kind/);
+});
+
 test('ask takes --kind as an option that defaults to stuck, as the reference writes it', () => {
   const { dir } = gitRepo({ prefix: 'jarl-docs-ask-' });
   jarl(dir, 'init', 'g');
@@ -172,7 +183,7 @@ test('next prints the issues ready to start and the groups only with --all, as t
   assert.match(ready, /ready one/);
   assert.doesNotMatch(ready, /waits/);
   assert.match(jarl(dir, 'next', '--all'), /waits/);
-  assert.match(skillText('SKILL.md'), /`next` \| the open issues ready to start; `--all` adds the held and waiting ones, in groups/);
+  assert.match(skillText('references/commands.md'), /`next \[--limit n\] \[--all\] \[--slice <coordinator>\]` \| only the open issues ready to start/);
   assert.match(mcp.buildTools().find((t) => t.name === 'jarl_next').description, /ready to start/);
 });
 
@@ -266,7 +277,7 @@ test('the README says who verifies: the fresh reviewer and the merger, and no mo
   assert.match(readme, /nothing is closed without recorded evidence and an approve, from a fresh reviewer when the issue carries code/);
   assert.doesNotMatch(readme, /nothing is closed without recorded evidence and a fresh reviewer/);
   assert.match(readme, /The tool refuses an approve by a self \(the issue's worker, anyone who has held its lease, or a worker of another issue on the same branch\)/);
-  assert.match(skillText('references/reviewer.md'), /refuses an approve by a self: the issue's worker, anyone who has held its lease, and the workers of any other issue on the same Branch/);
+  assert.match(skillText('references/commands.md'), /refuses an approve by a self: the issue's worker, anyone who has held its lease, and the workers of any other issue on the same Branch/);
   for (const false_ of [/reproduced itself/i, /reproducing the acceptance/i, /runs the test suite itself/i, /blocks (?:code|a merge)/i, /Nobody writes a handoff/]) {
     assert.doesNotMatch(readme.replace(/never blocks code from landing/g, ''), false_);
   }
@@ -369,6 +380,18 @@ test('the first screen of SKILL.md starts a cold agent: resume an existing loop 
   assert.match(text, /No loop yet\.\*\* Run `init "<goal>"`/);
 });
 
+test('every command SKILL.md and the references show is given only the flags that command takes', () => {
+  const bad = [];
+  for (const file of skillFiles()) {
+    for (const m of skillText(file).matchAll(/`([a-z]+)((?: [^`\n]*)?)`/g)) {
+      const flags = COMMAND_FLAGS[m[1]];
+      if (!flags || INTERNAL_COMMANDS.includes(m[1])) continue;
+      for (const [, flag] of m[2].matchAll(/(?:^| )--([a-z][a-z-]*)/g)) if (!Object.hasOwn(flags, flag) && !['json', 'help', 'root'].includes(flag)) bad.push(`${file}: ${m[1]} ${m[2].slice(0, 70)} (--${flag})`);
+    }
+  }
+  assert.deepEqual(bad, []);
+});
+
 test('models.md never puts the reviewer that clears an issue below the worker it reviews', () => {
   const models = skillText('references/models.md');
   assert.match(models, /Workers start on the tier the issue's `Tier:` names, and a takeover offers a tier up, another model or a changed approach\. The reviewer whose approve clears the issue is never of the worker's own model and never ranked below the worker's model, every model that has held the issue's lease, and not the issue's tier/);
@@ -414,10 +437,15 @@ test('every tool is described as it behaves: Read-only tools write nothing and W
   }
 });
 
-test('jarl_help prints the usage the command line prints, and the server instructions name the tool that boots a session', () => {
+test('jarl_help prints the whole usage, the command line prints a short list and one command\'s usage, and the server instructions name the tool that boots a session', () => {
   assert.equal(mcp.callTool('jarl_help').content[0].text, USAGE);
   const { dir } = gitRepo({ prefix: 'jarl-docs-help-' });
-  assert.equal(run(dir, ['--help']).stdout, USAGE.trim());
+  const short = run(dir, ['--help']).stdout;
+  assert.equal(short.trim(), J.shortUsage().trim());
+  assert.ok(short.length < USAGE.length / 8, `the short help prints ${short.length} characters of the ${USAGE.length} the usage holds`);
+  assert.match(run(dir, ['--help']).stdout, /<command> --help/);
+  assert.match(run(dir, ['set', '--help']).stdout, /^usage: jarl\.mjs set <ids>/);
+  assert.match(run(dir, ['set', '--help']).stdout, /the log line in the same move/);
   const reply = mcp.handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
   assert.match(reply.result.instructions, /jarl_resume/);
   assert.ok(mcp.buildTools().some((t) => t.name === 'jarl_resume'));
@@ -462,15 +490,12 @@ test('no brief and no rule names the main checkout as the root a call passes: th
   const defines = (text) => /loop root|never looks in a subdirectory|holds no loop of its own|names the main checkout as the root to pass/.test(text);
   const found = skillLines().filter(({ text }) => near(text) && !defines(text)).map(({ file, n, text }) => `${file}:${n}: ${text.slice(0, 80)}`);
   assert.deepEqual(found, []);
-  for (const [file, text] of [['worker', skillText('references/worker.md')], ['reviewer', skillText('references/reviewer.md')], ['merger', skillText('references/merger.md')]]) {
-    assert.match(text, /<loop-root>/, `the ${file} brief passes the loop root`);
-  }
   assert.match(skillText('SKILL.md'), /carries the absolute path of the loop root as `root`/);
   // The pinned block says the main checkout; Jarl's own sentence right after it says what the root is (the block itself is held byte-identical by the vendoring test).
-  const skill = skillText('SKILL.md');
+  const rules = skillText('references/family-rules.md');
   const sentence = 'In Jarl the root a call passes is the loop root, the directory that holds `.jarl/` (the main checkout only when the loop lives at its root).';
-  assert.ok(skill.indexOf(sentence) > skill.indexOf('<!-- RUNES:worker-worktree:END -->'), 'the sentence follows the block');
-  assert.ok(skill.indexOf(sentence) < skill.indexOf('In Jarl the coordinator is the jarl'));
+  assert.ok(rules.indexOf(sentence) > rules.indexOf('<!-- RUNES:worker-worktree:END -->'), 'the sentence follows the block');
+  assert.ok(rules.indexOf(sentence) < rules.indexOf('In Jarl the coordinator is the jarl'));
   for (const line of USAGE.split('\n')) assert.doesNotMatch(line, /<main checkout>/);
 });
 

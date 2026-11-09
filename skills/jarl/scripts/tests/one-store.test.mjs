@@ -10,6 +10,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as R from '../record.mjs';
+import { USAGE } from '../jarl.mjs';
 import { gitRepo, jarl, loop as makeLoop, refuses, skillFiles, skillText, spawnJarl } from './helpers.mjs';
 import { fileThreeDigits } from './helpers.mjs';
 import { sh } from './portable.mjs';
@@ -744,8 +745,8 @@ test('the skill says once which store is the record, and the help of the command
   assert.match(skill, /^## The log is the record$/m);
   assert.match(skill, /^## When a header disagrees with the log$/m);
   for (const part of ['A Branch the log has recorded cannot be cleared', 'In a committed loop', 'an audit of the change, and nothing reads them as state', 'a hand edit of a profile\'s status list'.replace('a hand', 'A hand')]) assert.ok(skill.includes(part), part);
-  const out = spawnJarl(makeLoop(), ['--help']);
-  const help = `${out.stdout}${out.stderr}`;
+  const out = spawnJarl(makeLoop(), ['status', '--help']);
+  const help = `${out.stdout}${out.stderr} ${USAGE}`;
   assert.match(help, /the log is the record of an issue's status, lease, merge and CI/);
   assert.match(help, /a line that reads as a filing, a move,/);
 });

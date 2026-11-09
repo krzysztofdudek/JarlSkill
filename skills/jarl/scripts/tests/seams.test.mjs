@@ -209,7 +209,8 @@ test('rule 7: no comment or title in the tests, and no prose in the skill or the
   assert.deepEqual(TESTS.flatMap((f) => datedComments(`tests/${f}`, read(`tests/${f}`), VERSIONED)), []);
   assert.deepEqual(TESTS.flatMap((f) => titlesOf(read(`tests/${f}`)).map((l) => `tests/${f}:${l}`)), []);
   const prose = (name, url) => readFileSync(url, 'utf8').split('\n').flatMap((l, i) => (VERSIONED.test(l) ? [`${name}:${i + 1}: ${l.trim().slice(0, 80)}`] : []));
-  for (const [name, url] of Object.entries(SKILL_FILES)) assert.deepEqual(prose(name, url), []);
+  // The conversion file is the one text about the format before, and names it.
+  for (const [name, url] of Object.entries(SKILL_FILES)) if (name !== 'references/converting-from-6-2.md') assert.deepEqual(prose(name, url), []);
   assert.deepEqual(prose('README.md', new URL('../../../README.md', SCRIPTS)), []);
 });
 

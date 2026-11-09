@@ -302,7 +302,7 @@ test('the profile is described with its slots, and profile prints them', () => {
 });
 
 test('the help text describes the two flags', () => {
-  const help = run(makeLoop({ prefix: 'jarl-attach-', via: 'cli' }), ['--help']);
+  const help = run(makeLoop({ prefix: 'jarl-attach-', via: 'cli' }), ['evidence', '--help']);
   assert.match(`${help.stdout}${help.stderr}`, /--file <path> --slot <name>/);
 });
 

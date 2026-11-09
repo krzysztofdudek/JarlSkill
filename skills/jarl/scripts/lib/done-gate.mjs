@@ -1,6 +1,6 @@
 // What a close to done must show: the refusals of the gate and the notes it leaves.
 
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { fieldText, jarlLine } from './base.mjs';
 import { git, gitHere } from './git.mjs';
@@ -126,6 +126,11 @@ function inPlaceRefusal(root, loop, issue, g) {
     && (from === null || Number(gitHere(top, ['show', '-s', '--format=%ct', sha])) * 1000 >= from)
     && names(top, ['diff-tree', '--root', '--no-commit-id', '--name-only', '-r', '-z', '--no-renames', sha]).some(touches(paths));
   if (shas.some((sha) => [...byTop].some(([top, paths]) => committed(top, paths, sha)))) return null;
+  // A declared path that is not there at the top of its repository is a path to write again, not a commit to name.
+  for (const [top, paths] of byTop) {
+    const missing = paths.find((p) => p !== '' && !existsSync(join(top, p)));
+    if (missing !== undefined) return { cause: 'files', text: `${issue.id} is worked in place, and ${missing} is not there: a declared path is read from the top of its repository, ${top}, not from the folder of the loop — ${jarlLine('field', issue.id, 'Files', '<paths>')}` };
+  }
   return { cause: 'commit', text: `${issue.id} is worked in place, and no row of its proof${g.tracked ? ` since ${sinceText(g.anchor)}` : ''} names a commit made after it, on the branch checked out, that changes ${issue.files.join(', ')} — ${inPlaceStep(issue)}` };
 }
 

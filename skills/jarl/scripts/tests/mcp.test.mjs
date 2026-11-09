@@ -282,9 +282,8 @@ test('the skill names every field the tools take in references/commands.md, and 
   const flagLine = Object.entries(COMMAND_FLAGS).filter(([c, f]) => Object.keys(f).length && !INTERNAL_COMMANDS.includes(c)).map(([c, f]) => `\`${c}\` ${Object.keys(f).join(', ')}`).join(' · ');
   assert.ok(commands.includes(`The flag fields: ${flagLine};`), `references/commands.md lists the flag fields as:\n${flagLine}`);
   assert.match(skill, /\(references\/commands\.md#the-tools-and-their-fields\)/, 'SKILL.md points to the fields');
-  assert.match(skill, /<!-- RUNES:mcp-first:START -->\n\*\*Call the tool through its MCP tools first, when the session has them\.\*\*/);
-  assert.match(skill, /\*\*Jarl's server\.\*\* Installed as a plugin, Jarl starts an MCP server named `jarl`/);
-  assert.match(skill, /### The CLI, when the tools are not there/);
+  assert.match(skill, /\*\*Call the tool through its MCP tools first, when the session has them\*\*/);
+  assert.match(skill, /\*\*The CLI is the fallback\*\*/);
 });
 
 

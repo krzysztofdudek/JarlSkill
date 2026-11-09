@@ -8,7 +8,7 @@ import * as R from '../record.mjs';
 import * as L from '../jarl-lib.mjs';
 import { dispatch, USAGE } from '../jarl.mjs';
 import * as mcp from '../jarl-mcp.mjs';
-import { loop, skillFiles, skillText } from './helpers.mjs';
+import { gitRepo, jarl, loop, skillFiles, skillText } from './helpers.mjs';
 
 // ---- the sentence that survives a compaction ----------------------------------------------------------------------------
 
@@ -38,55 +38,71 @@ const sectionOf = (text, heading) => {
   return next < 0 ? rest : rest.slice(0, next);
 };
 
-test('the worker brief ends with a closing checklist and says that no file carries a task number', () => {
-  const brief = sectionOf(skillText('references/worker.md'), 'The worker\'s brief');
-  const items = [
-    ['the work is committed', /closing checklist[\s\S]*committed/i],
-    ['red and green are recorded as evidence rows, not only in the report', /red and green[^\n]*evidence rows[^\n]*not only in the report/i],
-    ['every check the brief names was waited for to its end', /every check[^\n]*brief names[^\n]*waited for[^\n]*to its end/i],
-    ['the changelog fragment is written', /changelog fragment[^\n]*written/i],
-    ['the report is sent', /report is sent/i],
-  ];
-  for (const [what, re] of items) assert.match(brief, re, `the worker brief carries: ${what}`);
-  assert.match(brief, /no (?:file|comment|test|doc)[^\n]*task number|task number[^\n]*no file/i);
-  assert.match(brief, /no loop issue number appears in code, comments, tests, docs or graph entries/i, 'every place a number may not appear is named');
-  assert.match(brief, /loop ends[^\n]*number[^\n]*points nowhere/i, 'the reason is given in the worker\'s own terms');
-  assert.match(brief, /rulings in force[^\n]*jarl_decisions[^\n]*live: true/i, 'the worker reads the rulings in force');
-  assert.match(brief, /only the commit subject names the issue/i);
-  assert.ok(brief.indexOf('closing checklist') > brief.indexOf('Report in under'), 'the checklist closes the brief');
+// A lease of one issue, for the briefs the tool prints: the worker's and the examiner's text live there and nowhere else.
+function leasedForBriefs() {
+  const { dir } = gitRepo({ prefix: 'jarl-texts-brief-', branch: 'feature' });
+  jarl(dir, 'init', 'a goal');
+  jarl(dir, 'new', 'one', '--why', 'needed', '--acceptance', '[test] it works', '--acceptance', '[read] the docs say so', '--files', 'a.txt');
+  jarl(dir, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-one', '--worker', 'w1', '--model', 'm-x');
+  return dir;
+}
+
+test('the worker\'s brief holds the worker\'s rules: the issue is the scope, no file carries a task number, proof recorded per line, nothing weakened, nothing pushed', () => {
+  const brief = jarl(leasedForBriefs(), 'brief', '1');
+  for (const [what, re] of [
+    ['anything else goes under Found', /anything else you see goes under "Found"/i],
+    ['weakening is refused and stuck is the exit', /weaken a test, a check, a guard or a hook[^\n]*stuck command/i],
+    ['no file carries a task number', /No file you write carries a task number: only the commit subject names the issue/],
+    ['commits at the failing test and at the fix', /Commit at the failing test and at the fix, one issue per commit, never amending/],
+    ['never push, never another branch', /Never push or touch another branch/],
+    ['scratch, not git stash', /never `git stash`/],
+    ['records each line by its method', /Prove each line by its method/],
+    ['runs only the files it touches', /Run the test files you touch/],
+    ['no report while waiting', /Never report "waiting for the test run"/],
+    ['the report names what ran and Found', /what changed, the commands and what they printed[^\n]*Found/],
+    ['a refused call writes nothing', /A refused call writes nothing/],
+    ['spawns no agents', /Spawn no agents/],
+  ]) assert.match(brief, re, `the worker brief carries: ${what}`);
 });
 
-test('the reviewer brief asks the fourth question, reads the rows, and ends with the recording call with its fields filled', () => {
-  const ref = skillText('references/reviewer.md');
-  const brief = sectionOf(ref, 'The reviewer\'s brief');
-  assert.match(brief, /weaken anything that worked or protected before[^\n]*(?:mode|default|guard|test)/i, 'the fourth question');
-  assert.match(brief, /(?:read|reads) the (?:evidence )?rows[^\n]*missing[^\n]*Important/i, 'a worker\'s missing rows are an Important finding');
-  const last = brief.slice(brief.lastIndexOf('Record your own verdict'));
-  assert.match(last, /jarl_review|review <id>/, 'the last step is the recording call');
-  assert.match(last, /by[^\n]*model/i, 'its fields are filled');
-  assert.match(last, /quotes? the line review printed/i, 'the answer quotes the line review printed');
-  assert.ok(brief.trimEnd().endsWith('```'), 'the recording step closes the brief');
-  assert.ok(brief.indexOf('Record your own verdict') > brief.indexOf('Rank every finding'), 'recording is the last step');
-  assert.match(brief, /rulings in force[^\n]*jarl_decisions[^\n]*live: true/i, 'the reviewer reads the rulings in force');
-  assert.match(ref, /returned without recording[^\n]*resumed to record/i, 'a reviewer that returned without recording is resumed');
-  for (const file of skillFiles().filter((f) => f !== 'references/reviewer.md')) assert.doesNotMatch(skillText(file), /without recording[^\n]*resumed to record/i, `${file} repeats the rule that a reviewer is resumed to record`);
-  assert.match(ref, /gate counts the reviewer of the previous round as fresh/i);
-  assert.match(ref, /new one-shot reviewer for each round[^\n]*findings of the previous round/i);
+test('the examiner\'s brief holds its six steps, the verdict recorded last, and what it must not do', () => {
+  const dir = leasedForBriefs();
+  const brief = jarl(dir, 'brief', '1', '--role', 'reviewer');
+  for (const [what, re] of [
+    ['nothing protective was weakened', /nothing protective was weakened/],
+    ['every mechanical line run again', /Run every \[test\], \[check\] and \[compare\] line again/],
+    ['a line with no row is a finding', /no row names it: run it yourself; the worker's missing row is an Important finding/],
+    ['read lines are quoted', /Judge the \[read\] lines and quote them/],
+    ['findings by severity', /Rank findings Critical, Important or Minor/],
+    ['the verdict is recorded last', /Record your own verdict last, with your name and model/],
+    ['the answer quotes the line review printed', /quotes the line review printed/],
+    ['read-only, never checkout in the main checkout', /never `git checkout` in the main checkout/],
+  ]) assert.match(brief, re, `the examiner brief carries: ${what}`);
+  assert.doesNotMatch(jarl(dir, 'brief', '1', '--role', 'reviewer'), /Report in under/);
 });
 
-// ---- the tool list ------------------------------------------------------------------------------------------------------
-
+test('the merger\'s brief holds its procedure', () => {
+  const brief = jarl(leasedForBriefs(), 'brief', '--role', 'merger');
+  for (const [what, re] of [
+    ['a batch rolled back whole', /A batch went red: reset to before its first merge/],
+    ['a red from outside is filed', /The cause is outside the branch/],
+    ['the merge drivers on every merge', /the settings the merge-driver command prints, on every merge/],
+    ['never hard reset', /never `--hard`/],
+    ['report after the check', /report only after it has finished/],
+    ['changelog once, in its own commit', /Changelog entries, once the batch is green/],
+  ]) assert.match(brief, re, `the merger brief carries: ${what}`);
+});
 test('the tool list has no handoff tool, the command line keeps its command, and the main path and the command reference leave it out', () => {
   assert.ok(!mcp.buildTools().some((t) => t.name === 'jarl_handoff'));
   assert.ok(!Object.keys(mcp.TABLE.commands).some((c) => c === 'handoff' && !mcp.TABLE.commands[c].internal), 'the table marks the command internal');
   assert.throws(() => mcp.callTool('jarl_handoff', {}), /unknown|no such tool|not found/i);
   assert.doesNotMatch(USAGE, /^\s{2}handoff\b/m, 'the usage text does not document it');
   // The main path never names it. The command reference leaves out its tool fields, its row, the archive's mention of its
-  // file and the two JSON keys; the list of what only the command line does (composers.md) still has its row.
+  // file and the two JSON keys; the list of what only the command line does (record.md) still has its row.
   assert.doesNotMatch(skillText('SKILL.md'), /handoff/i, 'SKILL.md does not name the handoff');
   const commands = skillText('references/commands.md');
   assert.doesNotMatch(commands, /handoff/i, 'commands.md does not document the handoff command, its keys or its file');
-  assert.match(skillText('references/composers.md'), /^\| `handoff` \|/m, 'the command-line-only list keeps its row');
+  assert.match(skillText('references/record.md'), /^\| `handoff` \|/m, 'the command-line-only list keeps its row');
 });
 
 // ---- next and resume show the tier's default model and never build the models table -----------------------------------

@@ -36,7 +36,7 @@ test('a lease with no commit, row or log line for longer than 30 minutes is idle
   at(29, () => {
     assert.deepEqual(R.statusData(root).stale, [], 'within the threshold nothing is idle');
     assert.doesNotMatch(resumeText(root), /STALE/);
-    assert.match(nextAs(root, 'jarl'), /^- 001 one: with worker w1 since 2026-06-01 10:00, no proof yet; the worker records it — jarl\.mjs evidence 001/m);
+    assert.match(nextAs(root, 'jarl'), /^- 001 one: with worker w1 since 2026-06-01 10:00: no row is owed for read lines; raise a fresh examiner when it reports — jarl\.mjs brief 001 --role reviewer/m);
   });
   at(31, () => {
     const idle = 'idle 31m (threshold 30m): last log line 31m ago, last row none, no branch, so no commit read';
@@ -206,7 +206,7 @@ test('status --stale-hours moves the threshold of the asker\'s list as it moves 
   const row = (text) => text.split('\n').find((l) => l.startsWith('- 001 '));
   assert.match(row(jarl(root, 'status', '--as', 'jarl')), /no commit, row or log line for \d+[dh] \(threshold 30m\)/, 'the default threshold is the goal\'s');
   assert.match(row(jarl(root, 'status', '--as', 'jarl', '--stale-hours', '2')), /no commit, row or log line for \d+[dh] \(threshold 2h\)/, 'the override is the threshold of the list');
-  assert.match(row(jarl(root, 'status', '--as', 'jarl', '--stale-hours', '1000000')), /with worker w1 since 2026-06-01 10:00, no proof yet; the worker records it/, 'a lease younger than the override is not idle');
+  assert.match(row(jarl(root, 'status', '--as', 'jarl', '--stale-hours', '1000000')), /with worker w1 since 2026-06-01 10:00: no row is owed for read lines; raise a fresh examiner when it reports/, 'a lease younger than the override is not idle');
   assert.deepEqual(JSON.parse(jarl(root, 'status', '--as', 'jarl', '--stale-hours', '1000000', '--json')).as.rows.map((r) => r.what), ['worker']);
 });
 

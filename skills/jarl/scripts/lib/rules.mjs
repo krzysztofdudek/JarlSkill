@@ -89,13 +89,13 @@ export function ruleEnd(rule, loop, today) {
 // The rules Jarl ships: its own role guidance, each quoted whole from the reference that holds it, which stays its one
 // source (a test holds every quote to its reference). Their slugs start with jarl: so they never meet a ruling's.
 export const BUILTIN_RULES = Object.freeze([
-  { slug: 'jarl:reviewer-every-round', scope: 'role reviewer and moment round', source: 'references/reviewer.md',
+  { slug: 'jarl:reviewer-every-round', scope: 'role reviewer and moment round', source: 'references/jarl.md',
     text: 'Every round, re-check every acceptance line of the issue, not only the findings of the round before.' },
-  { slug: 'jarl:reviewer-tier-above', scope: 'role reviewer', source: 'references/reviewer.md',
+  { slug: 'jarl:reviewer-tier-above', scope: 'role reviewer', source: 'references/jarl.md',
     text: 'Work on a record format, a contract or what a person sees is reviewed a tier above the worker.' },
-  { slug: 'jarl:reviewer-judges-the-issue', scope: 'role reviewer', source: 'references/reviewer.md',
+  { slug: 'jarl:reviewer-judges-the-issue', scope: 'role reviewer', source: 'references/jarl.md',
     text: "The verdict judges the issue's acceptance and what the change itself broke; a finding outside that is filed as a new issue and never turns the verdict to changes." },
-  { slug: 'jarl:worker-only-the-issue', scope: 'role worker', source: 'SKILL.md',
+  { slug: 'jarl:worker-only-the-issue', scope: 'role worker', source: 'references/family-rules.md',
     text: 'Change only what the issue needs. Something else seen on the way is reported for filing, not fixed in passing.' },
   { slug: 'jarl:coordinator-escalates', scope: 'role coordinator', source: 'references/jarl.md',
     text: "It goes up with `ask \"<text>\" --kind escalation --slice <name>` (and `--issue <id>` when one issue is the subject), which the jarl holds and answers, for these four and no other:\n1. a gap or a finding outside its slice's goal;\n2. a decision that is the jarl's or the owner's;\n3. its slice empty, or blocked by another slice;\n4. a takeover that failed too." },

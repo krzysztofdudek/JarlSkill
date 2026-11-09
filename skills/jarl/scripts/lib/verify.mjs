@@ -138,13 +138,26 @@ export function cmdVerify(root) {
   }
   const supersededBy = new Map(rulings.filter((d) => d.supersededBy).map((d) => [d.slug, d.supersededBy]));
   for (const [slug, by] of supersededBy) {
-    for (const i of issuesNaming(root, slug)) add('superseded', `issue ${i.id}`, `cites the ruling ${slug} in What, Why or Acceptance, and ${by} supersedes it`);
+    for (const i of issuesNaming(root, slug)) {
+      if (carriedOver(loop, events, i, by)) notes.push({ where: `issue ${i.id}`, what: `cites the ruling ${slug}, which ${by} superseded before the conversion: its words are left as they were written` });
+      else add('superseded', `issue ${i.id}`, `cites the ruling ${slug} in What, Why or Acceptance, and ${by} supersedes it`);
+    }
   }
   // A ruling in force whose settled issues are not all closed is work not yet carried out: said, never a finding.
   for (const u of unsettledRulings(loop)) notes.push({ where: `ruling ${u.slug}`, what: `${unsettledText(u)}, which ${u.issues.length === 1 ? 'is' : 'are'} neither done nor dropped` });
   for (const f of attachmentFindings(root, loop)) add('attachments', `issue ${f.id}`, f.what);
   return verifyResult(found, notes, null, profile.doneGate['requires-slots'] !== undefined || found.some((f) => f.check === 'attachments'));
 }
+// Whether an issue's citation of a ruling superseded by `by` was carried over by a conversion: the ruling was superseded and
+// the issue's text last written before the converted line, so the record keeps its words and nothing asks for them changed.
+function carriedOver(loop, events, issue, by) {
+  const convertedAt = events.findLast((e) => e.type === 'converted')?.n ?? -1;
+  if (convertedAt < 0) return false;
+  const superseded = events.findLast((e) => e.id === null && e.text.startsWith(`decided ${by} ·`))?.n ?? -1;
+  const written = (loop.eventsById.get(issue.id) || []).filter((e) => e.type === 'filed' || (e.type === 'body' && ['what', 'why', 'acceptance'].some((p) => e.part.includes(p)))).pop()?.n ?? -1;
+  return superseded < convertedAt && written < convertedAt;
+}
+
 // The issue files of a loop, in the order the loop reads them.
 function issueFilesOf(dir) {
   const d = join(dir, 'issues');

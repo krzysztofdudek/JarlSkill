@@ -27,6 +27,8 @@ const SINCE = /\bsince\b|(?:^|[.!?]\s)Since\b(?![:,*])/m;
 // A task by number or its story: the word issue, ticket, package or round followed by a number, a bare hash number,
 // or the words of a report on a task.
 // Also the words that tell what once happened instead of stating the rule.
+// The one file about the format before, and so the one file that may name a version or say what came before.
+const CONVERSION = 'references/converting-from-6-2.md';
 const TASK = /\((?:issues?|tickets?|packages?|rounds?|tasks?)\s+#?\d+|\(#?\d{2,4}\)|(?:^|[^a-z])(?:issues?|tickets?|packages?|rounds?|tasks?)\s+#?\d+|#\d+|field report|\bin practice\b|\bhas produced\b/i;
 // The words the owner ruled out: the flag named holds-claim, the check command that measures a branch,
 // and the claim as a name of the lease. Code spans keep the key `claim` of a research finding.
@@ -42,8 +44,8 @@ const GLUED = /[.;:)\]]- (?:\*\*|`|\[)|\|\|\s*`/;
 // [file, a fragment of the line]. Each states a rule or a fact about the term; none defines it.
 const DEFINITION_ALLOWED = [
   ['references/commands.md', 'The profile is checked as its own reader checks it'],
-  ['references/composers.md', 'the notes are for a person at the command line'],
-  ['references/composers.md', 'the mode is written at init'],
+  ['references/record.md', 'the notes are for a person at the command line'],
+  ['references/record.md', 'the mode is written at init'],
   ['references/models.md', 'a model is measured only on the work it was given'],
   ['references/profile.md', 'the evidence row is asked for either way'],
   ['references/profile.md', 'The gate is checked at the move'],
@@ -195,7 +197,7 @@ export function shapeProblems(dir) {
     const owned = runesLines(body);
     body.split('\n').forEach((line, i) => {
       if (owned.has(i + 1)) return;
-      if (VERSIONED.test(line)) problems.push(`${f}:${i + 1}: a version number: ${line.trim().slice(0, 60)}`);
+      if (VERSIONED.test(line) && f !== CONVERSION) problems.push(`${f}:${i + 1}: a version number: ${line.trim().slice(0, 60)}`);
       if (TASK.test(line)) problems.push(`${f}:${i + 1}: a task number or story: ${line.trim().slice(0, 60)}`);
     });
     for (const { n, text: line } of proseLines(body)) {
@@ -204,7 +206,7 @@ export function shapeProblems(dir) {
       // marker of the next item, with no line break between them.
       if (GLUED.test(line)) problems.push(`${f}:${n}: a list item or table row glued to the one before it: ${line.trim().slice(0, 60)}`);
       const prose = withoutCodeSpans(line);
-      if (HISTORY.test(prose) || SINCE.test(prose)) problems.push(`${f}:${n}: a word of history: ${line.trim().slice(0, 60)}`);
+      if ((HISTORY.test(prose) || SINCE.test(prose)) && f !== CONVERSION) problems.push(`${f}:${n}: a word of history: ${line.trim().slice(0, 60)}`);
     }
   }
   return problems;
@@ -310,28 +312,28 @@ test('a frontmatter name that is not lower-case hyphenated, or is over 64 charac
 });
 
 test('a version number or a version-shaped token in SKILL.md or a reference fails', () => {
-  for (const [file, text] of [['SKILL.md', 'Jarl 6.2.0 reads it.'], ['references/models.md', 'It works with 1.0.'], ['references/record.md', 'A 6.x loop.'], ['references/worker.md', 'The v2 shape.']]) {
+  for (const [file, text] of [['SKILL.md', 'Jarl 6.2.0 reads it.'], ['references/models.md', 'It works with 1.0.'], ['references/record.md', 'A 6.x loop.'], ['references/repositories.md', 'The v2 shape.']]) {
     assert.ok(names(broken(file, (t) => `${t}\n${text}\n`), 'a version number').length, text);
   }
 });
 
 test('a word of history in SKILL.md or a reference fails, and the same word inside code does not', () => {
   const sentences = ['The loop reads older files.', 'An earlier reader refuses it.', 'It no longer works.', 'Text that is new in the tool.', 'It used to work.', 'A legacy file.', 'Backward rules.', 'It stays compatible with the reader.', 'It runs since the start.', 'Since the last start it works.', 'A file kept from before.'];
-  for (const sentence of sentences) assert.ok(names(broken('references/worker.md', (t) => `${t}\n${sentence}\n`), 'a word of history').length, sentence);
-  assert.deepEqual(names(broken('references/worker.md', (t) => `${t}\nThe key \`since\` and the field **Since:** and \`legacyHandoff\`.\n`), 'a word of history'), []);
+  for (const sentence of sentences) assert.ok(names(broken('references/repositories.md', (t) => `${t}\n${sentence}\n`), 'a word of history').length, sentence);
+  assert.deepEqual(names(broken('references/repositories.md', (t) => `${t}\nThe key \`since\` and the field **Since:** and \`legacyHandoff\`.\n`), 'a word of history'), []);
 });
 
 test('a task number or the story of a task in SKILL.md or a reference fails', () => {
   for (const text of ['It was fixed (issue 12).', 'See ticket 3.', 'The package 4 ships.', 'In round 5 it failed.', 'The #281 shape.']) {
-    assert.ok(names(broken('references/merger.md', (t) => `${t}\n${text}\n`), 'a task number').length, text);
+    assert.ok(names(broken('references/repositories.md', (t) => `${t}\n${text}\n`), 'a task number').length, text);
   }
 });
 
 test('a sentence outside the glossary that defines a glossary term fails, and a sentence that only uses the term does not', () => {
   for (const sentence of ['The worker is an agent that does one issue.', 'A reviewer is the agent that gives a verdict.', 'The merger is the agent that lands a branch.', 'A lease is what an issue holds.', '- The profile is a file that names statuses.']) {
-    assert.ok(names(broken('references/worker.md', (t) => `${t}\n${sentence}\n`), 'which glossary.md defines').length, sentence);
+    assert.ok(names(broken('references/repositories.md', (t) => `${t}\n${sentence}\n`), 'which glossary.md defines').length, sentence);
   }
-  assert.deepEqual(names(broken('references/worker.md', (t) => `${t}\nThe worker records the proof and the reviewer reads it.\nThe key \`the worker is\` is code.\n`), 'which glossary.md defines'), []);
+  assert.deepEqual(names(broken('references/repositories.md', (t) => `${t}\nThe worker records the proof and the reviewer reads it.\nThe key \`the worker is\` is code.\n`), 'which glossary.md defines'), []);
 });
 
 test('the flag named holds-claim, the check command that measures a branch, and the claim as a name of the lease fail', () => {
@@ -355,7 +357,7 @@ test('a reference over 60 lines, or over 20 KB, with no table of contents fails;
 
 test('a task by a bare hash number, by the word task, or told as a story fails', () => {
   for (const text of ['See #7 for it.', 'The task 12 ships it.', 'It has produced a rewritten HEAD in practice.', 'In practice it broke.']) {
-    assert.ok(names(broken('references/merger.md', (t) => `${t}\n${text}\n`), 'a task number').length, text);
+    assert.ok(names(broken('references/repositories.md', (t) => `${t}\n${text}\n`), 'a task number').length, text);
   }
 });
 

@@ -258,3 +258,46 @@ test('the log command writes no converted line: only a conversion ends with one'
   const root = loop();
   assert.throws(() => R.appendLog(root, 'converted'), /only a conversion writes it/);
 });
+
+test('an issue closed before a converted line is counted by the approve it closed on, even after a changes verdict no round spent', () => {
+  const root = loop();
+  const id = R.newIssue(root, 'closed by an earlier gate', { tier: 'light', acceptance: '[read] it works' }).id;
+  R.review(root, id, 'changes', 'Important: the first reading', { by: 'rev-1' });
+  R.review(root, id, 'approve', 'looks fine now', { by: 'rev-2' });
+  appendFileSync(logFile(root), lineOf(root, id, '→ done · closed', 'unrecorded'));
+  const read = () => L.reviewSplit(L.readLoop(L.jarlDir(root)));
+  assert.equal(read().unrecorded, 1, 'a loop that was not converted reads the standing changes as it stands');
+  appendFileSync(logFile(root), '- 2030-01-01 00:01 by the-converter · converted\n');
+  assert.equal(read().fresh, 1);
+  assert.equal(read().unrecorded, 0);
+});
+
+test('an issue filed after the conversion that cites a superseded ruling is a finding: the note is for what the conversion left', () => {
+  const root = loop();
+  R.decide(root, 'old-way', 'the old way', { by: 'jarl' });
+  R.decide(root, 'new-way', 'the new way', { by: 'jarl', supersedes: 'old-way' });
+  appendFileSync(logFile(root), '- 2030-01-01 00:01 by the-converter · converted\n');
+  R.newIssue(root, 'cites it afresh', { tier: 'light', why: 'as old-way says', acceptance: '[read] it works' });
+  const report = L.cmdVerify(root);
+  assert.equal(report.ok, false);
+  assert.match(report.checks.find((c) => c.name === 'superseded').findings.map((f) => f.what).join('\n'), /old-way/);
+  assert.doesNotMatch(report.notes.map((n) => n.what).join('\n'), /before the conversion/);
+});
+
+test('verify leaves a citation of a superseded ruling written before the conversion as a note; a ruling superseded later, or text written later, stays a finding', () => {
+  const root = loop();
+  R.decide(root, 'old-way', 'the old way', { by: 'jarl' });
+  R.decide(root, 'new-way', 'the new way', { by: 'jarl', supersedes: 'old-way' });
+  R.decide(root, 'later-way', 'kept for now', { by: 'jarl' });
+  const id = R.newIssue(root, 'cites rulings', { tier: 'light', what: 'as old-way and later-way say', acceptance: '[read] it works' }).id;
+  const superseded = () => L.cmdVerify(root).checks.find((c) => c.name === 'superseded').findings.map((f) => f.what);
+  assert.equal(superseded().length, 1, 'with no conversion the citation is a finding');
+  appendFileSync(logFile(root), '- 2030-01-01 00:01 by the-converter · converted\n');
+  assert.deepEqual(superseded(), []);
+  assert.match(L.cmdVerify(root).notes.map((n) => n.what).join('\n'), /old-way/);
+  R.decide(root, 'latest-way', 'the latest way', { by: 'jarl', supersedes: 'later-way' });
+  assert.match(superseded().join('\n'), /later-way/, 'a ruling superseded after the conversion is still found');
+  assert.doesNotMatch(superseded().join('\n'), /old-way/);
+  R.setBody(root, id, { what: 'as old-way says, written after the conversion' });
+  assert.match(superseded().join('\n'), /old-way/, 'text written after the conversion is read as written now');
+});

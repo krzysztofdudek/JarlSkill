@@ -11,7 +11,7 @@ import { jarlDir, today } from './where.mjs';
 import { firstLine, firstLineReadings, goalLineOf, goalPath } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
 import { acceptanceLines, evidenceNotes, evidenceTable, issueNamed, reviewEntries } from './issues.mjs';
-import { countedRowsOf, lineChanges, lineStates, linesAtFirstLease, readLine, shownRowLines, tierAtFirstLease } from './lines.mjs';
+import { countedRowsOf, lineChanges, lineStates, linesAtFirstLease, noRowOwed, readLine, shownRowLines, tierAtFirstLease } from './lines.mjs';
 import { gateOf, worksInPlace } from './gate.mjs';
 import { readLoop } from './loop.mjs';
 import { integrationBranch, sameSlice, sliceNamed, sliceOf } from './slices.mjs';
@@ -19,7 +19,7 @@ import { loopRepos, takenOver } from './rounds.mjs';
 import { findingOfLog, modelLinesIn } from './models.mjs';
 import { loopRules, ruleLines, rulesFor } from './rules.mjs';
 import { issueView } from './evidence.mjs';
-import { baseOf, isGitRepo, issueRepos, refsIn, repoLabel, worktreeState } from './repositories.mjs';
+import { baseOf, isGitRepo, issueRepos, refsIn, repoLabel, worktreeState, worktreesOf } from './repositories.mjs';
 import { cmpId } from './ids.mjs';
 import { sameLease } from './leases.mjs';
 
@@ -354,7 +354,8 @@ function issueData(root, loop, issue, role) {
   const notes = [];
   if (role === 'worker' && loop.profile.is(issue.status, 'terminal')) notes.push(`${issue.id} is ${issue.status}: a worker starts on it once it is reopened — ${jarlLine('set', issue.id, loop.profile.initial, hole('<why>'))}`);
   const findings = findingsOf(loop, issue, events, notes);
-  if (role === 'reviewer' && !proof.length) notes.push(`${issue.id} holds no proof row: a worker's missing rows are an Important finding`);
+  // A read or owner line takes no row, so only a mechanical line can be missing one.
+  if (role === 'reviewer' && !proof.length && !noRowOwed(issue)) notes.push(`${issue.id} holds no proof row: a worker's missing rows are an Important finding`);
   const data = {
     id: issue.id, title: issue.title, status: issue.status, tier: issue.tier,
     text: issueText(root, issue, role),
@@ -420,7 +421,9 @@ function mergerBrief(root, loop, slice, ctx) {
   need(slice === undefined || m !== null, `no slice ${fieldText(slice)} with a merger of its own on the goal's Merger lines: a Merger (<coordinator>) line names one — ${jarlLine('goal', '--set', hole('<machine-line>'))}`, () => ({ flag: '--slice', value: hole('<coordinator>') }));
   const repos = loopRepos(root, loop.issues).filter(isGitRepo).map((repo) => {
     const base = baseOf(root, repo);
-    return { repo, label: repoLabel(repo), base, target: m ? integrationBranch(m.slice) : base };
+    const target = m ? integrationBranch(m.slice) : base;
+    const checkout = (worktreesOf(repo) || []).find((w) => w.branch === target && !w.bare) ?? null;
+    return { repo, label: repoLabel(repo), base, target, checkout: checkout?.path ?? null, exists: refsIn(repo).has(target) };
   });
   const rules = rulesFor(root, loop, { roles: new Set(['merger']), slice: null, moments: new Set(['merge']), issues: [] }, today()).map(ruleOf);
   const tool = toolCommand(ctx, m ? m.name : lines.merger ?? hole('<who>'));
@@ -597,9 +600,9 @@ function renderMerger(o, out) {
   section(out, 'The goal', o.goal);
   section(out, 'Where you merge', [
     `You are ${o.merger ?? 'the merger'}. Your target: ${o.target ?? o.repos.map((r) => `${r.base} in ${r.label}`).join(', ') ?? 'the branch the loop lands on'}.`,
-    ...o.repos.map((r) => `Repository ${r.label} (${r.repo}), base ${r.base}${o.target ? `, target ${r.target}` : ''}.`),
+    ...o.repos.map((r) => `Repository ${r.label} (${r.repo}), base ${r.base}${o.target ? `, target ${r.target}` : ''}. ${r.checkout ? `Merge in ${r.checkout}: it holds ${r.target}, and a second worktree of a checked-out branch is refused.` : `No checkout holds ${r.target}: cut a worktree of your own with ${printCommand(['git', '-C', r.repo, 'worktree', 'add', ...(r.exists ? [hole('<path>'), r.target] : ['-b', r.target, hole('<path>'), r.base])], { globals: [] })}.`}`),
     `Loop root: ${o.root}. Tool: ${RUNTIME} ${o.script} (every command below is written with both).`,
-    'One writer per target branch: only you merge into it, in a worktree of your own, never a checkout another merger uses. You write the record through the tool; only the holder of the main checkout commits `.jarl/`.',
+    'One writer per target branch: only you merge into it, in a worktree of your own where no checkout holds the target, never a checkout another merger uses; only the holder of the main checkout commits `.jarl/`.',
     o.committed
       ? 'The loop is committed: if you hold the main checkout, commit `.jarl/` before each merge and again after each landing, even one in another repository. If you do not, you never commit `.jarl/`.'
       : 'The loop is out of git: you never commit `.jarl/`, and a diff that touches it is reported, not merged, since a merge would overwrite the ignored loop.',
@@ -607,13 +610,14 @@ function renderMerger(o, out) {
   section(out, 'You do not', o.doNot.map((d) => `- ${d}`));
   section(out, 'Each branch, serially', [
     '1. Read the scope and the diff. A branch without a fresh reviewer\'s approve waits; report it.',
-    `2. Merge into ${target}, in your own worktree: git, then the settings the merge-driver command prints, on every merge, then \`merge --no-ff\` and the branch. Where the repository has .yggdrasil/, add \`--yg "<command>"\` to the merge-driver call and run \`yg log merge-resolve\` right after.`,
+    `2. Merge into ${target}, in that checkout: git, then the settings the merge-driver command prints, on every merge, then \`merge --no-ff\` and the branch. Where the repository has .yggdrasil/, add \`--yg "<command>"\` to the merge-driver call and run \`yg log merge-resolve\` right after; if it changed lock files, \`git add\` them and \`git commit --amend --no-edit\`.`,
     '3. A conflict the drivers stopped on: `git merge --abort` and report. Any other: resolve only when one side is plainly a superset or the hunks are independent, else abort and report the files.',
-    '4. Branches sharing no file may be merged one after another and checked once as a batch; never batch two that touch one file.',
+    '4. Branches sharing no file may go as one batch, checked once; never batch two that touch one file.',
     '5. Run the repository\'s check on the merged result, in the foreground, with your tool\'s own timeout set; report only after it has finished.',
     '6. Green: the green-merge command for the issues on the branch, close each issue, then `show` it and confirm it reads done. `NO PROOF FROM THE WORKER`: done waits for the worker\'s row. `MERGE WITHOUT THE BRANCH` or `WITHOUT THE BASE`: merge and check again. `APPROVED ON ANOTHER TIP`: report the two tips.',
     '7. Changelog entries, once the batch is green: paste them under `[Unreleased]`, edited into the repository\'s register, committed as that file alone.',
-    '8. An issue worked in place brings no branch, and none of these steps apply: once its approve stands, commit its declared files, a commit of their own between two merges, record the commit as a row with the in-place command, then close it.',
+    '8. Push nothing unless a goal line or a ruling grants the branch; then push it after a green merge. A worker\'s branch is never pushed.',
+    '9. An issue worked in place brings no branch: once its approve stands, commit its declared files as a commit of their own between two merges, record it with the in-place command, then close it.',
   ]);
   section(out, 'A red check', [
     'Roll back with `git reset --keep ORIG_HEAD`, never `--hard`, which throws away what others wrote meanwhile. Then one of three cases:',

@@ -275,7 +275,12 @@ export function gateOf(loop, id) {
   // on the branch, seen by the tip the verdict was given on differing from the tip now. While it stands, no approve clears the
   // issue: an approve after it counts only once it was given on a later commit, whatever reviewer gives it. A pause and a
   // resume spend no changes verdict, so its reach is read from the window a pause does not open.
-  const changesSpent = lastChanges === null || lastChanges.n <= firm.cut;
+  // An issue closed before the line a conversion ends with closed under an earlier gate, which took an approve after a
+  // changes verdict: that approve stands, so the record says who cleared it.
+  const convertedAt = loop.events?.findLast((e) => e.type === 'converted')?.n ?? -1;
+  const lastMove = events.findLast((e) => e.type === 'move');
+  const closedBeforeConversion = issue !== null && lastMove !== undefined && lastMove.n < convertedAt && profile.is(lastMove.to, 'closes-record');
+  const changesSpent = closedBeforeConversion || lastChanges === null || lastChanges.n <= firm.cut;
   const committedSince = (r) => r.tip !== undefined && lastChanges.tip !== undefined && r.tip !== lastChanges.tip;
   const standingChanges = lastChanges && !changesSpent && !(lastChanges.tip !== undefined && now() !== null && lastChanges.tip !== now()) ? lastChanges : null;
   // Under a reviewer rule that judges the model of an approve, the owner's live waiver is the one that clears the issue,
@@ -454,6 +459,12 @@ export function inFlightMark(loop, issue) {
 
 // Whether a round sent the work back and the worker has recorded no row since: the issue is the worker's again, though its
 // mark still reads rows and no verdict.
+// Whether a round came after the issue's last lease: what sends a lease with no row owed back, as rows do not tell.
+export function roundSinceLease(loop, issue) {
+  const events = loop.eventsById.get(issue.id) || [];
+  const lease = events.filter((e) => e.type === 'move' && loop.profile.is(e.to, 'holds-claim')).reduce((n, e) => Math.max(n, e.n), -1);
+  return events.some((e) => e.type === 'round' && e.n > lease);
+}
 export function sentBack(loop, issue, mark) {
   const lastRound = (loop.eventsById.get(issue.id) || []).filter((e) => e.type === 'round').reduce((n, e) => Math.max(n, e.n), -1);
   const rowsAfterRound = gateOf(loop, issue.id).rowLog.filter((r) => !r.retracted && r.inWindow && r.n > lastRound).length;

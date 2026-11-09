@@ -30,7 +30,7 @@
 //   long sees git as it is now. The profile is the one thing kept: it is re-read whenever .jarl/profile.json changes
 //   its modification time or size, so a rewrite that keeps both is not seen until one of them changes.
 // - recordMerged keeps `pending` as the CI state of a merge recorded with a sha and no ci, and never removes a worktree or
-//   a branch; the command line records no CI state unless it is given, and does that cleanup (see references/merger.md).
+//   a branch; the command line records no CI state unless it is given, and does that cleanup (see references/commands.md, "The cleanup a merge makes redundant").
 // Zero dependencies, Node 22+.
 import { resolve } from 'node:path';
 import * as L from './jarl-lib.mjs';

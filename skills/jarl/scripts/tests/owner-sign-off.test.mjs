@@ -109,7 +109,7 @@ test('tick takes the owner\'s word on an owner line whose material is there, onc
   assert.match(refuses(root, 'tick', '1', '1', '--by', 'owner'), /acceptance line 1 of 1 is not marked as one only the owner ticks; its owner lines: 2/);
   assert.match(refuses(root, 'tick', '1', '3', '--by', 'owner'), /1 has 2 acceptance lines: there is no line 3; its owner lines: 2/);
   assert.match(refuses(root, 'tick', '2', '1', '--by', 'owner'), /2 has no acceptance line marked as one only the owner ticks/);
-  assert.match(refuses(root, 'tick', '1', '2', '--by', 'owner'), /the material of acceptance line 2 of 1 is not there yet: no proof of the work is recorded after it was started or last sent back.*nothing was written/s);
+  assert.match(refuses(root, 'tick', '1', '2', '--by', 'owner'), /the material of acceptance line 2 of 1 is not there yet: renders\/cut\.txt is not found.*nothing was written/s);
   jarl(root, 'evidence', '1', '--line', '1', '--ran', 'render the cut', '--saw', 'written');
   assert.match(refuses(root, 'tick', '1', '2', '--by', 'owner'), /the material of acceptance line 2 of 1 is not there yet: renders\/cut\.txt is not found/);
   produce(root);
@@ -195,7 +195,7 @@ test('next --as puts an owner line on whoever produces its material, then on the
   // No proof yet: the worker produces the material.
   assert.deepEqual(onJarl().map((r) => [r.id, r.line, r.doer]), [['1', 2, 'w1']]);
   assert.deepEqual(onOwner(), []);
-  assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- 1 cut the film: acceptance line 2 is the owner's to tick once its material is there \(renders\/cut\.txt\); no proof of the work is recorded after it was started or last sent back \(worker w1\) — jarl\.mjs evidence 1 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by w1 · holds up 2$/m);
+  assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- 1 cut the film: acceptance line 2 is the owner's to tick once its material is there \(renders\/cut\.txt\); renders\/cut\.txt is not found under the loop's root/m);
   // Proof, and the file is not there: still the producer's.
   proveAndApprove(root);
   assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- 1 cut the film: acceptance line 2 is the owner's to tick once its material is there \(renders\/cut\.txt\); renders\/cut\.txt is not found under the loop's root, the issue's repositories or its worktree \(worker w1\) — /m);
@@ -245,3 +245,9 @@ test('resume, status and review name the owner\'s tick as the step before done w
   assert.match(jarl(root, 'resume'), /^ {2}→ approved, and it carries no code, so no merge waits — next set it done$/m);
 });
 
+test('an issue whose lines are all the owner\'s or read needs no row before his tick: the tick is his proof', () => {
+  const root = makeLoop({ prefix: 'jarl-owner-only-', via: 'cli', dotGit: false });
+  jarl(root, 'new', 'look at it', '--why', 'w', '--acceptance', '[owner] the screen reads well · material: the render · check: does it read at a glance');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--model', 'm-x');
+  assert.match(jarl(root, 'tick', '1', '1', '--by', 'owner'), /tick|ticked/i);
+});

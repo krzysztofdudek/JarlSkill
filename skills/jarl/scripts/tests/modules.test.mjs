@@ -16,7 +16,7 @@ const SOURCES = Object.fromEntries(MODULES.map((f) => [f, readFileSync(new URL(f
 const LAYERS = [
   ['ground', ['base.mjs', 'git.mjs', 'where.mjs', 'files.mjs', 'ids.mjs', 'owner.mjs'],
     'the vocabulary, a process, a path, a whole file, an id and the one test of the owner\'s words every write passes: nothing else of the record'],
-  ['record', ['profile.mjs', 'journal.mjs', 'loop-git.mjs', 'lock.mjs', 'log.mjs', 'issues.mjs', 'repositories.mjs', 'loop.mjs', 'disagreements.mjs', 'slices.mjs', 'gate.mjs', 'metrics.mjs', 'models.mjs', 'rounds.mjs', 'attachments.mjs', 'tips.mjs', 'rules.mjs'],
+  ['record', ['line-read.mjs', 'profile.mjs', 'journal.mjs', 'loop-git.mjs', 'lock.mjs', 'log.mjs', 'issues.mjs', 'repositories.mjs', 'loop.mjs', 'disagreements.mjs', 'slices.mjs', 'gate.mjs', 'metrics.mjs', 'models.mjs', 'rounds.mjs', 'attachments.mjs', 'tips.mjs', 'rules.mjs'],
     'the record read and written: the profile, the journal, the lock, the log, an issue, the repositories, the loaded loop and what is derived from it'],
   ['commands', ['owner-lines.mjs', 'lines.mjs', 'shared.mjs', 'init.mjs', 'numbers.mjs', 'after.mjs', 'body.mjs', 'new.mjs', 'list.mjs', 'leases.mjs', 'tags.mjs', 'setters.mjs', 'split.mjs', 'field.mjs', 'set.mjs', 'done-gate.mjs', 'merged.mjs', 'cleanup.mjs', 'questions.mjs', 'evidence.mjs', 'brief.mjs', 'queue.mjs', 'ball.mjs', 'review.mjs', 'changelog.mjs', 'import.mjs', 'resume.mjs', 'verify.mjs', 'merge-driver.mjs'],
     'the commands and the views, each standing on the record and on the commands under it'],

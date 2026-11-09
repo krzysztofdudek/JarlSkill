@@ -12,17 +12,17 @@
   "fragments": [
     {
       "name": "mcp-first",
-      "target": "../../SKILL.md",
+      "target": "../../references/family-rules.md",
       "sha256": "ed635d4cd89ef1adfd007aeeb743f4976e37b91d8fd25db7bbac28dee9f0ce0b"
     },
     {
       "name": "evidence",
-      "target": "../../SKILL.md",
+      "target": "../../references/family-rules.md",
       "sha256": "f27c64bf57fd48730a12865c51f1c95bf5bc74e46a8ca6d45e4c144ce3b26288"
     },
     {
       "name": "worker-worktree",
-      "target": "../../SKILL.md",
+      "target": "../../references/family-rules.md",
       "sha256": "c0b49ef13956153d5ece99a0ce6e1fed0a8c797dcc8fd522f0990fd70b2823dc"
     }
   ],
