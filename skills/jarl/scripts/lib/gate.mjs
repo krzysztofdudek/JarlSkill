@@ -2,12 +2,12 @@
 
 import { basename } from 'node:path';
 import { fieldText, jarlLine } from './base.mjs';
-import { jarlDir } from './where.mjs';
+import { canonical, jarlDir } from './where.mjs';
 import { idKey } from './ids.mjs';
 import { BOT_PREFIX, clearsOf, clearsWords, reviewerRule } from './profile.mjs';
 import { isParentLine, leaseOfMove } from './log.mjs';
 import { alignRows, evidenceNotes, evidenceTable, mergedOf } from './issues.mjs';
-import { baseOf, branchTip, isGitRepo, issueRepos, refsIn } from './repositories.mjs';
+import { baseOf, branchTip, isGitRepo, issueRepos, refsIn, repoFromInput } from './repositories.mjs';
 import { git } from './git.mjs';
 import { OWNER } from './owner.mjs';
 import { leaseWorkers, readLoop } from './loop.mjs';
@@ -358,15 +358,16 @@ export function gateOf(loop, id) {
       return { counts: false, last, why: inWindow(last) ? 'tip' : 'window', tipNow: now() };
     },
     // An issue that names several repositories has a merge per repository: those where its branch has work its target lacks
-    // and no counted merge commit is known. An issue of one repository is read by its merge alone.
+    // and no counted merge names or holds. An issue of one repository is read by its merge alone.
     unlandedRepos: () => {
       const branch = issue ? fieldText(issue.fields.branch) : '';
       const repos = branch && loop.root ? issueRepos(loop.root, issue).filter(isGitRepo) : [];
       if (repos.length < 2) return [];
       const m = sliceMerger(loop.goalLines, issue);
-      const landed = merges.filter(counts).map((x) => x.sha);
+      const landed = merges.filter(counts);
+      const named = (x, r) => { if (!x.repo) return false; try { return canonical(repoFromInput(loop.root, x.repo).main) === r; } catch { return false; } };
       return repos.filter((r) => {
-        if (!refsIn(r).has(branch) || landed.some((sha) => git(r, ['cat-file', '-e', `${sha}^{commit}`]) !== null)) return false;
+        if (!refsIn(r).has(branch) || landed.some((x) => named(x, r) || git(r, ['cat-file', '-e', `${x.sha}^{commit}`]) !== null)) return false;
         const target = m && refsIn(r).has(integrationBranch(m.slice)) ? integrationBranch(m.slice) : baseOf(loop.root, r);
         return Number(git(r, ['rev-list', '--count', `${target}..${branch}`]) || 0) > 0;
       });
