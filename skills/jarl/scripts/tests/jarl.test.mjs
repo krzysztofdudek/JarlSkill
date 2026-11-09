@@ -919,7 +919,7 @@ test('a value flag takes the next argument whatever it starts with; -- ends the 
   // it is a flag, which goes before the --, and the form puts it there.
   const after = refuses(root, 'evidence', '1', '--', 'x');
   assert.match(after, /unexpected: "--root" "[^"]+"; "--root" is a flag, which goes before the bare --\n/);
-  assert.ok(after.trim().split('\n').at(-1).startsWith('jarl.mjs evidence --root '), after);
+  assert.ok(after.trim().split('\n').at(-1).startsWith('jarl.mjs evidence --by "<who>" --root '), after);
   assert.ok(after.trim().split('\n').at(-1).endsWith(" -- \"<ids>\" \"<text>\""), after);
   assert.match(refuses(root, 'set', '1', '2', 'done', 'why'), /set takes at most 3 arguments — unexpected: "why".*12,13/s);
   const shown = jarl(root, 'show', '1');
@@ -1630,7 +1630,7 @@ test('a committed loop names the loop files git has not committed in status, han
   // Filed by the library: the issue's key raises the loop to the format that holds it, so the profile file is written too.
   (await import(new URL('../record.mjs', import.meta.url).href)).newIssue(root, 'one');
   assert.match(jarl(root, 'status'), /^2 loop file\(s\) not committed — commit \.jarl\/ in the loop's repository$/m);
-  assert.match(jarl(root, 'resume'), /^## Loop files not committed \(3\) — commit \.jarl\/\n- \.jarl\/issues\/001-one\.md\n- \.jarl\/log\.md\n- \.jarl\/profile\.json$/m);
+  assert.match(jarl(root, 'resume'), /^## Loop files not committed \(2\) — commit \.jarl\/\n- \.jarl\/issues\/001-one\.md\n- \.jarl\/log\.md$/m);
   jarl(root, 'set', '1', 'dropped', 'no');
   assert.match(jarl(root, 'close'), /closed as a permanent record · 3 loop file\(s\) not committed — commit \.jarl\//);
   sh('git add -A && git commit -qm record');

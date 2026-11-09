@@ -179,7 +179,7 @@ test('status flags a code issue closed on a merge from before its reopen, naming
   proved();
   // Closed past the gate, as a hand edit or another tool can: the move line and the file's status.
   const log = join(root, '.jarl', 'log.md');
-  const stamp = [...readFileSync(log, 'utf8').matchAll(/^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) · /gm)].pop()[1];
+  const stamp = [...readFileSync(log, 'utf8').matchAll(/^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2})(?: key \S+)? by [^·]+ · /gm)].pop()[1];
   writeFileSync(log, `${readFileSync(log, 'utf8')}- ${stamp} key 20260101T0000-tstk by a-writer · 1 → done · closed by hand\n`);
   const file = join(root, '.jarl', 'issues', readdirSync(join(root, '.jarl', 'issues')).find((f) => f.startsWith('1-')));
   writeFileSync(file, readFileSync(file, 'utf8').replace(/^\*\*Status:\*\* .*$/m, '**Status:** done'));

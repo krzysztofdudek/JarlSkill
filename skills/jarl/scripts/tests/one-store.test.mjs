@@ -186,8 +186,8 @@ test('a Merged header written by hand does not satisfy a done gate that wants a 
 test('the views of a loop moved only through the tool read the same as the header they replace', () => {
   const root = makeLoop();
   // tier light: the tier is written after.
-  fileThreeDigits(root, 'one', { acceptance: 'a' });
-  fileThreeDigits(root, 'two', { acceptance: 'a' });
+  fileThreeDigits(root, 'one', { acceptance: '[read] a' });
+  fileThreeDigits(root, 'two', { acceptance: '[read] a' });
   fileThreeDigits(root, 'three');
   jarl(root, 'field', '1-3', 'Tier', 'light');
   jarl(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-a', '--worker', 'w1', '--model', 'm1');
@@ -468,10 +468,10 @@ test('a reason is never searched for lease fields: reasons that open with a fiel
   ];
   for (const c of cases) {
     const { id } = R.newIssue(root, `reason ${c.reason}`, { acceptance: '[read] it works' });
-    jarl(root, 'set', id, 'in-progress', c.reason, ...c.flags);
+    jarl(root, 'set', id, 'in-progress', c.reason, ...(c.flags.includes('--worker') ? [] : ['--worker', 'w-named']), ...c.flags);
     const state = foldOf(R.jarlDir(root), R.loadProfile(root), id);
     assert.equal(state.branch, c.want.branch, `${c.reason}: branch`);
-    assert.equal(state.worker, c.want.worker, `${c.reason}: worker`);
+    assert.equal(state.worker, c.want.worker ?? 'w-named', `${c.reason}: worker`);
     if (c.want.model) assert.equal(state.model, c.want.model);
     assert.deepEqual(state, headerOf(issueFile(root, id)), `${c.reason}: the fold equals the header`);
   }
@@ -524,7 +524,7 @@ for (const flag of ['worker', 'model', 'branch']) {
       const logBefore = logLinesOf(root).length;
       const fileBefore = readFileSync(issueFile(root, id), 'utf8');
       let wrote = true;
-      try { R.setStatus(root, id, 'in-progress', 'taking it', { [flag]: value }); } catch { wrote = false; }
+      try { R.setStatus(root, id, 'in-progress', 'taking it', { worker: 'w-named', [flag]: value }); } catch { wrote = false; }
       if (wrote) {
         accepted += 1;
         const state = foldOf(dir, profile, id);
@@ -591,10 +591,10 @@ test('a reason over the alphabet of separators, spaces and field names never rea
   for (const why of texts) {
     for (const flags of [{}, { branch: 'jarl/1-a', worker: 'w1', model: 'm1' }]) {
       const { id } = R.newIssue(root, 'reason', { acceptance: '[read] it works' });
-      R.setStatus(root, id, 'in-progress', why, flags);
+      R.setStatus(root, id, 'in-progress', why, { worker: 'w-named', ...flags });
       const move = L.loopEvents(dir, profile).filter((e) => e.id === id && e.type === 'move').pop();
       const state = foldOf(dir, profile, id);
-      assert.deepEqual([state.branch, state.worker, state.model], [flags.branch ?? null, flags.worker ?? null, flags.model ?? null], `${JSON.stringify(why)} ${JSON.stringify(flags)}`);
+      assert.deepEqual([state.branch, state.worker, state.model], [flags.branch ?? null, flags.worker ?? 'w-named', flags.model ?? null], `${JSON.stringify(why)} ${JSON.stringify(flags)}`);
       assert.equal(L.leaseOfMove(move.text, id, 'in-progress').reason, reasonModuloReplacement(why), `${JSON.stringify(why)}: the reason reads back`);
     }
   }

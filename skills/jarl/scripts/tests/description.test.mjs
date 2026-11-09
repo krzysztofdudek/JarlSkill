@@ -150,11 +150,11 @@ test('field logs each section it replaces by the first line and the length of wh
   for (const [part, value] of [['What', 'new what'], ['Why', 'new\nwhy'], ['Acceptance', '[read] line a\n[read] line b'], ['Design', 'new design'], ['Changelog', 'Fixed: new entry']]) jarl(root, 'field', '1', part, value, '--by', 'w-two');
   const lines = logLines(root).filter((l) => l.startsWith('1 body · '));
   assert.deepEqual(lines, [
-    '1 body · what · was "old what" (8 characters) · by test-writer · by w-two',
+    '1 body · what · was "old what" (8 characters) · by w-two',
     '1 body · why · was "old why" (7 characters) · by w-two',
-    '1 body · acceptance · was "[read] old line" · by test-writer · by w-two',
-    '1 body · Design · was "old design" (10 characters) · by test-writer · by w-two',
-    '1 body · changelog · was "- Fixed: old entry" (18 characters) · by test-writer · by w-two',
+    '1 body · acceptance · was "[read] old line" · by w-two',
+    '1 body · Design · was "old design" (10 characters) · by w-two',
+    '1 body · changelog · was "- Fixed: old entry" (18 characters) · by w-two',
   ]);
   jarl(root, 'field', '1', 'Why', 'third why');
   assert.equal(lastLine(root), '1 body · why · was "new" (7 characters) · by test-writer', 'a section is kept by its first line and its length');
@@ -192,7 +192,7 @@ test('field --add adds to a section after what it holds, and logs the line a rep
   assert.equal(lastLine(root), '2 body · what · was (none) · by test-writer');
   assert.match(refuses(root, 'field', '1', 'Title', 'x', '--add'), /Title holds one value, so it is replaced, never added to or taken from/, 'the title is replaced, never appended to');
   assert.match(refuses(root, 'field', '1', 'Where', 'x', '--add'), /Where holds one value/);
-  assert.match(refuses(root, 'field', '1', 'Why', '', '--add'), /^field Why needs a value, or --clear to empty it\njarl\.mjs field "<ids>" Why "<text>" --add\n$/);
+  assert.match(refuses(root, 'field', '1', 'Why', '', '--add'), /^field Why needs a value, or --clear to empty it\njarl\.mjs field "<ids>" Why "<text>" --add --by "<who>"\n$/);
   jarl(root, 'field', '1', 'What', 'replaced');
   assert.equal(R.findIssue(root, '1').sections.what.trim(), 'replaced', 'without --add a section is replaced');
 });

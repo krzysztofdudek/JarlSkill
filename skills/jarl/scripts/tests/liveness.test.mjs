@@ -63,7 +63,7 @@ test('a row resets the age, and a proof that waits past the threshold for its ve
   });
   at(56, () => {
     assert.match(R.statusData(root).stale[0].problems[0], /^idle 31m \(threshold 30m\): last log line 31m ago, last row 31m ago, no branch/);
-    assert.match(nextAs(root, 'jarl'), /^- 001 one: proof recorded, no verdict for 31m \(threshold 30m\); raise a reviewer \(worker w1\) — jarl\.mjs review 001 "<verdict>" --by "<reviewer>" --model "<model-id>" "<text>" --model "<model-id>"$/m);
+    assert.match(nextAs(root, 'jarl'), /^- 001 one: proof recorded, no verdict for 31m \(threshold 30m\); raise a reviewer \(worker w1\) — jarl\.mjs review 001 "<verdict>" --by "<reviewer>" --model "<model-id>" "<text>"$/m);
   });
 });
 

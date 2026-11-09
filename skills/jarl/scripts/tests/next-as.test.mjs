@@ -301,7 +301,7 @@ test('a promise is on whoever its Found by names until it is kept and closed, an
   assert.match(jarl(root, 'next', '--as', 'ada'), /^On Ada \(1\)\n- 4 send the summary to the jarl: promised by Ada; keep it, then record what was done — /);
   // Kept: the proof waits for a verdict, then the close, and the promise stays on its maker throughout.
   jarl(root, 'evidence', '4', '--ran', 'sent the summary', '--saw', 'the jarl has it');
-  assert.match(jarl(root, 'next', '--as', 'Ada'), /^- 4 send the summary to the jarl: kept, proof recorded, no verdict; review it — jarl\.mjs review 4 "<verdict>" --by "<reviewer>" --model "<model-id>" "<text>" --model "<model-id>"$/m);
+  assert.match(jarl(root, 'next', '--as', 'Ada'), /^- 4 send the summary to the jarl: kept, proof recorded, no verdict; review it — jarl\.mjs review 4 "<verdict>" --by "<reviewer>" --model "<model-id>" "<text>"$/m);
   jarl(root, 'review', '4', 'approve', '--by', 'jarl', FINDINGS);
   assert.match(jarl(root, 'next', '--as', 'Ada'), /^- 4 send the summary to the jarl: kept, approved; close it — jarl\.mjs set 4 done "<text>"$/m);
   jarl(root, 'set', '4', 'done', 'the summary was sent');
@@ -345,7 +345,7 @@ test('a wait is on its named outside person, with when to check, and what comes 
   // It came: the proof is recorded, and the wait leaves the person for the jarl, who reviews and closes it.
   jarl(root, 'evidence', '1', '--ran', 'asked Dana for the key', '--saw', 'the key arrived by mail');
   assert.equal(json(root, 'next', '--as', 'Dana Smith').total, 0);
-  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1 the licence key from the vendor: it came, proof recorded, no verdict; review it — jarl\.mjs review 1 "<verdict>" --by "<reviewer>" --model "<model-id>" "<text>" · holds up 2 --model "<model-id>"$/m);
+  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1 the licence key from the vendor: it came, proof recorded, no verdict; review it — jarl\.mjs review 1 "<verdict>" --by "<reviewer>" --model "<model-id>" "<text>" · holds up 2$/m);
   jarl(root, 'review', '1', 'approve', '--by', 'jarl', FINDINGS);
   assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1 the licence key from the vendor: it came, approved; close it — jarl\.mjs set 1 done "<text>" · holds up 2$/m);
   jarl(root, 'set', '1', 'done', 'the key came');

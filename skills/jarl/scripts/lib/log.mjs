@@ -6,7 +6,7 @@ import { CI_STATES, REVIEWER_KIND_SRC, fieldText, hole, jarlLine, need } from '.
 import { needNoOwnersWords } from './owner.mjs';
 import { jarlDir, plainRelative } from './where.mjs';
 import { readText } from './files.mjs';
-import { ISSUE_FILE_RE, KEY_SRC, idRe, issueForms, writtenId } from './ids.mjs';
+import { ISSUE_FILE_RE, KEY_SRC, idKey, idRe, issueForms, writtenId } from './ids.mjs';
 import { PARENT_FIELD, SLOT_NAME_RE, loadProfile } from './profile.mjs';
 import { STAMP_SRC, TIP_MARK, UNRECORDED, appendLog, headerKey, logPath, oneLine } from './journal.mjs';
 
@@ -302,6 +302,8 @@ export function loopEvents(dir, profile, skipped, keys) {
   const forms = issueForms(dir);
   const log = readText(path);
   const keyed = keys ?? issueKeysAt(dir);
+  // The numbers whose file carries a key: a line that carries state about one of them names that key.
+  const carriesKey = new Set([...keyed.values()].map(idKey));
   log.split('\n').forEach((l, n) => {
     const m = LOG_LINE.exec(l);
     if (!m) {
@@ -320,7 +322,7 @@ export function loopEvents(dir, profile, skipped, keys) {
     // A tip counts only with the tip mark: a line of its text without it is a note, whoever wrote it.
     const unmarked = parsed.type === 'tip' && mark === null;
     // A line that carries state about an issue names the issue's key: one that does not is of an older shape, and is no state.
-    const unkeyed = key === null && written !== null && parsed.type !== 'other';
+    const unkeyed = key === null && written !== null && parsed.type !== 'other' && carriesKey.has(idKey(written));
     const body = unmarked || unkeyed ? { type: 'other' } : parsed;
     if (skipped && unkeyed) skipped.push({ n: n + 1, text: l, reason: 'a line about an issue that names no key: a line about an issue is "- yyyy-mm-dd hh:mm key <key> by <who> · <text>", and this one is read as a note' });
     if (skipped && unmarked) skipped.push({ n: n + 1, text: l, reason: 'a tip line without the tip mark before the separator: only the write of a row, a verdict, a merge or a close writes a tip, so this line is the tip of nothing' });

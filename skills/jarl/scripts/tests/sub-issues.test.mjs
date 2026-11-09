@@ -85,7 +85,7 @@ test('field Parent names the parent of an issue, a sub-issue has sub-issues of i
   assert.match(textOf(root, '2'), /^\*\*Parent:\*\* 001$/m);
   assert.match(textOf(root, '3'), /^\*\*Parent:\*\* 002$/m);
   assert.deepEqual(json(root, 'list').map((i) => [i.id, i.parent]), [['001', null], ['002', '001'], ['003', '002']]);
-  assert.match(logText(root), /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · 002 field Parent · 001 · was \(none\)$/m);
+  assert.match(logText(root), /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} key \S+ by test-writer · 002 field Parent · 001 · was \(none\) · by test-writer$/m);
   // Cleared, the issue has no parent, and the loop stays in the format it was raised to.
   jarl(root, 'field', '3', 'Parent', '--clear');
   assert.equal(json(root, 'show', '3').parent, null);
@@ -182,7 +182,7 @@ test('a split moves each acceptance line to a named issue or keeps it on the par
   assert.equal(json(root, 'show', '3').sections.acceptance.trim(), '- [read] json is valid\n- [read] it writes json', 'a moved line follows the lines the issue holds');
   assert.deepEqual(['2', '3'].map((id) => json(root, 'show', id).parent), ['1', '1']);
   const log = logText(root);
-  assert.match(log, /^- \S+ \S+ key \S+ · 2 field Parent · 1 · was \(none\) · by odin$/m);
+  assert.match(log, /^- \S+ \S+ key \S+ by odin · 2 field Parent · 1 · was \(none\) · by odin$/m);
   assert.match(log, /^- \S+ \S+ key \S+ · 1 body · acceptance · was "- \[read\] it writes csv.*" · by odin$/m);
   assert.match(log, /^- \S+ \S+ key \S+ · 3 body · acceptance · was "\[read\] json is valid" · by odin$/m);
   // A sub-issue can be split in turn: the tree goes deeper, and the ids stay flat numbers.
@@ -243,7 +243,7 @@ test('a parent whose sub-issues are all closed holds the ball on its coordinator
   assert.match(jarl(root, 'resume'), /^## Parents whose sub-issues are closed \(1\)\n- 1 the export · sub-issues 2 done, 3 done\n {2}→ odin checks its own acceptance against the whole and records the check$/m);
   assert.match(refuses(root, 'set', '1', 'done', 'finished'), /^1 has no approving review newer than its last round or reopen, nor one since its last sub-issue, 3, closed/m);
   jarl(root, 'evidence', '1', '--line', '1', '--ran', 'run the export end to end', '--saw', 'csv and json written, the docs name both');
-  assert.match(odin(), /^- 1 the export: checked against the whole, no verdict; raise a reviewer — jarl\.mjs review 1 "<verdict>" --by "<reviewer>" --model "<model-id>" "<text>" --model "<model-id>"$/m);
+  assert.match(odin(), /^- 1 the export: checked against the whole, no verdict; raise a reviewer — jarl\.mjs review 1 "<verdict>" --by "<reviewer>" --model "<model-id>" "<text>"$/m);
   assert.match(refuses(root, 'set', '1', 'done', 'finished'), /^1 has no approving review newer than its last round or reopen, nor one since its last sub-issue, 3, closed/m, 'the approve from before the whole does not count');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 1 the export: approved; close it — jarl\.mjs set 1 done "<text>"$/m);

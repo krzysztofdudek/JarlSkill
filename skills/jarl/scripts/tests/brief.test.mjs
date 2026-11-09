@@ -598,7 +598,7 @@ test('the review lines and Reviews entries the oracle writes are the ones the re
     { verdict: 'changes', by: 'w1', kind: 'self', model: 'test-model', text: 'Important: the worker found it.' },
     { verdict: 'changes', by: 'botty', kind: 'bot', text: 'Important: the bot found it.' },
     { verdict: 'changes', by: 'rev1', kind: 'fresh', model: 'model-b', relayed: true, batch: batches[6], artifact: 'renders/home page.png', text: 'Important: the count is off again.\nMinor: the second line.' },
-    { verdict: 'changes', by: 'rev4', kind: 'fresh', text: 'model big-model was asked. Important: the count is off.' },
+    { verdict: 'changes', by: 'rev4', kind: 'fresh', model: 'test-model', text: 'model big-model was asked. Important: the count is off.' },
   ].map((r) => ({ day, ...r }));
   assert.ok(batches[1] && batches[6], 'both verdicts on two issues carry a batch');
   assert.deepEqual(lines, reviews.map((r, k) => reviewLine('1', key, r, at(lines[k]))));
@@ -824,7 +824,7 @@ test('brief --slice <coordinator> is the coordinator\'s: its issues in play, its
   assert.deepEqual(slugs(json(root, 'brief', '--slice', 'FRIGG')).filter((s) => !s.startsWith('jarl:')), ['loop-rule', 'coordinators', 'frigg-only'], 'a slice is named in any case');
   const text = jarl(root, 'brief', '--slice', 'odin');
   assert.match(text, /^The coordinator's brief for the slice odin \(slice:odin\), assembled from the record; it writes nothing\.\n\n## The issues of the slice in play \(1\)\n- 1 open · odin ui\n/);
-  assert.match(text, /\n## Rules for the coordinator of the slice odin \(7\)\n/);
+  assert.match(text, /\n## Rules for the coordinator of the slice odin \(6\)\n/);
   assert.match(text, /\n## The role\nreferences\/jarl\.md, section "Coordinators: slices of the backlog"/);
   assert.match(text, /\n## Recording the result\n- what is on the coordinator now, each line with the command that moves it: jarl\.mjs next --as odin\n- an escalation to the jarl, for one of the four reasons: jarl\.mjs ask "<text>" --kind escalation --slice odin --by odin$/);
   assert.doesNotMatch(text, /## Rounds so far|## Proof rows/);

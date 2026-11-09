@@ -143,7 +143,7 @@ test('the commands that wrote one part each are refused with the reason, then on
   assert.equal(issue(root, '1').priority, '2', 'a refused call writes nothing');
   const tool = mcp.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'jarl_prio', arguments: { root } } });
   // Its form carries the root the tool call gave, so filled it reaches the loop the call named.
-  assert.equal(posixForms(tool.error.message), `Unknown tool: jarl_prio — prio is not a command; the priority is a field\njarl.mjs field "<ids>" Priority "<prio>" --by "<who>" ${L.shellWord(`--root=${root}`)}`);
+  assert.equal(posixForms(tool.error.message), `Unknown tool: jarl_prio — prio is not a command; the priority is a field\njarl.mjs field "<ids>" Priority "<prio>" --by "<who>" --by "<who>" --by "<who>" ${L.shellWord(`--root=${root}`)}`);
 });
 
 test('set takes statuses only: a field given to it is refused with the field call that writes it', () => {

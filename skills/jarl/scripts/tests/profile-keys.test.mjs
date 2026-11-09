@@ -60,7 +60,7 @@ function composedLoop(profile = COMPOSER) {
 
 // ---- the schema ----
 
-test('set-by, external-scheduler and done-gate are checked with every other problem', () => {
+test('set-by and done-gate are checked with every other problem', () => {
   const e = reason(() => R.validateProfile({
     'jarl-profile': 1,
     statuses: { open: { flags: ['dispatchable'], 'set-by': 'nobody' }, run: { flags: ['holds-claim'], who: 1 }, done: ['terminal', 'settles-dependents', 'closes-record'] },
@@ -68,7 +68,6 @@ test('set-by, external-scheduler and done-gate are checked with every other prob
   }, 'p'));
   assert.match(e, /status "open": "set-by" is one of any, record/);
   assert.match(e, /status "run": unknown key "who"/);
-  assert.match(e, /"external-scheduler" is the one-line command/);
   assert.match(e, /"done-gate": unknown key "extra"/);
   assert.match(e, /"approve": "none" is allowed only with "requires-merged": true/);
   assert.match(reason(() => R.validateProfile({ ...COMPOSER, 'done-gate': { approve: 'none', 'requires-merged': false } })), /allowed only with "requires-merged": true/);
@@ -89,11 +88,9 @@ test('profile describes the new keys, as JSON and as text', () => {
   const { root } = composedLoop();
   const d = json(root, 'profile');
   assert.deepEqual(d.statuses.filter((s) => s.setBy).map((s) => s.name), ['proposed', 'queued', 'merged']);
-  assert.equal(d.externalScheduler, 'composer-x.mjs tick');
   assert.deepEqual(d.doneGate, { approve: 'none', 'requires-merged': true });
   const t = jarl(root, 'profile');
   assert.match(t, /queued {2}dispatchable {2}\(set by the record only, never jarl set\)/);
-  assert.match(t, /external scheduler: composer-x\.mjs tick/);
   assert.match(t, /done gate: approve none · requires a merge in the base/);
 });
 
@@ -104,9 +101,9 @@ test('set-by record: jarl set and the MCP tools cannot move an issue into it; a 
   jarl(root, 'new', 'an issue', '--acceptance', '[read] it works');
   const path = R.findIssue(root, '1').file;
   const before = readFileSync(path, 'utf8');
-  assert.match(refuses(root, 'set', '1', 'queued'), /queued is set by the record only — this loop's profile \(composer-x\) marks it "set-by": "record".*\(composer-x\.mjs tick\)/);
+  assert.match(refuses(root, 'set', '1', 'queued'), /queued is set by the record only — this loop's profile \(composer-x\) marks it "set-by": "record"/);
   // The MCP tools run through dispatch as the command line does: jarl_set is refused the same way.
-  assert.throws(() => CLI.dispatch(root, 'set', ['1', 'queued'], {}), /queued is set by the record only/);
+  assert.throws(() => CLI.dispatch(root, 'set', ['1', 'queued'], { by: 'jarl' }), /queued is set by the record only/);
   assert.throws(() => R.setStatus(root, '1', 'queued', undefined, { caller: 'cli' }), /set by the record only/);
   assert.equal(readFileSync(path, 'utf8'), before, 'a refusal writes nothing');
   // The composer, through record.mjs, moves it; the worker's claim after that is anyone's.
@@ -159,7 +156,7 @@ test('done-gate requires-merged: a composer landing into a branch nobody has che
   assert.match(reason(() => R.setStatus(root, '1', 'merged', undefined, { base: 'h1/nope' })), /the base h1\/nope is not a branch or commit/);
   // The command line has no --base, and a base handed to dispatch (as an MCP call would) is refused, not honoured.
   assert.match(refuses(root, 'set', '1', 'dropped', 'x', '--base', 'h1/team'), /unknown flag --base/);
-  assert.throws(() => CLI.dispatch(root, 'set', ['1', 'dropped', 'x'], { base: 'h1/team' }), /base is named by a library call through record\.mjs only/);
+  assert.throws(() => CLI.dispatch(root, 'set', ['1', 'dropped', 'x'], { base: 'h1/team', by: 'jarl' }), /base is named by a library call through record\.mjs only/);
   assert.equal(R.findIssue(root, '1').status, 'running', 'a refusal writes nothing');
   assert.equal(R.setStatus(root, '1', 'merged', undefined, { base: 'h1/team' }).status, 'merged');
 });
