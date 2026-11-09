@@ -16,6 +16,7 @@ import { OWNER, needNoOwnersWords, rulingAuthor } from './owner.mjs';
 import { jarlDir, stamp } from './where.mjs';
 import { appendLogLines } from './journal.mjs';
 import { acceptanceLines, evidenceRows, findIssue } from './issues.mjs';
+import { noRowOwed } from './lines.mjs';
 import { issueRepoPaths, worktreeState } from './repositories.mjs';
 import { gateOf, gateWindow, wholeOf } from './gate.mjs';
 import { readLoop } from './loop.mjs';
@@ -101,7 +102,7 @@ export function ownerLineStates(root, loop, issue) {
     const spent = live ? null : ticks.pop();
     const state = { ...l, tick: live ? { at: live.at, by: live.by } : null, spent: spent ? { at: spent.at, by: spent.by } : null, retracted: live ? null : retracted, ready: false, why: null, at: null };
     if (!whole(l)) return { ...state, why: 'the line does not name its material and what to check' };
-    if (!proven) return { ...state, why: 'no proof of the work is recorded after it was started or last sent back' };
+    if (!proven && !noRowOwed(issue)) return { ...state, why: 'no proof of the work is recorded after it was started or last sent back' };
     if (!asPath(l.material)) return { ...state, ready: true };
     places = places || placesOf(root, issue);
     const found = places.find((p) => existsSync(resolve(p, l.material)));

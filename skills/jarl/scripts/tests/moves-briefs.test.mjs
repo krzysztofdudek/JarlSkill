@@ -282,6 +282,8 @@ test('a merger\'s brief on a committed loop over five repositories, with rules o
   assert.match(text, /A long rule for the merger/, 'the rule reaches it');
   assert.match(text, /The loop is committed/);
   assert.equal(text.split('\n').filter((l) => /^Repository tool\d/.test(l)).length, 5);
+  // The cap counts the role's fixed text: the repository lines grow with the loop and are left out, as ownWords says, so a
+  // long list of repositories can read past 900 while the role's own text stays under it.
   assert.ok(own <= 825, `merger ${own} words, with room to spare under 900`);
 });
 

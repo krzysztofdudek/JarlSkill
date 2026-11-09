@@ -11,7 +11,7 @@ import { jarlDir, today } from './where.mjs';
 import { firstLine, firstLineReadings, goalLineOf, goalPath } from './journal.mjs';
 import { outOfGit } from './loop-git.mjs';
 import { acceptanceLines, evidenceNotes, evidenceTable, issueNamed, reviewEntries } from './issues.mjs';
-import { countedRowsOf, lineChanges, lineStates, linesAtFirstLease, readLine, shownRowLines, tierAtFirstLease } from './lines.mjs';
+import { countedRowsOf, lineChanges, lineStates, linesAtFirstLease, noRowOwed, readLine, shownRowLines, tierAtFirstLease } from './lines.mjs';
 import { gateOf, worksInPlace } from './gate.mjs';
 import { readLoop } from './loop.mjs';
 import { integrationBranch, sameSlice, sliceNamed, sliceOf } from './slices.mjs';
@@ -355,8 +355,7 @@ function issueData(root, loop, issue, role) {
   if (role === 'worker' && loop.profile.is(issue.status, 'terminal')) notes.push(`${issue.id} is ${issue.status}: a worker starts on it once it is reopened — ${jarlLine('set', issue.id, loop.profile.initial, hole('<why>'))}`);
   const findings = findingsOf(loop, issue, events, notes);
   // A read or owner line takes no row, so only a mechanical line can be missing one.
-  const owesRows = acceptanceLines(issue).some((l) => ['test', 'check', 'compare'].includes(readLine(l).method));
-  if (role === 'reviewer' && !proof.length && owesRows) notes.push(`${issue.id} holds no proof row: a worker's missing rows are an Important finding`);
+  if (role === 'reviewer' && !proof.length && !noRowOwed(issue)) notes.push(`${issue.id} holds no proof row: a worker's missing rows are an Important finding`);
   const data = {
     id: issue.id, title: issue.title, status: issue.status, tier: issue.tier,
     text: issueText(root, issue, role),

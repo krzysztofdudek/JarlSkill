@@ -14,7 +14,7 @@ import { outOfGit } from './loop-git.mjs';
 import { attachmentOf, journalById, rowLinesText } from './log.mjs';
 import { acceptanceLineCount, acceptanceLines, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteLogText, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, repoNames, reposWhere, tipLinesOf, whereLines, whereOf } from './repositories.mjs';
-import { approveKind, carriesCode, inFlightMark, sentBack, unmergedCode, unmergedText, gateOf, gateState, reviewSplit, waiverVoid, worksInPlace } from './gate.mjs';
+import { approveKind, carriesCode, inFlightMark, roundSinceLease, sentBack, unmergedCode, unmergedText, gateOf, gateState, reviewSplit, waiverVoid, worksInPlace } from './gate.mjs';
 import { coordinatorOf, sameSlice, sliceNamed, sliceOf, slicesOf } from './slices.mjs';
 import { disagreementText, headerReadNotes, recordDisagreements } from './disagreements.mjs';
 import { readLoop, scopedLoop } from './loop.mjs';
@@ -28,7 +28,7 @@ import { rowsOf } from './merged.mjs';
 import { waitingOn, waitsOf } from './after.mjs';
 import { handoffAge, loadAsks, promotionBatch, ratificationBatch } from './questions.mjs';
 import { ownerLineNotes, ownerLineWait } from './owner-lines.mjs';
-import { lineCounts, lineDigest, lineRowForm, lineStates, lineStateText, shownRowLines, unprovedMechanical } from './lines.mjs';
+import { lineCounts, lineDigest, lineRowForm, lineStates, lineStateText, noRowOwed, shownRowLines, unprovedMechanical } from './lines.mjs';
 
 // ---- commands: evidence ------------------------------------------------------------------------------
 
@@ -609,7 +609,19 @@ export function mergeAgainWhy(loop, issue) {
 const MODEL_REFUSED_MERGED = 'approved and merged, and done refuses its approve for its model: it waits for an approve the reviewer rule accepts';
 const mergedFor = (loop, issue) => Boolean(mergedOf(issue)) && !mergeAgainWhy(loop, issue);
 const approvedStep = (loop, issue) => { const again = mergeAgainWhy(loop, issue); return again ? `approved, and ${again} — next the merger lands it again and records the merge, then set it done` : IN_FLIGHT_MARKS.approved; };
-const inFlightStep = (loop, mark, issue) => (mark === 'approved' && worksInPlace(issue) ? APPROVED_IN_PLACE : mark === 'approved' && !carriesCode(issue) ? APPROVED_NO_CODE : mark === 'approved' ? approvedStep(loop, issue) : sentBack(loop, issue, mark) ? SENT_BACK : IN_FLIGHT_MARKS[mark]);
+// An issue that owes no row reads the same in every view: nothing asks its worker for proof.
+const NO_ROW_OWED = 'at work: no row is owed for read lines, and a fresh examiner is raised when it reports';
+const SENT_BACK_NO_ROW = 'sent back by a round, back with the worker: no row is owed for read lines';
+const CHANGES_NO_ROW = 'changes requested, back with the worker, who fixes it: no row is owed for read lines';
+const stepOf = (loop, mark, issue) => (mark === 'approved' && worksInPlace(issue) ? APPROVED_IN_PLACE : mark === 'approved' && !carriesCode(issue) ? APPROVED_NO_CODE : mark === 'approved' ? approvedStep(loop, issue) : sentBack(loop, issue, mark) ? SENT_BACK : IN_FLIGHT_MARKS[mark]);
+const inFlightStep = (loop, mark, issue) => {
+  if (noRowOwed(issue)) {
+    if (sentBack(loop, issue, mark) || (mark === 'no-rows' && roundSinceLease(loop, issue))) return SENT_BACK_NO_ROW;
+    if (mark === 'no-rows') return NO_ROW_OWED;
+    if (mark === 'changes-requested') return CHANGES_NO_ROW;
+  }
+  return stepOf(loop, mark, issue);
+};
 // The rows for the in-flight `issues` of a loop (its own issues, or the ones a view is scoped to). Where the mark ends in
 // setting the issue done and an acceptance line only the owner ticks is not ticked, next says that tick comes first. An
 // approve the done gate refuses for its model is named with what is missing, in the gate's words.

@@ -459,6 +459,12 @@ export function inFlightMark(loop, issue) {
 
 // Whether a round sent the work back and the worker has recorded no row since: the issue is the worker's again, though its
 // mark still reads rows and no verdict.
+// Whether a round came after the issue's last lease: what sends a lease with no row owed back, as rows do not tell.
+export function roundSinceLease(loop, issue) {
+  const events = loop.eventsById.get(issue.id) || [];
+  const lease = events.filter((e) => e.type === 'move' && loop.profile.is(e.to, 'holds-claim')).reduce((n, e) => Math.max(n, e.n), -1);
+  return events.some((e) => e.type === 'round' && e.n > lease);
+}
 export function sentBack(loop, issue, mark) {
   const lastRound = (loop.eventsById.get(issue.id) || []).filter((e) => e.type === 'round').reduce((n, e) => Math.max(n, e.n), -1);
   const rowsAfterRound = gateOf(loop, issue.id).rowLog.filter((r) => !r.retracted && r.inWindow && r.n > lastRound).length;

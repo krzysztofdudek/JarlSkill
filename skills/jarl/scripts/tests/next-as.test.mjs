@@ -161,11 +161,11 @@ test('resume and status say an issue a round sent back is back with its worker, 
   const inFlight = (text, id) => text.split('\n').find((l) => l.startsWith(id) || l.startsWith(`- ${id} `) || l.startsWith(`in flight ${id} `));
   jarl(root, 'round', '4', 'the empty list');
   const resume = jarl(root, 'resume');
-  assert.match(resume, /^- 4 changes asked[^\n]*\n  → sent back by a round, no new proof yet — it is back with the worker, who records new rows$/m);
+  assert.match(resume, /^- 4 changes asked[^\n]*\n  → sent back by a round, back with the worker: no row is owed for read lines$/m);
   assert.doesNotMatch(resume, /^- 4 [^\n]*\n  → [^\n]*waits for a reviewer/m, 'the line does not say it waits for a reviewer');
-  assert.match(jarl(root, 'status'), /^in flight 4 · sent back by a round, no new proof yet — it is back with the worker, who records new rows$/m);
+  assert.match(jarl(root, 'status'), /^in flight 4 · sent back by a round, back with the worker: no row is owed for read lines$/m);
   assert.match(inFlight(jarl(root, 'next', '--as', 'jarl', '--all'), '4'), /sent back by a round: no row is owed for read lines/, 'the list says what a read line owes');
-  assert.equal(json(root, 'status').inFlightRows.find((r) => r.id === '4').next, 'sent back by a round, no new proof yet — it is back with the worker, who records new rows');
+  assert.equal(json(root, 'status').inFlightRows.find((r) => r.id === '4').next, 'sent back by a round, back with the worker: no row is owed for read lines');
   assert.equal(json(root, 'resume').inFlight.find((r) => r.id === '4').mark, 'rows-no-verdict', 'the mark names the rows and no verdict since the round');
   jarl(root, 'evidence', '4', '--line', '1', '--ran', 'npm test', '--saw', 'green again');
   assert.match(jarl(root, 'resume'), /^- 4 changes asked[^\n]*\n  → evidence rows recorded, no verdict since the last start or round — it waits for a reviewer$/m);
@@ -462,4 +462,35 @@ test('a profile file given to init or to profile is refused when it declares a f
   const root = loop();
   writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify(OWN_WORDS));
   assert.match(jarl(root, 'profile'), /^kind: work \| wait$/m);
+});
+
+test('resume, status and next --as tell one state of a read-only lease: no view asks for rows', () => {
+  const root = makeLoop({ prefix: 'jarl-one-state-', via: 'cli', dotGit: false });
+  jarl(root, 'new', 'the docs', '--why', 'w', '--acceptance', '[read] the docs say so', '--files', 'a.md');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--model', 'm-x');
+  for (const view of ['resume', 'status']) {
+    assert.doesNotMatch(jarl(root, view), /no proof yet|records new rows/, view);
+    assert.match(jarl(root, view), /no row is owed for read lines/, view);
+  }
+  jarl(root, 'round', '1', 'the page is wrong');
+  for (const view of ['resume', 'status']) {
+    assert.doesNotMatch(jarl(root, view), /records new rows|no new proof yet/, view);
+    assert.match(jarl(root, view), /sent back by a round[^\n]*no row is owed for read lines/, view);
+  }
+});
+
+test('a worker raised by a director is shown a worker\'s moves only; an agent that leased its own work sees its review too', () => {
+  const root = makeLoop({ prefix: 'jarl-worker-list-', via: 'cli', dotGit: false });
+  jarl(root, 'new', 'one', '--why', 'w', '--acceptance', '[test] it works', '--files', 'a.md');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-one', '--worker', 'w7', '--model', 'm-x', '--by', 'jarl');
+  assert.match(jarl(root, 'next', '--as', 'w7'), /the worker records it/);
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'green', '--by', 'w7');
+  assert.doesNotMatch(jarl(root, 'next', '--as', 'w7'), /fresh reviewer/, 'the director raises the examiner');
+  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'green', '--by', 'rev-1');
+  jarl(root, 'review', '1', 'approve', 'read the diff and it looks right', '--by', 'rev-1', '--model', 'm-y');
+  assert.doesNotMatch(jarl(root, 'next', '--as', 'w7'), /merge it/, 'the merge is the merger\'s');
+  jarl(root, 'new', 'two', '--why', 'w', '--acceptance', '[test] it works', '--files', 'b.md');
+  jarl(root, 'set', '2', 'in-progress', 'go', '--branch', 'jarl/2-two', '--worker', 'me', '--model', 'm-x', '--by', 'me');
+  jarl(root, 'evidence', '2', '--line', '1', '--ran', 'npm test', '--saw', 'green', '--by', 'me');
+  assert.match(jarl(root, 'next', '--as', 'me'), /fresh reviewer/, 'its own lease: it holds its review too');
 });

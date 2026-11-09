@@ -18,6 +18,8 @@ import { needOwnerLine, ownerLineStates } from './owner-lines.mjs';
 export const METHODS = Object.freeze(['test', 'check', 'compare', 'read', 'owner']);
 const MECHANICAL = new Set(['test', 'check', 'compare']);
 export const METHODS_TEXT = 'test, check, compare, read or owner';
+// Whether an issue owes no row at all: its lines are read lines, judged by a verdict, and owner lines, proved by his tick.
+export const noRowOwed = (issue) => acceptanceLines(issue).every((l) => !MECHANICAL.has(readLine(l).method));
 // The form a refusal of a line ends with: the five, the placeholder of the requirement, and no value of the caller's.
 export const LINE_FORM = hole('<test-check-compare-read-or-owner-line>');
 const COMPARE_FORM = hole('<compare-line-with-by-command>');

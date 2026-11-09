@@ -151,7 +151,12 @@ test('a line for several proofs names each issue with its title and its worker',
 });
 
 test('a lone agent that asks for its own name sees that its review is due, and how to get one', () => {
-  const root = loneLoop();
+  const root = loop();
+  for (const name of ['first change', 'second change']) jarl(root, 'new', name, '--acceptance', '[test] it works', '--files', `${name[0]}.mjs`);
+  for (const id of ['1', '2']) {
+    jarl(root, 'set', id, 'in-progress', 'go', '--worker', 'me', '--branch', `jarl/${id}`, '--by', 'me');
+    jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'green', '--by', 'me');
+  }
   const said = jarl(root, 'next', '--as', 'me');
   assert.match(said, /raise one fresh reviewer per unit|raise a fresh reviewer/, said);
   assert.match(said, /start a fresh session to review issues?/, said);
