@@ -88,8 +88,13 @@ export function spawnJarl(root, args, { env, timeout = SPAWN_TIMEOUT, bare = fal
 // test reads what the call printed as it would be without it (the walks check that each command carries it).
 export function run(root, args, opts) {
   const r = spawnJarl(root, args, opts);
-  const read = (t) => (args.includes('--') ? posixForms(t) : posixForms(t).split(` --root ${shellWord(root)}`).join(''));
-  return { status: r.status, stdout: read((r.stdout ?? '').trim()), stderr: read((r.stderr ?? '').trim()) };
+  return { status: r.status, stdout: readOutput((r.stdout ?? '').trim(), args, root), stderr: readOutput((r.stderr ?? '').trim(), args, root) };
+}
+// A text a call printed, as a test reads it: its commands in the spelling of a POSIX shell (posixForms) and the call's
+// --root taken out of each. A call with --root named after a bare -- has none to take out.
+export function readOutput(text, args, root, platform = process.platform) {
+  const read = (t) => (args.includes('--') ? posixForms(t, platform) : posixForms(t, platform).split(` --root ${shellWord(root)}`).join(''));
+  return read(text);
 }
 // The result of a call that succeeded; a failure throws with what it said, and carries its status, stdout and stderr.
 export function jarlResult(root, args, opts) {
