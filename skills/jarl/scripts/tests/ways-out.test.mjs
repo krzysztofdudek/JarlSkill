@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FINDINGS } from './findings.mjs';
@@ -185,4 +185,41 @@ test('what is not in a coordinator\'s slice is not its business, even when the r
   assert.match(jarl(root, 'brief', '--slice', 'odin'), /Your business is the slice odin alone: what is not in it is not your business, even when `resume` without --slice or the record files show it\./);
   assert.match(skillText('SKILL.md'), /nothing outside it is your business, even where the record shows it\./);
   assert.match(skillText('references/jarl.md'), /what is not in its slice is not its business, even when the record shows it\./);
+});
+
+function closableWithQuestions(initFlags = []) {
+  const root = makeLoop({ prefix: 'jarl-ways-', via: 'cli', dotGit: false, initFlags });
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works');
+  jarl(root, 'review', '1', 'approve', FINDINGS, '--by', 'jarl', '--model', 'm');
+  jarl(root, 'set', '1', 'done', 'fine', '--by', 'jarl');
+  jarl(root, 'ask', 'which way?', '--by', 'jarl');
+  jarl(root, 'decide', 'a-call', 'The names stay.', '--by', 'jarl');
+  jarl(root, 'ask', 'ratify a-call', '--kind', 'ratify', '--by', 'jarl');
+  return root;
+}
+
+test('close refuses while a question is open, ratify items included, where it removes the loop, naming them and ending with the form that answers one; nothing is removed', () => {
+  const root = closableWithQuestions();
+  const said = refuses(root, 'close', '--by', 'jarl');
+  assert.match(said, /^2 question\(s\) still open: a-1, a-2 — /);
+  assert.match(said, /close --force removes them with it/);
+  assert.match(said, /\njarl\.mjs answer "<question>" "<text>" --by "<the-owner-himself>"\n$/);
+  assert.ok(existsSync(join(root, '.jarl', 'log.md')), 'the loop and its questions stay');
+  jarl(root, 'answer', '1', 'this way', '--by', 'owner');
+  assert.match(refuses(root, 'close', '--by', 'jarl'), /^1 question\(s\) still open: a-2 — /);
+  jarl(root, 'answer', '2', 'yes', '--by', 'owner');
+  assert.match(jarl(root, 'close', '--by', 'jarl'), /^removed /);
+  assert.equal(existsSync(join(root, '.jarl', 'log.md')), false);
+});
+
+test('close --force overrides open questions, as it does open issues', () => {
+  const root = closableWithQuestions();
+  assert.match(jarl(root, 'close', '--force', '--by', 'jarl'), /^removed /);
+  assert.equal(existsSync(join(root, '.jarl', 'log.md')), false);
+});
+
+test('a permanent loop keeps its record, so close takes it with its questions open', () => {
+  const root = closableWithQuestions(['--permanent']);
+  jarl(root, 'close', '--by', 'jarl');
+  assert.ok(existsSync(join(root, '.jarl', 'asks.md')), 'the questions stay on record');
 });
