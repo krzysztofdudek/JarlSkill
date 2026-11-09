@@ -167,3 +167,22 @@ test('a slice\'s integration branch landed after its issues went done leaves the
   assert.deepEqual(json(dir, 'status').closedGate ?? [], []);
   assert.doesNotMatch(jarl(dir, 'resume'), /gate does not hold/);
 });
+
+test('the merger\'s brief skips the changelog step where the repository keeps no changelog', () => {
+  const { dir } = gitRepo({ prefix: 'jarl-ways-', branch: 'feature' });
+  jarl(dir, 'init', 'one issue');
+  assert.match(jarl(dir, 'brief', '--role', 'merger'), /^7\. Changelog entries, once the batch is green:[^\n]* A repository with no changelog skips this step\.$/m);
+});
+
+test('the model guidance says a lone agent holds the merger\'s role, on whatever model it runs', () => {
+  assert.match(skillText('references/models.md'), /Readers and the merger run on the standard tier\. A lone agent holds every role but the examiner's, the merger's included, on the model it runs on\./);
+});
+
+test('what is not in a coordinator\'s slice is not its business, even when the record shows it', () => {
+  const root = makeLoop({ prefix: 'jarl-ways-', via: 'cli', dotGit: false });
+  jarl(root, 'goal', '--set', 'Coordinators: odin');
+  jarl(root, 'new', 'odin work', '--acceptance', '[read] it works', '--tags', 'slice:odin', '--files', 'a.txt');
+  assert.match(jarl(root, 'brief', '--slice', 'odin'), /Your business is the slice odin alone: what is not in it is not your business, even when `resume` without --slice or the record files show it\./);
+  assert.match(skillText('SKILL.md'), /nothing outside it is your business, even where the record shows it\./);
+  assert.match(skillText('references/jarl.md'), /what is not in its slice is not its business, even when the record shows it\./);
+});
