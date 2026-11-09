@@ -272,6 +272,18 @@ test('an issue closed before a converted line is counted by the approve it close
   assert.equal(read().unrecorded, 0);
 });
 
+test('an issue filed after the conversion that cites a superseded ruling is a finding: the note is for what the conversion left', () => {
+  const root = loop();
+  R.decide(root, 'old-way', 'the old way', { by: 'jarl' });
+  R.decide(root, 'new-way', 'the new way', { by: 'jarl', supersedes: 'old-way' });
+  appendFileSync(logFile(root), '- 2030-01-01 00:01 by the-converter · converted\n');
+  R.newIssue(root, 'cites it afresh', { tier: 'light', why: 'as old-way says', acceptance: '[read] it works' });
+  const report = L.cmdVerify(root);
+  assert.equal(report.ok, false);
+  assert.match(report.checks.find((c) => c.name === 'superseded').findings.map((f) => f.what).join('\n'), /old-way/);
+  assert.doesNotMatch(report.notes.map((n) => n.what).join('\n'), /before the conversion/);
+});
+
 test('verify leaves a citation of a superseded ruling written before the conversion as a note; a ruling superseded later, or text written later, stays a finding', () => {
   const root = loop();
   R.decide(root, 'old-way', 'the old way', { by: 'jarl' });
