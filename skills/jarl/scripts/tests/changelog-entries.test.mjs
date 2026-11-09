@@ -37,7 +37,7 @@ function repeatedEntries(text) {
 
 test('the Unreleased section of CHANGELOG.md holds no entry twice', () => {
   const text = readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8');
-  assert.ok(unreleasedEntries(text).length > 0, 'the checker reads the entries of the Unreleased section');
+  assert.match(text, /^## \[Unreleased\]/m, 'the changelog has an Unreleased section, empty right after a release');
   assert.deepEqual(repeatedEntries(text), []);
 });
 
