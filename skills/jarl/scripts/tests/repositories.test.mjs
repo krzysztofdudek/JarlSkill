@@ -22,6 +22,7 @@ const git = (cwd, ...args) => {
 // The long real path (never a shortened Windows name), the form the library resolves names to.
 const tmp = (prefix) => realpathSync.native(mkdtempSync(join(tmpdir(), prefix)));
 // One slash form, for paths that git prints with forward slashes.
+// A path stored in a Repo field is written with slashes; a worktree is shown as the platform names it, as `join` wrote it here.
 const slash = (p) => p.replace(/\\/g, '/');
 const escaped = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 // A repository at `dir` on `branch` with one commit per entry of `commits` (a file name and its content).
@@ -470,8 +471,8 @@ test('a new lease stores no worktree, and set --worktree checks the path and sto
   assert.doesNotMatch(w.issue(1), /\*\*Worktree:\*\*/);
   assert.match(w.log(), /1 → in-progress · go · branch jarl\/1-a · model test-model · worker w1\n/);
   assert.doesNotMatch(w.log(), /worktree/);
-  assert.equal(JSON.parse(jarl(w.hub, 'show', '1', '--json')).where.worktrees[0].path, slash(wt));
-  assert.match(jarl(w.hub, 'show', '1'), new RegExp(`^worktree of tool on jarl/1-a: ${escaped(slash(wt))}$`, 'm'));
+  assert.equal(JSON.parse(jarl(w.hub, 'show', '1', '--json')).where.worktrees[0].path, wt);
+  assert.match(jarl(w.hub, 'show', '1'), new RegExp(`^worktree of tool on jarl/1-a: ${escaped(wt)}$`, 'm'));
 });
 
 test('set --worktree through the command line refuses a wrong path and writes nothing, while the record library accepts and stores nothing', () => {
@@ -513,11 +514,11 @@ test('the worktree of a lease is found by its branch in every state git can repo
   assert.match(jarl(w.hub, 'show', '1'), /^no worktree of tool holds jarl\/1-a$/m);
   const wt = join(parent, 'wt');
   git(w.tool, 'worktree', 'add', '-q', '-b', 'jarl/1-a', wt);
-  assert.deepEqual([stateOf().state, stateOf().path], ['here', slash(wt)]);
+  assert.deepEqual([stateOf().state, stateOf().path], ['here', wt]);
   // Its directory goes while the directory around it stays: git lists it as prunable, and it is gone.
   renameSync(wt, join(parent, 'wt-away'));
   assert.equal(stateOf().state, 'gone');
-  assert.match(jarl(w.hub, 'show', '1'), new RegExp(`^worktree of tool on jarl/1-a: ${escaped(slash(wt))} \\(gone\\)$`, 'm'));
+  assert.match(jarl(w.hub, 'show', '1'), new RegExp(`^worktree of tool on jarl/1-a: ${escaped(wt)} \\(gone\\)$`, 'm'));
   // The directory around it goes too: git lists it, and this machine cannot see it.
   const deep = join(parent, 'deep');
   const inner = join(deep, 'wt2');
@@ -548,7 +549,7 @@ test('a lease that holds a Worktree field keeps it and is read as it was written
   jarl(w.hub, 'set', '1', 'in-progress', 'again', '--model', 'm2');
   assert.match(w.issue(1), new RegExp(`^\\*\\*Worktree:\\*\\* ${escaped(wt)}$`, 'm'), 'a lease move that names no worktree keeps the field');
   renameSync(wt, join(parent, 'wt-away'));
-  assert.match(jarl(w.hub, 'status'), new RegExp(`stale 1 · worktree gone: ${escaped(slash(wt))}`));
+  assert.match(jarl(w.hub, 'status'), new RegExp(`stale 1 · worktree gone: ${escaped(wt)}`));
   jarl(w.hub, 'set', '1', 'open', 'back');
   assert.doesNotMatch(w.issue(1), /\*\*Worktree:\*\*/, 'leaving in-progress removes it');
 });

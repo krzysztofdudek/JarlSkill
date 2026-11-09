@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gitRepo, jarl, refuses, spawnJarl, wordsOfPrinted, loop as makeLoop } from './helpers.mjs';
+import { shellOf, shellWord } from '../jarl-lib.mjs';
 import { NO_EXCLUDES, sh } from './portable.mjs';
 import { FINDINGS } from './findings.mjs';
 
@@ -66,7 +67,7 @@ test('brief <ids> prints the complete worker\'s text: role, goal, purpose, lines
   assert.ok(evidence.includes(SCRIPT), evidence);
   assert.ok(evidence.includes('evidence 2'), evidence);
   assert.ok(evidence.includes('--by w-7'), evidence);
-  assert.ok(evidence.includes(`--root ${dir}`), evidence);
+  assert.ok(evidence.includes(`--root ${shellWord(dir, shellOf())}`), evidence);   // in the quoting of the platform: this is the JSON as printed
   assert.match(evidence, /--ran "<command>" --saw "<what-it-printed>" --line "<line-number>"/);
   assert.match(text, /^## What you report\nIn under 200 words/m);
 });

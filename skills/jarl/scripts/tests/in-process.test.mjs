@@ -13,6 +13,7 @@ import { gitRepo, jarl, SCRIPT, SPAWN_TIMEOUT, withNames } from './helpers.mjs';
 import { runInProcess } from './in-process.mjs';
 import { runPrinted, SHELLS } from './walk.mjs';
 import { bashBin } from './portable.mjs';
+import { printable } from '../jarl-lib.mjs';
 
 const { dir: SCENE } = gitRepo({ prefix: 'jarl-in-process-' });
 jarl(SCENE, 'init', 'a scene for both ways of running a call');
@@ -96,6 +97,11 @@ function shellToNode(sh, line, cwd) {
   if (sh === 'bash') return spawnSync(bashBin(), ['-c', `jarl.mjs() { "$JARL_NODE" "$JARL_SCRIPT" "$@"; }\n${line}`], { cwd, encoding: 'utf8', timeout: SPAWN_TIMEOUT, env: { ...process.env, JARL_NODE: unix(process.execPath), JARL_SCRIPT: unix(SCRIPT), MSYS_NO_PATHCONV: '1', MSYS2_ARG_CONV_EXCL: '*' } });
   return spawnSync(sh, [...(sh.endsWith('zsh') ? ['-f'] : []), '-c', line], { cwd, encoding: 'utf8', timeout: SPAWN_TIMEOUT, env: { ...process.env, PATH: `${BIN}:${process.env.PATH}` } });
 }
+// Git for Windows' bash reads a word right and then loses a backslash of it where it builds the command line of a native
+// program, if the word holds a double quote too. That is the bash's hand-off, so such a word is compared as the shell read it,
+// with a node given the word directly; Jarl prints no such word on Windows, where a double quote stands as a placeholder.
+const lostInBash = (w) => w.includes('\\') && w.includes('"');
+const lostHandingOver = (words) => process.platform === 'win32' && words.some(lostInBash);
 function assertAlike(a, dirA, b, dirB, what) {
   assert.equal(a.status, b.status, `${what}: status: ${a.stderr || a.stdout}\n---\n${b.stderr || b.stdout}`);
   assert.equal(masked(a.stdout, dirA), masked(b.stdout, dirB), `${what}: stdout`);
@@ -115,7 +121,13 @@ for (const { args, prepare, status } of CALLS) {
     const line = `jarl.mjs ${words.map(sq).join(' ')}`.trimEnd();
     for (const sh of SHELLS) {
       const [pasted, real] = [prepared(prepare), prepared(prepare)];
-      assertAlike(runPrinted(pasted, line, sh), pasted, shellToNode(sh, line, real), real, `pasted into ${sh}`);
+      const read = runPrinted(pasted, line, sh);
+      if (lostHandingOver(words)) {
+        assert.ok(words.filter(lostInBash).every((w) => !printable(w, 'windows')), 'Jarl never prints such a word on Windows');
+        assertAlike(read, pasted, b, process_, `read by ${sh}, against the spawned node`);
+        continue;
+      }
+      assertAlike(read, pasted, shellToNode(sh, line, real), real, `pasted into ${sh}`);
     }
   });
 }
