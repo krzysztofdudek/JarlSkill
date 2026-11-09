@@ -105,7 +105,7 @@ test('a value-taking flag with no value never reads the next flag as its value: 
   const r = spawnSync(process.execPath, [SCRIPT, 'log', 'a note', '--by', '--root', root], { encoding: 'utf8', timeout: 60_000, cwd: root });
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /--by needs a value/);
-  assert.ok(r.stderr.includes(`--root ${root}`) || r.stderr.includes(`--root '${root}'`), `the form carries the call's --root: ${r.stderr}`);
+  assert.ok(r.stderr.includes(`--root ${root}`) || r.stderr.includes(`--root '${root}'`) || r.stderr.includes(`--root "${root}"`), `the form carries the call's --root: ${r.stderr}`);
   assert.equal(logOf(root), before);
   assert.deepEqual(readdirSync(root).filter((f) => f === '--root'), []);
   for (const flag of ['--by', '--worker', '--model']) {

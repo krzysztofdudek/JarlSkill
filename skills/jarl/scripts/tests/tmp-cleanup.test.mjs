@@ -6,6 +6,7 @@ import { constants, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SPAWN_TIMEOUT } from './helpers.mjs';
+import { importSpecifier } from './portable.mjs';
 
 const PRELOAD = fileURLToPath(new URL('./tmp-cleanup.mjs', import.meta.url));
 const SUITE = fileURLToPath(new URL('./suite.mjs', import.meta.url));
@@ -29,7 +30,7 @@ function envWith(tmp) {
 }
 // A child process with the cleanup imported and `tmp` as its temporary directory; `body` runs in it.
 function child(tmp, body) {
-  return spawnSync(process.execPath, ['--import', PRELOAD, '--input-type=module', '-e', body], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, env: envWith(tmp) });
+  return spawnSync(process.execPath, ['--import', importSpecifier(PRELOAD), '--input-type=module', '-e', body], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, env: envWith(tmp) });
 }
 
 test('npm test runs the suite through the runner that fails on anything left in an empty temporary directory', () => {

@@ -69,7 +69,7 @@ test('in a worker worktree of a committed loop, the note of a call given --root 
   const copyBefore = readFileSync(join(wt, '.jarl', 'log.md'), 'utf8');
   const r = at(wt, ['field', '3', 'What', 'relies on issue 1 for its data', '--root', main]);
   const command = /: (jarl\.mjs .*)$/.exec(r.stderr.split('\n').find((l) => l.includes('no After orders it with 3')) ?? '')?.[1];
-  assert.equal(command, `jarl.mjs field 3 After "<ids-it-waits-on>" --add --by "<who>" --root ${L.shellWord(main)}`);
+  assert.equal(command, `jarl.mjs field 3 After "<ids-it-waits-on>" --add --by "<who>" --root ${L.shellWord(main, L.shellOf())}`);
   assert.equal(runPrinted(wt, command.replace('"<ids-it-waits-on>"', '1').replace('"<who>"', 'jarl')).status, 0, command);
   assert.deepEqual(L.findIssue(main, '3').after, ['1'], 'the main checkout\'s loop waits on 1');
   assert.equal(readFileSync(join(wt, '.jarl', 'log.md'), 'utf8'), copyBefore, 'the worktree\'s copy of the loop is untouched');

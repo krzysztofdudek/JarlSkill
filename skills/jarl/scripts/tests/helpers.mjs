@@ -94,7 +94,19 @@ export function run(root, args, opts) {
 // --root taken out of each. A call with --root named after a bare -- has none to take out.
 export function readOutput(text, args, root, platform = process.platform) {
   const read = (t) => (args.includes('--') ? posixForms(t, platform) : posixForms(t, platform).split(` --root ${shellWord(root)}`).join(''));
+  // The JSON of a call is read string by string: a command in it holds what JSON escapes (a backslash, a double quote), and
+  // read as raw text it would come out as no JSON at all.
+  if (args.includes('--json') && /^[[{]/.test(text.trim())) {
+    try { return JSON.stringify(mapStrings(JSON.parse(text), read), null, 2); } catch { /* not JSON: read as text */ }
+  }
   return read(text);
+}
+// A parsed JSON value with every string in it passed through f.
+function mapStrings(value, f) {
+  if (typeof value === 'string') return f(value);
+  if (Array.isArray(value)) return value.map((v) => mapStrings(v, f));
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, mapStrings(v, f)]));
+  return value;
 }
 // The result of a call that succeeded; a failure throws with what it said, and carries its status, stdout and stderr.
 export function jarlResult(root, args, opts) {
@@ -144,14 +156,21 @@ function tokensOf(line, from) {
   }
   return out;
 }
+const PLACEHOLDER_WORD = /^<[^<>]*>$/;
+// The punctuation a bare word ends with that belongs to the sentence around it, not to the word; a word that is only dots
+// (--root .) is a value.
+const trailOf = (t) => (t.bareEnd && !/^\.+$/.test(t.raw) ? /[,;:).]+$/.exec(t.raw)?.[0] ?? '' : '');
 export function commandSpans(text) {
   const { args, flags, globals } = commandWordsTable();
   const spans = [];
   String(text).split('\n').forEach((line, n) => {
-    for (const m of line.matchAll(/(?<![\w.-])jarl\.mjs /g)) {
+    // A usage line and a word in a sentence name the tool without running it; the tool's path as a printed word starts a
+    // command as its bare name does (on Windows: node "D:\...\jarl.mjs" show 1).
+    if (line.startsWith('usage: ')) return;
+    for (const m of line.matchAll(/(?<![\w.-])jarl\.mjs |"[^"\n]*[\\/]jarl\.mjs" /g)) {
       const tokens = tokensOf(line, m.index);
       const cmd = tokens[1]?.value;
-      if (cmd === undefined) continue;
+      if (cmd === undefined || !(Object.hasOwn(args, cmd) || cmd === 'merge-driver' || cmd.startsWith('--') || PLACEHOLDER_WORD.test(cmd))) continue;
       const table = { ...globals, ...(flags[cmd] || {}) };
       const arity = (args[cmd] || []).some((a) => a.endsWith('...')) ? Infinity : (args[cmd] || []).length;
       let end = tokens[1].end;
@@ -159,12 +178,17 @@ export function commandSpans(text) {
       for (let k = 2; k < tokens.length; k += 1) {
         const t = tokens[k];
         if (t.raw === '—' || t.raw === '·' || t.raw.startsWith('(')) break;
-        const trail = t.bareEnd ? /[,;:).]+$/.exec(t.raw)?.[0] ?? '' : '';
+        const trail = trailOf(t);
         const value = trail ? t.value.slice(0, -trail.length) : t.value;
+        // A placeholder is a word of the command wherever it stands: a form names what the caller is to leave out or fill past the arguments of its command.
+        if (PLACEHOLDER_WORD.test(value)) { end = t.end - trail.length; if (trail) break; continue; }
         const name = /^--([A-Za-z][\w-]*)(?:=|$)/.exec(value)?.[1];
         if (name !== undefined && value !== '--') {
           end = t.end - trail.length;
-          if (!trail && table[name] !== 'bool' && !value.includes('=') && tokens[k + 1]) { k += 1; const v = tokens[k]; const vt = v.bareEnd ? /[,;:).]+$/.exec(v.raw)?.[0] ?? '' : ''; end = v.end - vt.length; if (vt) break; }
+          // A flag of the table takes a value by its shape; one no table names (the --x of a value that reads as a flag) takes the next word unless that word is a flag.
+          const next = tokens[k + 1];
+          const takes = table[name] === undefined ? next && !next.value.startsWith('--') : table[name] !== 'bool';
+          if (!trail && takes && !value.includes('=') && next) { k += 1; const v = tokens[k]; const vt = trailOf(v); end = v.end - vt.length; if (vt) break; }
           if (trail) break;
           continue;
         }
@@ -184,12 +208,19 @@ export function commandSpans(text) {
 // in one spelling on every platform, and the quoting of each shell is tested on its own, with the platform passed in.
 export const windowsWords = (line) => [...String(line).matchAll(/"([^"]*)"|([^\s"]+)/g)].map((m) => m[1] ?? m[2]);
 export function posixForms(text, platform = process.platform) {
-  if (platform !== 'win32') return text;
+  if (platform !== 'win32' || /^usage: /.test(text)) return text;
   const lines = String(text).split('\n');
   const spans = commandSpans(text);
-  for (const s of [...spans].reverse()) lines[s.line] = `${lines[s.line].slice(0, s.start)}${printedLine(windowsWords(s.raw), 'posix')}${lines[s.line].slice(s.end)}`;
+  for (const s of [...spans].reverse()) {
+    const words = windowsWords(s.raw);
+    // The tool by its path is written with slashes and bare, as on the machines a POSIX shell runs on.
+    if (words[0] !== 'jarl.mjs') words[0] = words[0].replaceAll('\\', '/');
+    lines[s.line] = `${lines[s.line].slice(0, s.start)}${printedLine(words, 'posix')}${lines[s.line].slice(s.end)}`;
+  }
   return lines.join('\n');
 }
+// The words of a printed command, in the spelling of the shell it was printed for.
+export const wordsOfPrinted = (line, platform = process.platform) => (platform === 'win32' ? windowsWords(line) : tokensOf(line, 0).map((t) => t.value));
 // A text with the --root of the call taken out of every command it prints; each command at its end (a step on its own
 // line, then the form) must carry it.
 export function withoutRoot(text, root) {

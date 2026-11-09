@@ -8,7 +8,7 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { gitRepo, jarl, refuses, spawnJarl, loop as makeLoop } from './helpers.mjs';
+import { gitRepo, jarl, refuses, spawnJarl, wordsOfPrinted, loop as makeLoop } from './helpers.mjs';
 import { NO_EXCLUDES, sh } from './portable.mjs';
 import { FINDINGS } from './findings.mjs';
 
@@ -339,7 +339,7 @@ test('the merger\'s brief prints commands that run as printed, a commit step for
   const raw = JSON.parse(spawnJarl(root, ['brief', '--role', 'merger', '--json']).stdout);
   const flags = raw.record.find((r) => /merge drivers/.test(r.what)).command;
   assert.doesNotMatch(flags, /--root/, 'merge-driver flags names no loop');
-  const words_ = flags.split(' ');
+  const words_ = wordsOfPrinted(flags);
   const ran = spawnSync(process.execPath, words_.slice(1), { encoding: 'utf8', timeout: 60_000 });
   assert.equal(ran.status, 0, ran.stderr);
   const text = jarl(root, 'brief', '--role', 'merger');
@@ -428,7 +428,7 @@ test('the merger\'s brief names the checkout that holds the target branch, since
   jarl(dir, 'init', 'goal');
   jarl(dir, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.md');
   const text = jarl(dir, 'brief', '--role', 'merger');
-  const top = realpathSync(dir);
+  const top = realpathSync.native(dir).replaceAll('\\', '/');   // git prints a Windows path with slashes, and the short name of the runner's temporary directory in full
   assert.ok(text.includes(`Merge in ${top}: it holds feature`), text);
   assert.doesNotMatch(text, /in your own worktree: git/);
   assert.match(text, /a second worktree of a checked-out branch is refused/);

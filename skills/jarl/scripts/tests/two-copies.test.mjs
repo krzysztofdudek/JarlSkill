@@ -208,7 +208,8 @@ test('a second writer that sets the lease the issue already has is no conflict',
 // line escaped with a backslash, every other line as given.
 const QUOTED = 'git left this in the file:\n```\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> main\n```\nand the same with no fence:\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> main\nand a line that quotes <<<<<<< HEAD inline';
 const ESCAPED = 'git left this in the file:\n```\n\\<<<<<<< HEAD\nours\n\\=======\ntheirs\n\\>>>>>>> main\n```\nand the same with no fence:\n\\<<<<<<< HEAD\nours\n\\=======\ntheirs\n\\>>>>>>> main\nand a line that quotes <<<<<<< HEAD inline';
-const issueText = (dir, file) => readFileSync(join(dir, '.jarl', 'issues', file), 'utf8');
+// A conflicted file as a test reads it: git on Windows checks it out with CRLF (core.autocrlf), and the tool reads either.
+const issueText = (dir, file) => readFileSync(join(dir, '.jarl', 'issues', file), 'utf8').replace(/\r\n/g, '\n');
 const MARKER_LINE = /^(?:<{7}|={7}|>{7})/m;
 
 test('text that quotes a git conflict, written through new, body, a note and a reason, has each marker line escaped, reads back as written, and verify reads it as text', () => {

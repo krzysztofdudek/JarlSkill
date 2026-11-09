@@ -16,7 +16,7 @@ import { commandSpans, posixForms, readOutput, spawnJarl, SPAWN_TIMEOUT, without
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const run = (root, ...args) => spawnJarl(root, args);
 
-// A path as a Windows runner's temporary directory gives it: a drive letter, backslashes, an 8.3 short name.
+// A path as a Windows runner's temporary directory gives it: a drive letter, backslashes, a short name of the kind DOS gave.
 const WIN_ROOT = 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\jarl-x';
 
 test('the JSON of a call made on Windows stays JSON when a command in it carries a backslash path, and a test reads the command in a POSIX shell\'s spelling with the --root taken out', () => {
@@ -80,7 +80,7 @@ test('a tool is imported by a file URL, never by a drive-letter path: node reads
   // Every test that starts node with a module to import names it through that one function.
   const dir = fileURLToPath(new URL('.', import.meta.url));
   const bare = [];
-  for (const f of readdirSync(dir).filter((n) => n.endsWith('.mjs'))) {
+  for (const f of readdirSync(dir).filter((n) => n.endsWith('.mjs') && n !== 'windows.test.mjs')) {
     const text = readFileSync(join(dir, f), 'utf8');
     for (const m of text.matchAll(/'--import',\s*([^\s,\]]+)/g)) if (!m[1].startsWith('importSpecifier(')) bare.push(`${f}: --import ${m[1]}`);
   }

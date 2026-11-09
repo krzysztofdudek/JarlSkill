@@ -165,7 +165,7 @@ test('a declared path that is not there at the top of its repository, written fr
   jarl(root, 'evidence', '1', '--line', '1', '--ran', 'git commit', '--saw', `${shortHead(g)} the note`, '--by', 'w1');
   jarl(root, 'review', '1', 'approve', '--by', 'rev-1', FINDINGS);
   const said = refuses(root, 'set', '1', 'done', 'written', '--by', 'jarl');
-  assert.ok(said.startsWith(`1 is worked in place, and notes/only-here.md is not there: a declared path is read from the top of its repository, ${realpathSync(top)}, not from the folder of the loop`), said);
+  assert.ok(said.startsWith(`1 is worked in place, and notes/only-here.md is not there: a declared path is read from the top of its repository, ${realpathSync.native(top)}, not from the folder of the loop`), said);
   assert.equal(lastLine(said), 'jarl.mjs field "<ids>" Files "<paths>" --by "<who>"');
 });
 

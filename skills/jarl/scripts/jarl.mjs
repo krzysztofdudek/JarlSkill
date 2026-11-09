@@ -349,9 +349,10 @@ export function refusalFor(e, call, platform = process.platform) {
 // --root, or another word of the form, is one the shell of the form cannot carry, why the form names it by its
 // placeholder.
 function reasonFor(reason, call, shell = 'posix', unprintable = false) {
-  const root = call.flags.find(([k]) => k === 'root')?.[1];
+  const rootFlag = call.flags.find(([k]) => k === 'root');
+  const root = rootFlag?.[1];
   const words = [call.cmd, ...call.args, ...call.flags.filter(([k]) => !Object.hasOwn(GLOBAL_FLAGS, k)).flatMap(([k, v]) => [k, `--${k}`, v])].filter((w) => typeof w === 'string');
-  const rootNote = typeof root !== 'string' || isPlaceholder(root) || rootPrintable(root, shell) ? ''
+  const rootNote = typeof root !== 'string' || isPlaceholder(root) || rootPrintable(root, shell, rootFlag[2]) ? ''
     : breaksLine(root) ? ' (the --root given holds a line break, which no printed line carries: the form names the loop root by its placeholder)'
       : ' (the --root given holds a character that cmd and PowerShell read apart, or ends with a backslash a program reads as an escape: the form names the loop root by its placeholder)';
   const wordNote = unprintable ? ' (a word of the form holds a character that cmd and PowerShell read apart: the form names it by its placeholder)' : '';

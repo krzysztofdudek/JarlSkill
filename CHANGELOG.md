@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- On Windows, the form a refused call prints carries an empty `--root=` as given, instead of naming the loop root by its placeholder.
+
 ## [6.3.0] - 2026-11-09
 
 Jarl 6.3.0 lets coordinators each run their own part of a loop, makes every write name who made it, and raises each worker, examiner and merger with one complete brief the tool prints. It reads only one record format, so a loop kept by 6.2.0 is converted once before it is used again.

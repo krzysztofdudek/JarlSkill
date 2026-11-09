@@ -43,9 +43,9 @@ test('verify names the git commands that take one side of a record file a merge 
   const b = mergeStopped();
   const said = run(b.dir, ['verify']);
   assert.equal(said.status, 2, said.stdout);
-  assert.match(said.stdout, new RegExp(`git -C \\S+ checkout --ours -- ${ISSUE.replace(/\./g, '\\.')}`));
-  assert.match(said.stdout, new RegExp(`git -C \\S+ checkout --theirs -- ${ISSUE.replace(/\./g, '\\.')}`));
-  assert.match(said.stdout, new RegExp(`git -C \\S+ add -- ${ISSUE.replace(/\./g, '\\.')}`));
+  assert.match(said.stdout, new RegExp(`git -C \\S+ checkout --ours "?--"? ${ISSUE.replace(/\./g, '\\.')}`));
+  assert.match(said.stdout, new RegExp(`git -C \\S+ checkout --theirs "?--"? ${ISSUE.replace(/\./g, '\\.')}`));
+  assert.match(said.stdout, new RegExp(`git -C \\S+ add "?--"? ${ISSUE.replace(/\./g, '\\.')}`));
   assert.doesNotMatch(said.stdout, /remove the markers|put a backslash/);
   // The commands it names are the way out: taken as printed, the file holds no marker and the finding is gone.
   b.g('-C', b.dir, 'checkout', '--theirs', '--', ISSUE);
@@ -60,8 +60,8 @@ test('a merge committed with the markers in it: verify names the two sides of th
   const sha = b.g('rev-parse', 'HEAD').trim();
   const said = run(b.dir, ['verify']);
   assert.equal(said.status, 2, said.stdout);
-  assert.match(said.stdout, new RegExp(`git -C \\S+ checkout '?${sha}\\^1'? -- ${ISSUE.replace(/\./g, '\\.')}`));
-  assert.match(said.stdout, new RegExp(`git -C \\S+ checkout '?${sha}\\^2'? -- ${ISSUE.replace(/\./g, '\\.')}`));
+  assert.match(said.stdout, new RegExp(`git -C \\S+ checkout [\'"]?${sha}\\^1[\'"]? "?--"? ${ISSUE.replace(/\./g, '\\.')}`));
+  assert.match(said.stdout, new RegExp(`git -C \\S+ checkout [\'"]?${sha}\\^2[\'"]? "?--"? ${ISSUE.replace(/\./g, '\\.')}`));
   b.g('checkout', `${sha}^2`, '--', ISSUE);
   assert.doesNotMatch(run(b.dir, ['verify']).stdout, /a git conflict marker/);
 });
