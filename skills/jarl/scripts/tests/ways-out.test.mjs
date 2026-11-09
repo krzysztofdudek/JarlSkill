@@ -112,7 +112,7 @@ test('a coordinator starts from the brief of its slice, and is told the slice is
   jarl(root, 'new', 'odin work', '--acceptance', '[read] it works', '--tags', 'slice:odin', '--files', 'a.txt');
   const brief = jarl(root, 'brief', '--slice', 'odin');
   assert.match(brief, /^## Your first moves\n1\. This brief\.\n2\. jarl\.mjs resume --slice odin --as odin\n3\. jarl\.mjs next --as odin\n/m);
-  assert.match(brief, /Your business is the slice odin alone: `resume` without --slice and the record files show the whole loop, and what they show of another slice is not yours to report or to act on\./);
+  assert.match(brief, /Your business is the slice odin alone: [^\n]*Do not report it or act on it\./);
   jarl(root, 'resume', '--slice', 'odin', '--as', 'odin');
   assert.match(jarl(root, 'resume', '--slice', 'odin'), /^scoped to the slice of odin,.*: what they show of another slice is the jarl's, not yours$/m);
   assert.match(skillText('SKILL.md'), /^- \*\*You run a slice as a coordinator\.\*\* Start with `brief --slice <name>`, then `resume --slice <name> --as <name>`[^\n]*/m);

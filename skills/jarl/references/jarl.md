@@ -110,7 +110,7 @@ A merger's report is the only signal that it left the main checkout: nobody runs
 
 ## Coordinators: slices of the backlog
 
-Add a slice when you hold more than you can read reports for. The goal's `Coordinators:` line names them, and each one's slice is the issues tagged `slice:<name>`, cut by area so files and most After chains stay inside it; an issue in no slice is the jarl's. A coordinator runs this reference over its slice, except that it never talks to the owner, and starts from `brief --slice <name>`, then `resume --slice <name> --as <name>`: its slice is its whole business, and what `resume` without `--slice` or the record files show of another slice is the jarl's.
+Add a slice when you hold more than you can read reports for. The goal's `Coordinators:` line names them, and each one's slice is the issues tagged `slice:<name>`, cut by area so files and most After chains stay inside it; an issue in no slice is the jarl's. A coordinator runs this reference over its slice, except that it never talks to the owner, and starts from `brief --slice <name>`, then `resume --slice <name> --as <name>`: what is not in its slice is not its business, even when the record shows it.
 
 **A level waits on the agents it raised, and returns only when the ball is on someone it did not raise.**
 

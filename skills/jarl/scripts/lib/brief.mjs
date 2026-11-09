@@ -621,7 +621,7 @@ function renderMerger(o, out) {
     '4. Branches sharing no file may go as one batch, checked once; never batch two that touch one file.',
     '5. Run the repository\'s check on the merged result, in the foreground, with your tool\'s own timeout set; report only after it has finished.',
     '6. Green: the green-merge command for the issues on the branch, close each issue, then `show` it and confirm it reads done. `NO PROOF FROM THE WORKER`: done waits for the worker\'s row. `MERGE WITHOUT THE BRANCH` or `WITHOUT THE BASE`: merge and check again. `APPROVED ON ANOTHER TIP`: report the two tips.',
-    '7. Changelog entries, once the batch is green: paste them under `[Unreleased]`, edited into the repository\'s register, committed as that file alone.',
+    '7. Changelog entries, once the batch is green: paste them under `[Unreleased]`, edited into the repository\'s register, committed as that file alone. A repository with no changelog skips this step.',
     '8. Push nothing unless a goal line or a ruling grants the branch; then push it after a green merge. A worker\'s branch is never pushed.',
     '9. An issue worked in place brings no branch: once its approve stands, commit its declared files as a commit of their own between two merges, record it with the in-place command, then close it.',
   ]);
@@ -651,7 +651,7 @@ export function renderBrief(o) {
   if (o.role === 'coordinator') {
     out.push(`The coordinator's brief for the slice ${o.slice} (slice:${o.slice}), assembled from the record; it writes nothing.`);
     out.push(...o.notes.map((n) => `note: ${n}`), '');
-    out.push('## Your first moves', '1. This brief.', ...o.firstMoves.map((c, k) => `${k + 2}. ${c}`), `Your business is the slice ${o.slice} alone: \`resume\` without --slice and the record files show the whole loop, and what they show of another slice is not yours to report or to act on.`, '');
+    out.push('## Your first moves', '1. This brief.', ...o.firstMoves.map((c, k) => `${k + 2}. ${c}`), `Your business is the slice ${o.slice} alone: what is not in it is not your business, even when \`resume\` without --slice or the record files show it. Do not report it or act on it.`, '');
     out.push(`## The issues of the slice in play (${o.issues.length})`);
     out.push(...(o.issues.length ? o.issues.map((i) => `- ${i.id} ${i.status}${i.kept ? ` · ${i.kept}` : ''}${i.worker ? ` · ${i.worker}` : ''} · ${i.title}${i.parent ? ` · sub-issue of ${i.parent}` : ''}${i.stage ? ` · ${i.stage}` : ''}`) : ['- (none)']));
     if (o.questions.length) out.push('', `## Open questions of the slice (${o.questions.length})`, ...o.questions.map((q) => `- a-${q.id} (${q.kind})${q.issue ? ` · issue ${q.issue}` : ''} · ${q.question}`));

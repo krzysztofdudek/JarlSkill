@@ -11,8 +11,8 @@ Jarl is the loop of the Yggdrasil family: a director files work as issues with l
 
 - **You were raised to do one job: a worker, an examiner, a merger.** The brief you were given is everything you read. Nothing in this skill is for you; only a director reads it.
 - **After a compaction, or any summary of your own context, you are starting a session: run `resume` before the next action.** A summary is not the state: the record is.
-- **You run a slice as a coordinator.** Start with `brief --slice <name>`, then `resume --slice <name> --as <name>`: nothing outside it is your business.
-- **You are asked what waits on the owner.** `next --as owner --all` prints his digest, most blocking first; `resume` is the director's.
+- **You run a slice as a coordinator.** Start with `brief --slice <name>`, then `resume --slice <name> --as <name>`: nothing outside it is your business, even where the record shows it.
+- **You are asked what waits on the owner.** `next --as owner --all` prints his digest; `resume` is the director's.
 - **A `.jarl/` already holds a loop.** Run `resume`: the whole state, read live. Continue when your task matches the goal; only when it contradicts the goal, ask the owner once whether to continue or archive it (`archive "<slug>"`, then `init "<goal>"`). Read [references/jarl.md](references/jarl.md) once.
 - **No loop yet.** Run `init "<goal>"`: the loop lives out of git by default, `--committed` commits it with the work, `--permanent` keeps it as a standing record. Then file what is known and follow [The loop](references/jarl.md#the-loop).
 
