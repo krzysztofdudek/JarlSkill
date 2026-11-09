@@ -784,7 +784,7 @@ test('a loop outside any repository is told apart without starting git, and a lo
   mkdirSync(bin);
   const log = join(top, 'git-calls');
   writeFileSync(join(bin, 'git'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\nPATH='${process.env.PATH}'\nexec git "$@"\n`, { mode: 0o755 });
-  const asked = (dir, cmd) => { writeFileSync(log, ''); const r = spawnSync(process.execPath, [SCRIPT, ...cmd, '--root', dir], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } }); assert.equal(r.status, 0, r.stderr); return readFileSync(log, 'utf8').split('\n').filter((l) => l === 'rev-parse --git-dir'); };
+  const asked = (dir, cmd) => { writeFileSync(log, ''); const r = spawnSync(process.execPath, [SCRIPT, ...cmd, '--root', dir], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } }); assert.equal(r.status, 0, r.stderr); return readFileSync(log, 'utf8').split('\n').filter((l) => l.startsWith('rev-parse')); };
   const outside = join(top, 'plain');
   mkdirSync(outside);
   jarl(outside, 'init', 'a goal');
@@ -823,5 +823,5 @@ test('a directory named .git that holds no repository is no repository: git is n
   writeFileSync(log, '');
   const r = spawnSync(process.execPath, [SCRIPT, 'brief', '1', '--role', 'reviewer', '--root', root], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
   assert.equal(r.status, 0, r.stderr);
-  assert.deepEqual(readFileSync(log, 'utf8').split('\n').filter((l) => l === 'rev-parse --git-dir'), []);
+  assert.deepEqual(readFileSync(log, 'utf8').split('\n').filter((l) => l.startsWith('rev-parse')), []);
 });
