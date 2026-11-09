@@ -1,10 +1,10 @@
-<p align="center"><img src="assets/social-card.png" alt="Jarl: on a feature branch, the agent files everything it sees as an issue, gives each piece of work one worker in its own worktree, and closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough, or the owner waives the review." width="720"></p>
+<p align="center"><img src="assets/social-card.png" alt="Jarl: on a feature branch, the agent files everything it sees as an issue, gives each piece of work one worker in its own worktree, and closes nothing without proof of its lines and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough, or the owner waives the review." width="720"></p>
 
 # Jarl
 
 **Your feature branch has more issues than one agent can hold in its head, so it fixes one, forgets two, and loses the third in the diff.** Jarl makes the agent direct a crew instead of working alone.
 
-On a feature branch, the agent files everything it sees as an issue, gives each piece of work one worker in its own worktree, and closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough, or the owner waives the review.
+On a feature branch, the agent files everything it sees as an issue, gives each piece of work one worker in its own worktree, and closes nothing without proof of its lines and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough, or the owner waives the review.
 
 ## What you install
 
@@ -65,9 +65,10 @@ A plain skill folder: copy the whole [`skills/jarl/`](skills/jarl/) directory, `
 - Issues that touch the same files run one after another; the rest run in parallel.
 - Each piece of work gets one worker in its own worktree, and a worker carries one issue or several small neighbouring ones.
 - A worker's report counts as a claim until a fresh reviewer reads the diff and checks that the new test was red before the change and green after.
-- One fresh examiner takes each piece of work and invents and runs scenarios the acceptance lines do not name.
+- One fresh reviewer takes each piece of work: it invents and runs scenarios the acceptance lines do not name.
 - Once a branch is approved, the merger merges into the feature branch with a commit that names the issue and runs the check on the result.
-- In the record, nothing is closed without recorded evidence and an approve, from a fresh reviewer when the issue carries code.
+- In the record, nothing is closed without an approve, from a fresh reviewer when the issue carries code.
+- A line proved by a test, a command or a comparison also needs a recorded run of it; a line proved by reading needs none.
 - The tool refuses an approve by a self (the issue's worker, anyone who has held its lease, or a worker of another issue on the same branch).
 - The agent asks you when a protection would weaken, the goal would change, or work reaches outside the session.
 - The next session runs `resume` and picks up from the files, not from memory.
@@ -78,7 +79,7 @@ The profile of the loop sets the done gate; every setting is in [the profile ref
 
 - The gate follows the profile: a profile whose done gate asks no approve closes on recorded evidence and a merge in the base, which it must require.
 - Beyond the approve, a profile can also require attached files before a kind of issue closes.
-- A fresh reviewer's approve clears an issue unless the done gate's `clears` setting names who clears an issue instead (fresh, the owner, a named bot, or several reviewers who must approve together), and `status` and `report` say who reviewed the done work: fresh, waived by the owner (his ruling that waives the review; it stands as the fresh reviewer's approve), coordinator, self, relayed (a fresh approve someone else recorded in the reviewer's name), bot, retracted when an approve was taken back and none stands, and unrecorded, then how many of every verdict recorded are relayed or a bot's.
+- A fresh reviewer's approve clears an issue unless the done gate's `clears` setting names who clears an issue instead (fresh, the owner, a named bot, or several reviewers who must approve together). `status` and `report` say who reviewed the done work: fresh, waived by the owner (his ruling that waives the review), coordinator, self, relayed, bot, retracted when an approve was taken back and none stands, and unrecorded, then how many of every verdict recorded are relayed or a bot's.
 
 ## Start
 
