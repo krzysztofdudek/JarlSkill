@@ -158,14 +158,6 @@ const raise = (root, id) => R.setStatus(root, id, 'in-progress', undefined, { br
 const raiseArgs = (id) => ['set', id, 'in-progress', '--branch', `work/${id}`, '--worker', `w${id}`, '--model', 'some-model'];
 const MODEL_LINES = '\nModel (strong): big-model\nModel (standard): mid-model\n';
 const goalOf = (root) => join(root, '.jarl', 'goal.md');
-// A loop run by an external scheduler: its composer places the models.
-function scheduled(root) {
-  const file = join(root, 'profile.json');
-  writeFileSync(file, JSON.stringify({ 'jarl-profile': R.PROFILE_VERSION, name: 'p', statuses: { queued: ['dispatchable'], running: ['lease'], done: ['settles-dependents', 'terminal', 'closes-record'] }, initial: 'queued' }));
-  R.initLoop(root, 'g', { profile: file });
-  R.newIssue(root, 't', { acceptance: '[read] it works' });
-}
-
 // Each case: `pre` builds the state on both loops with the library; `lib` runs on one loop as the library calls it;
 // `cli` is the command line's arguments (the loop's --root is added), run on the other; `git` makes a checkout; `spell`
 // compares the ids with their padding taken out; `refusal` says which side refuses, when the two must differ in that.
