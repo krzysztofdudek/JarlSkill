@@ -77,6 +77,13 @@ test('a tool is imported by a file URL, never by a drive-letter path: node reads
   const { importSpecifier } = await import('./portable.mjs');
   assert.equal(importSpecifier('D:\\a\\JarlSkill\\tests\\tmp-cleanup.mjs', 'win32'), 'file:///D:/a/JarlSkill/tests/tmp-cleanup.mjs');
   assert.equal(importSpecifier('/home/me/repo/tests/tmp-cleanup.mjs', 'linux'), 'file:///home/me/repo/tests/tmp-cleanup.mjs');
+  assert.equal(importSpecifier('C:\\Program Files\\a#b.mjs', 'win32'), 'file:///C:/Program%20Files/a%23b.mjs');
+  // The specifier is one node takes, on the platform this runs on, in the shape the cleanup's own tests start a child with.
+  const module = join(mkdtempSync(join(tmpdir(), 'jarl-import-')), 'a b#c.mjs');
+  writeFileSync(module, "process.stdout.write('imported');");
+  const started = spawnSync(process.execPath, ['--import', importSpecifier(module), '--input-type=module', '-e', '0'], { encoding: 'utf8', timeout: SPAWN_TIMEOUT });
+  assert.equal(started.status, 0, started.stderr);
+  assert.equal(started.stdout, 'imported');
   // Every test that starts node with a module to import names it through that one function.
   const dir = fileURLToPath(new URL('.', import.meta.url));
   const bare = [];
