@@ -797,3 +797,14 @@ test('a loop outside any repository is told apart without starting git, and a lo
   jarl(repo, 'new', 'one', '--acceptance', '[read] it works');
   assert.ok(asked(repo, ['brief', '1', '--role', 'reviewer']).length >= 1, 'inside a repository git is asked');
 });
+
+test('a --repo given as a link into a repository is told from a directory outside any: the link is followed before looking for one', () => {
+  const w = world();
+  const repo = repoAt(join(tmp('jarl-real-'), 'checkout'));
+  mkdirSync(join(repo, 'sub'));
+  const link = join(w.parent, 'link-into-sub');
+  symlinkSync(join(repo, 'sub'), link, 'junction');   // a junction on Windows: no privilege needed
+  const r = neu(w.hub, 'linked', '--repo', link);
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /not a git repository/);
+});
