@@ -65,10 +65,10 @@ test('extend refuses a part that is not a section or a field, a name the profile
   const held = snapshot(root);
   let said = refuses(root, 'extend', 'status', 'review');
   assert.match(said, /extend adds a section or a field to the loop's profile \(got "status"\)/);
-  assert.equal(lastLine(said), 'jarl.mjs extend "<section-or-field>" "<name>" --by "<who>" --by "<who>"');
+  assert.equal(lastLine(said), 'jarl.mjs extend "<section-or-field>" "<name>" --by "<who>"');
   said = refuses(root, 'extend', 'section', 'risks');
   assert.match(said, /the profile already declares the section risks/);
-  assert.equal(lastLine(said), 'jarl.mjs extend "<section-or-field>" "<name>" --by "<who>" --by "<who>"');
+  assert.equal(lastLine(said), 'jarl.mjs extend "<section-or-field>" "<name>" --by "<who>"');
   assert.match(refuses(root, 'extend', 'section', 'Why'), /the profile already declares the section Why/);
   assert.match(refuses(root, 'extend', 'section', 'Notes'), /the section Notes is not added: it declares the section Notes, which is the name of a header field or of a part Jarl writes itself/);
   assert.match(refuses(root, 'extend', 'field', 'Key'), /the field Key is not added: it declares the field Key, which Jarl reserves for an issue's key/);
@@ -77,7 +77,7 @@ test('extend refuses a part that is not a section or a field, a name the profile
   assert.match(refuses(root, 'extend', 'field', 'Branch'), /field "Branch" is one the tool writes itself/);
   said = refuses(root, 'extend', 'field', 'Area', '--values', 'ui,api', '--default', 'db');
   assert.match(said, /field "Area": "default" "db" is not one of its enum values/);
-  assert.equal(lastLine(said), 'jarl.mjs extend "<section-or-field>" "<name>" --by "<who>" --by "<who>" --values "<items>" --default "<value>"');
+  assert.equal(lastLine(said), 'jarl.mjs extend "<section-or-field>" "<name>" --by "<who>" --values "<items>" --default "<value>"');
   said = refuses(root, 'extend', 'section', 'Plan', '--default', 'x');
   assert.match(said, /--default goes with a field, not with a section/);
   assert.deepEqual(snapshot(root), held, 'nothing was written');
@@ -91,7 +91,7 @@ test('a field takes no name of a part Jarl writes itself, and a field and a sect
   for (const name of ['Title', 'model', 'Notes']) {
     const said = refuses(root, 'extend', 'field', name);
     assert.match(said, new RegExp(`^the field ${name} is not added: it declares the field ${name}, which is the name of a part Jarl writes itself — the names a field may not take are Status, .*, Title, Model, What, .*, Proof, Key, Parent, Person, Check when; rename it in the profile`));
-    assert.equal(lastLine(said), 'jarl.mjs extend "<section-or-field>" "<name>" --by "<who>" --by "<who>"');
+    assert.equal(lastLine(said), 'jarl.mjs extend "<section-or-field>" "<name>" --by "<who>"');
   }
   assert.match(refuses(root, 'extend', 'field', 'risks'), /^the profile already declares Risks as a section, and a field and a section never share a name/);
   assert.match(refuses(root, 'extend', 'section', 'AREA'), /^the profile already declares Area as a field, and a field and a section never share a name/);

@@ -74,7 +74,7 @@ test('brief <id> is the worker\'s: the issue as show prints it, the rules that r
 
 test('brief <id> --role reviewer carries the rules of the reviewer, of the round once one sent the work back, the rounds, their findings whole and the proof rows', () => {
   const root = rulesLoop();
-  assert.deepEqual(slugs(json(root, 'brief', '3', '--role', 'reviewer')), ['loop-rule', 'reviewers', 'jarl:reviewer-light-tier', 'jarl:reviewer-tier-above', 'jarl:reviewer-identical-output', 'jarl:reviewer-judges-the-issue'], 'at the first review, no rule of the round');
+  assert.deepEqual(slugs(json(root, 'brief', '3', '--role', 'reviewer')), ['loop-rule', 'reviewers', 'jarl:reviewer-tier-above', 'jarl:reviewer-judges-the-issue'], 'at the first review, no rule of the round');
   jarl(root, 'set', '3', 'in-progress', 'go', '--worker', 'w3', '--branch', 'jarl/3-ui');
   jarl(root, 'evidence', '3', '--line', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 3, fail 1');
   const finding = `Important: the count is off by one on the last page.\nMinor: ${'the name of the helper could say more, '.repeat(8)}end of the finding.`;
@@ -84,7 +84,7 @@ test('brief <id> --role reviewer carries the rules of the reviewer, of the round
   const o = json(root, 'brief', '3', '--role', 'reviewer');
   assert.equal(o.role, 'reviewer');
   assert.deepEqual(o.moments, ['review', 'round']);
-  assert.deepEqual(slugs(o), ['loop-rule', 'reviewers', 'jarl:reviewer-every-round', 'jarl:reviewer-light-tier', 'jarl:reviewer-tier-above', 'jarl:reviewer-identical-output', 'jarl:reviewer-judges-the-issue']);
+  assert.deepEqual(slugs(o), ['loop-rule', 'reviewers', 'jarl:reviewer-every-round', 'jarl:reviewer-tier-above', 'jarl:reviewer-judges-the-issue']);
   for (const absent of ['ui-workers', 'odin-only', 'coordinators', 'jarl:worker-only-the-issue']) assert.ok(!slugs(o).includes(absent), absent);
   assert.equal(o.rounds.length, 1);
   assert.match(o.rounds[0].text, /^round 1 \(count 1 of 3\) · findings 2 · the count is off by one$/);
@@ -374,7 +374,7 @@ test('two alike verdicts of one reviewer, a batch over two issues and then one o
     jarl(root, 'new', 'the other work', '--acceptance', '[read] it works');
     jarl(root, 'review', '1,2', 'changes', '--by', 'rev1', OLDER);
     jarl(root, 'review', '1', 'changes', '--by', 'rev1', NEWER);
-    assert.match(readFileSync(issueFile(root), 'utf8'), /\n- \*\*changes\*\* · by rev1 \(fresh\) · \d{4}-\d{2}-\d{2} · batch \S+\n {2}Important: the count is off\.\n {2}Minor: the older second line\./, 'the batch is marked on the first entry');
+    assert.match(readFileSync(issueFile(root), 'utf8'), /\n- \*\*changes\*\* · by rev1 \(fresh\) · \d{4}-\d{2}-\d{2} · model test-model · batch \S+\n {2}Important: the count is off\.\n {2}Minor: the older second line\./, 'the batch is marked on the first entry');
     loseEntry(root, 'rev1', which);
     assert.deepEqual(listed(root), which === 'older' ? [['rev1', POINTER, false], ['rev1', NEWER, false]] : [['rev1', OLDER, false], ['rev1', POINTER, false]], which);
     assert.deepEqual(reviewNotes(findingsListed(root, '1')), [pointerNote], which);
@@ -429,7 +429,7 @@ test('a retraction between two alike verdicts of one reviewer tells the two apar
     jarl(root, 'review', '1', 'changes', '--by', 'rev1', OLDER);
     jarl(root, 'retract', '1', 'review', 'the approve was given before the count was read', '--by', 'rev2');
     jarl(root, 'review', '1', 'changes', '--by', 'rev1', NEWER);
-    assert.match(readFileSync(issueFile(root), 'utf8'), /\n- ~~\*\*approve\*\* · by rev2 \(fresh\) · \d{4}-\d{2}-\d{2}~~\n[\s\S]*\n- \*\*retract\*\* · by rev2 \(fresh\) · /, 'the approve is struck and the retraction has an entry');
+    assert.match(readFileSync(issueFile(root), 'utf8'), /\n- ~~\*\*approve\*\* · by rev2 \(fresh\) · \d{4}-\d{2}-\d{2} · model test-model~~\n[\s\S]*\n- \*\*retract\*\* · by rev2 \(fresh\) · /, 'the approve is struck and the retraction has an entry');
     loseEntry(root, 'rev1', which);
     eachKeepsItsOwn(root, which, 'a retraction between');
   }
@@ -483,7 +483,7 @@ const ledIn = (t) => (/^(?:findings: )*(?:model |relayed(?: ·|$)|batch |artifac
 const lineText = (r) => (r.verdict === 'retract' ? `${takenAway(r.retracts)} · ${logged(r.text)}` : r.logOnly ? r.text.split('\n')[0] : ledIn(logged(r.text)));
 // A review's log line and its Reviews entry, as the review and retract commands write them, or as a writer that keeps only
 // the log writes its line, with no key and no mark; `at` is the line's time.
-const reviewLine = (id, key, r, at) => `- ${r.day} ${at}${r.logOnly ? '' : ` key ${key}`} · ${id} review ${r.verdict} · by ${r.by} (${r.kind}) · ${r.verdict === 'retract' ? '' : marksOf(r)}${lineText(r)}`;
+const reviewLine = (id, key, r, at) => `- ${r.day} ${at} key ${key} by ${r.by} · ${id} review ${r.verdict} · by ${r.by} (${r.kind}) · ${r.verdict === 'retract' ? '' : marksOf(r)}${lineText(r)}`;
 const reviewEntry = (r) => {
   const heading = `- **${r.verdict}** · by ${r.by} (${r.kind}) · ${r.day}${r.model ? ` · model ${r.model}` : ''}${r.relayed ? ' · relayed' : ''}${r.batch ? ` · batch ${r.batch}` : ''}${r.artifact ? ` · artifact ${r.artifact}` : ''}`;
   const body = r.verdict === 'retract' ? `${takenAway(r.retracts)}\n${r.text}` : r.text;
@@ -586,16 +586,16 @@ test('the review lines and Reviews entries the oracle writes are the ones the re
   jarl(root, 'review', '1', 'changes', '--by', 'rev4', 'model big-model was asked. Important: the count is off.');
   const lines = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').filter((l) => / · 1 review /.test(l));
   const day = lines[0].slice(2, 12);
-  const key = / key (\S+) · /.exec(lines[0])[1];
+  const key = / key (\S+) by [^·]+ · /.exec(lines[0])[1];
   const batches = lines.map((l) => / · batch (\S+) · /.exec(l)?.[1] ?? null);
   const at = (l) => l.slice(13, 18);
-  const boss = { verdict: 'approve', by: 'boss', kind: 'coordinator', day, text: 'The director read the count.', struck: true };
+  const boss = { verdict: 'approve', by: 'boss', kind: 'coordinator', model: 'test-model', day, text: 'The director read the count.', struck: true };
   const reviews = [
     { verdict: 'changes', by: 'rev1', kind: 'fresh', model: 'model-a', relayed: true, text: 'Important: the count is off.\nMinor: the second line.' },
-    { verdict: 'approve', by: 'rev2', kind: 'fresh', batch: batches[1], text: 'The count reads right.\nMinor: the second line.' },
+    { verdict: 'approve', by: 'rev2', kind: 'fresh', model: 'test-model', batch: batches[1], text: 'The count reads right.\nMinor: the second line.' },
     boss,
     { verdict: 'retract', by: 'rev3', kind: 'fresh', retracts: boss, text: 'the approve was given early.' },
-    { verdict: 'changes', by: 'w1', kind: 'self', text: 'Important: the worker found it.' },
+    { verdict: 'changes', by: 'w1', kind: 'self', model: 'test-model', text: 'Important: the worker found it.' },
     { verdict: 'changes', by: 'botty', kind: 'bot', text: 'Important: the bot found it.' },
     { verdict: 'changes', by: 'rev1', kind: 'fresh', model: 'model-b', relayed: true, batch: batches[6], artifact: 'renders/home page.png', text: 'Important: the count is off again.\nMinor: the second line.' },
     { verdict: 'changes', by: 'rev4', kind: 'fresh', text: 'model big-model was asked. Important: the count is off.' },
@@ -616,7 +616,7 @@ function checkHistories(sequences, table) {
   const id = '1';
   const log = join(root, '.jarl', 'log.md');
   const [baseLog, baseFile] = [readFileSync(log, 'utf8'), readFileSync(issueFile(root), 'utf8')];
-  const key = / key (\S+) · filed /.exec(baseLog)[1];
+  const key = / key (\S+) by [^·]+ · filed /.exec(baseLog)[1];
   let histories = 0;
   let ambiguous = 0;
   let outOfOrder = 0;
@@ -739,7 +739,7 @@ test('a brief of an issue with 250 review lines whose Reviews section holds its 
   jarl(root, 'new', 'the work', '--acceptance', '[read] it works');
   const log = join(root, '.jarl', 'log.md');
   const [baseLog, baseFile] = [readFileSync(log, 'utf8'), readFileSync(issueFile(root), 'utf8')];
-  const key = / key (\S+) · filed /.exec(baseLog)[1];
+  const key = / key (\S+) by [^·]+ · filed /.exec(baseLog)[1];
   const at = (k) => `${String(10 + Math.floor(k / 60)).padStart(2, '0')}:${String(k % 60).padStart(2, '0')}`;
   const write = (reviews, entries) => {
     writeFileSync(log, `${baseLog.replace(/\n*$/, '\n')}${reviews.map((r, k) => `${reviewLine('1', key, r, at(k))}\n`).join('')}`);
@@ -819,7 +819,7 @@ test('brief --slice <coordinator> is the coordinator\'s: its issues in play, its
   assert.equal(o.slice, 'odin');
   assert.equal(o.declared, true);
   assert.deepEqual(o.issues.map((i) => i.id), ['1']);
-  assert.deepEqual(slugs(o), ['loop-rule', 'coordinators', 'odin-only', 'jarl:coordinator-escalates', 'jarl:coordinator-pull-push', 'jarl:coordinator-shared-review', 'jarl:coordinator-scope-holds']);
+  assert.deepEqual(slugs(o), ['loop-rule', 'coordinators', 'odin-only', 'jarl:coordinator-escalates', 'jarl:coordinator-pull-push', 'jarl:coordinator-scope-holds']);
   for (const absent of ['frigg-only', 'ui-workers', 'reviewers', 'takeovers', 'jarl:worker-only-the-issue']) assert.ok(!slugs(o).includes(absent), absent);
   assert.deepEqual(slugs(json(root, 'brief', '--slice', 'FRIGG')).filter((s) => !s.startsWith('jarl:')), ['loop-rule', 'coordinators', 'frigg-only'], 'a slice is named in any case');
   const text = jarl(root, 'brief', '--slice', 'odin');

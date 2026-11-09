@@ -293,7 +293,7 @@ export function formProblems(args, said, loop, opts = {}, wrong = null) {
   if (opts.profile?.lifecycle?.command && lines.at(-1) === opts.profile.lifecycle.command) return [];
   const { reason, commands } = partsOf(said);
   if (!commands.length || !reason.trim()) return [`no reason and form on lines of their own: ${lines.at(-1)}`];
-  const given = args.map(String);
+  const given = withNames(args).map(String);
   const cmd = J.callOfArgv(given).cmd;
   const problems = [];
   const parsed = [];

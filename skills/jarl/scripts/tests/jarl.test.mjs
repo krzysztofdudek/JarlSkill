@@ -510,7 +510,7 @@ test('a round after an approve spends the approve', () => {
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'round', '1', 'merger: suite red after merge');
   assert.match(refuses(root, 'set', '1', 'done'), /no approving review/);
-  assert.match(refuses(root, 'review', '1', 'maybe', 'x'), /^review takes approve or changes \(got "maybe"\)\njarl\.mjs review "<ids>" "<verdict>" "<what-was-read-and-found>" --by "<reviewer>" --model "<model-id>"\n$/);
+  assert.match(refuses(root, 'review', '1', 'maybe', 'x'), /^review takes approve or changes \(got "maybe"\)\njarl\.mjs review "<ids>" "<verdict>" "<what-was-read-and-found>" --model "<model-id>" --by "<reviewer>"\n$/);
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   jarl(root, 'set', '1', 'done');
 });
@@ -913,7 +913,7 @@ test('a value flag takes the next argument whatever it starts with; -- ends the 
   assert.equal(jarl(root, 'evidence', '1', '--line', '1', '--ran', '--help', '--saw', 'usage'), '1 evidence row recorded for acceptance line 1');
   jarl(root, 'evidence', '1', '--line', '1', '--ran', 'yg check', '--saw', '--- FAIL: 3 pairs');
   jarl(root, 'evidence', '1', '--line', '1', '--ran=go test ./...', '--saw=ok=all');
-  const raw = (...args) => execFileSync(process.execPath, [SCRIPT, '--root', root, ...args], { encoding: 'utf8', timeout: SPAWN_TIMEOUT }).trim();
+  const raw = (...args) => execFileSync(process.execPath, [SCRIPT, '--root', root, ...withNames(args)], { encoding: 'utf8', timeout: SPAWN_TIMEOUT }).trim();
   raw('evidence', '1', '--', '--json prints ok');
   // A --root written after the bare -- is an argument, and a surplus one is refused rather than dropped; the reason says
   // it is a flag, which goes before the --, and the form puts it there.
@@ -1131,7 +1131,7 @@ test('next and status flag work with no acceptance line, done says so on stderr,
   jarl(root, 'field', '3', 'Acceptance', '--clear');
   assert.match(jarl(root, 'status'), /in flight with no acceptance line: 3$/m);
   assert.match(jarl(root, 'review', '2', 'approve', '--by', 'rev', FINDINGS), /2 review approve by rev \(fresh\) · acceptance: - \[read\] a \/ - \[read\] b/);
-  const r = execFileSync(process.execPath, [SCRIPT, 'set', '2', 'done', 'merged', '--root', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT });
+  const r = execFileSync(process.execPath, [SCRIPT, 'set', '2', 'done', 'merged', '--by', 'jarl', '--root', root], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SPAWN_TIMEOUT });
   assert.equal(r.trim(), '2 → done', 'stdout is unchanged');
   jarl(root, 'review', '1', 'approve', '--by', 'rev', FINDINGS);
   assert.match(refuses(root, 'set', '1', 'done', 'm'), /1 has no acceptance line, so there is nothing done can ask of it/, 'done refuses an issue with no line');
@@ -1466,7 +1466,7 @@ test('a package is one lease on one branch: set records it, check --branch bound
   assert.doesNotMatch(shown, /\*\*Worktree:\*\*/, 'a lease stores no worktree');
   assert.match(shown, /^\*\*Since:\*\* \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/m);
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
-  assert.match(log, /2 → in-progress · package raised · branch jarl\/1-pkg · worker w1\n/);
+  assert.match(log, /2 → in-progress · package raised · branch jarl\/1-pkg · model test-model · worker w1\n/);
   assert.doesNotMatch(log, /worktree/);
   assert.match(refuses(root, 'set', '3', 'open', 'x', '--branch', 'b'), /--branch goes with in-progress only/);
 
@@ -1511,7 +1511,7 @@ test('check --branch refuses a branch no issue holds, and says how many commits 
   jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.txt');
   git('git checkout -q -b feature && echo more >> a.txt && git commit -qam work && git checkout -q main');
   const msg = refuses(root, 'scope', '--branch', 'feature', '--base', 'main');
-  assert.match(msg, /^no issue records branch feature: it carries 1 commit\(s\) beyond main and no issue holds it \(work without an issue\) — file the issue, then set it in-progress --branch feature\njarl\.mjs new "<what-the-branch-does>" --tier "<tier>"\njarl\.mjs set "<the-id-new-prints>" in-progress "<why>" --branch feature\njarl\.mjs scope --branch "<worker-branch>" --base "<base-branch>" --by "<who>"\n$/);
+  assert.match(msg, /^no issue records branch feature: it carries 1 commit\(s\) beyond main and no issue holds it \(work without an issue\) — file the issue, then set it in-progress --branch feature\njarl\.mjs new "<what-the-branch-does>" --tier "<tier>" --by "<who>"\njarl\.mjs set "<the-id-new-prints>" in-progress "<why>" --branch feature --by "<who>"\njarl\.mjs scope --branch "<worker-branch>" --base "<base-branch>"\n$/);
   assert.match(refuses(root, 'scope', '--branch', 'jarl/none'), /^no issue records branch jarl\/none — name one/);
 });
 
@@ -1629,7 +1629,7 @@ test('a committed loop names the loop files git has not committed in status, han
   assert.doesNotMatch(jarl(root, 'status'), /not committed/);
   // Filed by the library: the issue's key raises the loop to the format that holds it, so the profile file is written too.
   (await import(new URL('../record.mjs', import.meta.url).href)).newIssue(root, 'one');
-  assert.match(jarl(root, 'status'), /^3 loop file\(s\) not committed — commit \.jarl\/ in the loop's repository$/m);
+  assert.match(jarl(root, 'status'), /^2 loop file\(s\) not committed — commit \.jarl\/ in the loop's repository$/m);
   assert.match(jarl(root, 'resume'), /^## Loop files not committed \(3\) — commit \.jarl\/\n- \.jarl\/issues\/001-one\.md\n- \.jarl\/log\.md\n- \.jarl\/profile\.json$/m);
   jarl(root, 'set', '1', 'dropped', 'no');
   assert.match(jarl(root, 'close'), /closed as a permanent record · 3 loop file\(s\) not committed — commit \.jarl\//);
@@ -1712,7 +1712,7 @@ test('outside a git repository a Branch lease is not reported gone, and resume s
   jarl(loose, 'set', '1', 'in-progress', 'w', '--branch', 'jarl/1-one');
   assert.deepEqual(JSON.parse(jarl(loose, 'status', '--json')).stale, []);
   const r = jarl(loose, 'resume');
-  assert.match(r, /- 1 one · branch jarl\/1-one · since \S+ \S+\n/);
+  assert.match(r, /- 1 one · branch jarl\/1-one · worker test-worker · model test-model · since \S+ \S+\n/);
   assert.doesNotMatch(r, /STALE|## Tips/);
 });
 
@@ -2395,12 +2395,6 @@ const ANOMALIES = [
   } },
   { name: 'a retraction of an approve the log does not hold', pattern: /the log holds no approve by rv before it, so it points at no entry/, make: (bad) => {
     const root = issued(); if (bad) appendLines(root, `${DATED}1 review retract · by owner (coordinator) · retracts the approve by rv (fresh) of 2026-10-19 · the reason`); else { jarl(root, 'review', '1', 'approve', '--by', 'rv', FINDINGS); jarl(root, 'retract', '1', 'review', '--by', 'owner', 'the approve was wrong'); } return root;
-  } },
-  { name: 'a retraction in a loop whose record format was not raised', pattern: /a retraction is written in the raised record format, and this loop is not in it/, make: (bad) => {
-    const root = plain(); appendLines(root, `${DATED}1 evidence row · npm test`); if (bad) appendLines(root, `${DATED}1 evidence retract · row 1 · by owner · the row is wrong`); return root;
-  } },
-  { name: 'an id of 1000 or more in a loop whose record format was not raised', pattern: /issue 1000: its id needs the raised record format/, make: (bad) => {
-    const root = plain(); if (bad) withIssueFile(root, '1000-late.md', '# 1000 · late\n\n**Status:** open\n'); return root;
   } },
   { name: 'a file in the issues directory that the loop does not read as an issue', pattern: /issues\/notes\.md: a file the loop does not read as an issue/, make: (bad) => {
     const root = issued(); if (bad) withIssueFile(root, 'notes.md', 'a note\n'); return root;

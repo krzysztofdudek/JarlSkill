@@ -124,7 +124,7 @@ test('field adds a repository to Repo and takes it off by its name', () => {
 test('the commands that wrote one part each are refused with the reason, then on its own line the form of the field call that does what was asked', () => {
   const root = fieldedLoop();
   const cases = [
-    [['prio', '1', '3'], "prio is not a command; the priority is a field\njarl.mjs field \"<ids>\" Priority \"<prio>\""],
+    [['prio', '1', '3'], "prio is not a command; the priority is a field\njarl.mjs field \"<ids>\" Priority \"<prio>\" --by \"<who>\""],
     [['tag', '1', '+a', '-b'], "tag is not a command; tags are a field: field adds them with --add and takes them off with --remove, one call each\njarl.mjs field \"<ids>\" Tags \"<tag>\" --add"],
     [['tag', '1', '-b'], "tag is not a command; tags are a field: field adds them with --add and takes them off with --remove, one call each\njarl.mjs field \"<ids>\" Tags \"<tag>\" --remove"],
     [['files', '1', 'a.mjs', 'b.mjs'], "files is not a command; the files are a field\njarl.mjs field \"<ids>\" Files \"<paths>\""],
@@ -143,7 +143,7 @@ test('the commands that wrote one part each are refused with the reason, then on
   assert.equal(issue(root, '1').priority, '2', 'a refused call writes nothing');
   const tool = mcp.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'jarl_prio', arguments: { root } } });
   // Its form carries the root the tool call gave, so filled it reaches the loop the call named.
-  assert.equal(posixForms(tool.error.message), `Unknown tool: jarl_prio — prio is not a command; the priority is a field\njarl.mjs field "<ids>" Priority "<prio>" --by "<who>" --by "<who>" --by "<who>" --by "<who>" --by "<who>" ${L.shellWord(`--root=${root}`)}`);
+  assert.equal(posixForms(tool.error.message), `Unknown tool: jarl_prio — prio is not a command; the priority is a field\njarl.mjs field "<ids>" Priority "<prio>" --by "<who>" ${L.shellWord(`--root=${root}`)}`);
 });
 
 test('set takes statuses only: a field given to it is refused with the field call that writes it', () => {

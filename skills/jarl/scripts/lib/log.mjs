@@ -256,7 +256,7 @@ const lineWriter = (type) => (type === 'tip' ? 'evidence, review, merged or a se
 // The form of the command that writes each kind of line, the last line of a refusal of that line given to log.
 const LINE_CALLS = {
   filed: () => ['new', hole('<title>')], move: (ids) => ['set', ids, hole('<status>'), hole('<why>')], round: (id) => ['round', id, hole('<what-failed>')],
-  verdict: (id) => ['review', id, hole('<verdict>'), hole('<findings-with-a-severity>'), '--by', hole('<reviewer>')],
+  verdict: (id) => ['review', id, hole('<verdict>'), hole('<findings-with-a-severity>'), '--by', hole('<reviewer>'), '--model', hole('<model-id>')],
   'retract-review': (id) => ['retract', id, 'review', hole('<why>'), '--by', hole('<who>')], 'retract-row': (id) => ['retract', id, hole('<n>'), hole('<why>'), '--by', hole('<who>')],
   'retract-note': (id) => ['retract', id, hole('<n-or-note-n>'), hole('<why>'), '--by', hole('<who>')], row: (id) => ['evidence', id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>'), '--by', hole('<who>')],
   merged: (id) => ['merged', id, '--sha', hole('<sha>')], ci: (id) => ['merged', id, '--ci', hole('<ci-state>')], body: (id) => ['field', id, hole('<part>'), hole('<value>')],
@@ -305,7 +305,7 @@ export function loopEvents(dir, profile, skipped, keys) {
   log.split('\n').forEach((l, n) => {
     const m = LOG_LINE.exec(l);
     if (!m) {
-      if (skipped && l.trim() !== '' && !l.startsWith('#')) skipped.push({ n: n + 1, text: l, reason: 'not a line of the current shape: a line of the log is "- yyyy-mm-dd hh:mm [key <key>] [tip] by <writer> · <text>"' });
+      if (skipped && l.trim() !== '' && !l.startsWith('#')) skipped.push({ n: n + 1, text: l, reason: 'not a line of the current shape: a line of the log is "- yyyy-mm-dd hh:mm [key <key>] [tip] by <who> · <text>"' });
       return;
     }
     // A line names its issue as it was written; the event carries the issue's own form, so it meets its issue's id.
@@ -322,7 +322,7 @@ export function loopEvents(dir, profile, skipped, keys) {
     // A line that carries state about an issue names the issue's key: one that does not is of an older shape, and is no state.
     const unkeyed = key === null && written !== null && parsed.type !== 'other';
     const body = unmarked || unkeyed ? { type: 'other' } : parsed;
-    if (skipped && unkeyed) skipped.push({ n: n + 1, text: l, reason: 'a line about an issue that names no key: a line about an issue is "- yyyy-mm-dd hh:mm key <key> by <writer> · <text>", and this one is read as a note' });
+    if (skipped && unkeyed) skipped.push({ n: n + 1, text: l, reason: 'a line about an issue that names no key: a line about an issue is "- yyyy-mm-dd hh:mm key <key> by <who> · <text>", and this one is read as a note' });
     if (skipped && unmarked) skipped.push({ n: n + 1, text: l, reason: 'a tip line without the tip mark before the separator: only the write of a row, a verdict, a merge or a close writes a tip, so this line is the tip of nothing' });
     // The mark on any other line is read past, the line by its text: said, since no write of Jarl's puts it there.
     if (skipped && mark !== null && parsed.type !== 'tip') skipped.push({ n: n + 1, text: l, reason: 'the tip mark on a line that is no tip line: only a tip line, written after a row, a verdict, a merge or a close, carries it, and this line is read by its text alone' });
@@ -365,7 +365,7 @@ function unplaced(profile, written, text, body) {
     return 'the lease fields of the move do not parse: a worker and a model are one name each, written once, in the order branch, model, worker, worktree';
   }
   // A row names the lines it proves, or is an attachment, or was marked as history when the record was converted.
-  if (body.type === 'row' && !body.lines && !body.attach && !body.history) return 'an evidence row that names no acceptance line: a row is "<id> evidence row (line <digest>) · …" or, carried over by a conversion, "<id> evidence row (history) · …"';
+  if (body.type === 'row' && !body.lines && !body.attach && !body.history) return 'an evidence row that names no acceptance line: a row names the digest of each line it proves, "<id> evidence row (line a1b2c3d4e5f6) · …", or, carried over by a conversion, is marked "<id> evidence row (history) · …"';
   // The model mark sits right after the reviewer, where the parser reads it: a word of the findings that reads as a mark is text.
   const head = REVIEW_LINE.exec(text);
   if (body.type === 'verdict' && body.model === null && head && /^model /.test(text.slice(head[0].length))) return 'the model mark of the verdict does not parse: it is "model <name> · " after the reviewer';

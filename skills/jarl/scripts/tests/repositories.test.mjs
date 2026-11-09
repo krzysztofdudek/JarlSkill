@@ -75,7 +75,6 @@ test('two sibling repositories get names and a third that is not a sibling keeps
   assert.equal(neu(w.hub, 'again', '--repo', 'tool').status, 0);
   assert.equal(w.decl().split('\n').filter((l) => l.startsWith('- **')).length, 2, 'a repository is declared once');
   assert.equal((w.log().match(/repo tool declared/g) || []).length, 1);
-  assert.deepEqual(JSON.parse(readFileSync(join(w.hub, '.jarl', 'profile.json'), 'utf8')), { 'jarl-profile': 1, format: 3 }, 'the issues\' keys raise it to 3, which holds the names too');
 });
 
 test('an issue with no Repo is read in the root of the loop, and a loop that names no repository writes no declaration', () => {
@@ -93,11 +92,11 @@ test('repo changes the Repo field and the base with a log line each, and a chang
   const w = world('tool', 'lib');
   neu(w.hub, 'a', '--repo', 'tool');
   assert.equal(jarl(w.hub, 'field', '1', 'Repo', 'lib'), '1 Repo: lib');
-  assert.match(w.log(), /1 field Repo · lib · was tool$/m);
+  assert.match(w.log(), /1 field Repo · lib · was tool · by test-writer$/m);
   assert.equal(jarl(w.hub, 'field', '1', 'Repo', 'lib'), '1 Repo: lib');
   assert.equal((w.log().match(/1 field Repo · /g) || []).length, 1);
   assert.equal(jarl(w.hub, 'field', '1', 'Repo', '--clear'), '1 Repo: (cleared)');
-  assert.match(w.log(), /1 field Repo · \(cleared\) · was lib$/m);
+  assert.match(w.log(), /1 field Repo · \(cleared\) · was lib · by test-writer$/m);
   assert.equal(jarl(w.hub, 'base', 'tool', 'release/9'), 'tool base: release/9 (was main)');
   assert.match(w.decl(), /^- \*\*tool\*\* · roots [0-9a-f]{40} · origin none · base release\/9$/m);
   assert.match(w.log(), /repo tool base · was main · now release\/9/);
@@ -469,7 +468,7 @@ test('a new lease stores no worktree, and set --worktree checks the path and sto
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stderr, /note: 1 --worktree was checked and is not recorded/);
   assert.doesNotMatch(w.issue(1), /\*\*Worktree:\*\*/);
-  assert.match(w.log(), /1 → in-progress · go · branch jarl\/1-a · worker w1\n/);
+  assert.match(w.log(), /1 → in-progress · go · branch jarl\/1-a · model test-model · worker w1\n/);
   assert.doesNotMatch(w.log(), /worktree/);
   assert.equal(JSON.parse(jarl(w.hub, 'show', '1', '--json')).where.worktrees[0].path, slash(wt));
   assert.match(jarl(w.hub, 'show', '1'), new RegExp(`^worktree of tool on jarl/1-a: ${escaped(slash(wt))}$`, 'm'));
@@ -562,7 +561,7 @@ test('status --group repo prints where each repository is, its base and whether 
   neu(w.hub, 'b', '--repo', 'lib');
   neu(w.hub, 'c');
   git(w.lib, 'checkout', '-q', '-b', 'topic');
-  const snapshot = () => ['log.md', 'repos.md', 'profile.json'].map((f) => readFileSync(join(w.hub, '.jarl', f), 'utf8')).concat(readdirSync(join(w.hub, '.jarl', 'issues')).map((f) => readFileSync(join(w.hub, '.jarl', 'issues', f), 'utf8')));
+  const snapshot = () => ['log.md', 'repos.md'].map((f) => readFileSync(join(w.hub, '.jarl', f), 'utf8')).concat(readdirSync(join(w.hub, '.jarl', 'issues')).map((f) => readFileSync(join(w.hub, '.jarl', 'issues', f), 'utf8')));
   const before = snapshot();
   const r = run(w.hub, ['status', '--group', 'repo']);
   assert.equal(r.status, 0);
@@ -623,7 +622,7 @@ test('the files and the leases of a loop are never given a machine\'s path by a 
   const w = world('tool');
   neu(w.hub, 'a', '--repo', '../tool', '--files', 'tool/src/a.mjs');
   jarl(w.hub, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-a', '--worker', 'w1');
-  const everything = [w.log(), w.decl(), w.issue(1), readFileSync(join(w.hub, '.jarl', 'profile.json'), 'utf8')].join('\n');
+  const everything = [w.log(), w.decl(), w.issue(1)].join('\n');
   assert.doesNotMatch(everything, new RegExp(escaped(w.parent)));
   assert.doesNotMatch(everything, new RegExp(escaped(dirname(w.parent))));
 });

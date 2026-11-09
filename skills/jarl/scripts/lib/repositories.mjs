@@ -3,7 +3,7 @@
 
 import { existsSync, statSync } from 'node:fs';
 import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
-import { echoWord, fieldText, hole, jarlLine, need, noSeparators, splitList } from './base.mjs';
+import { afterView, echoWord, fieldText, hole, jarlLine, need, noSeparators, splitList } from './base.mjs';
 import { git, gitHere } from './git.mjs';
 import { canonical, jarlDir, normalPath, portablePath } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';

@@ -54,21 +54,26 @@ export function withNames(args, { bare = false } = {}) {
   if (bare) return args;
   const words = args.map(String);
   const stop = words.indexOf('--');
-  const flags = stop === -1 ? words : words.slice(0, stop);
-  const has = (flag) => flags.some((w) => w === flag || w.startsWith(`${flag}=`));
-  const cmd = words[0];
-  const writes = J.MUTATING.has(cmd) && (cmd !== 'goal' || has('--set'));
+  const before = stop === -1 ? words : words.slice(0, stop);
+  const call = J.callOfArgv(before);
+  const cmd = call.cmd;
+  if (cmd === undefined || !J.MUTATING.has(cmd)) return args;
+  const has = (flag) => call.flags.some(([k]) => k === flag);
+  if (cmd === 'goal' && !has('set')) return args;
   const add = [];
   // The writes that name a judgement (who ruled, answered, took back or ticked) name it themselves, as they always did.
-  if (writes && !['decide', 'answer', 'retract', 'tick', 'review'].includes(cmd) && !has('--by')) add.push('--by', cmd === 'set' ? 'jarl' : TEST_WRITER);
+  if (!['decide', 'answer', 'retract', 'tick', 'review'].includes(cmd) && !has('by')) add.push('--by', cmd === 'set' ? 'jarl' : TEST_WRITER);
   // A lease names its worker; a move that restates a lease is written with its own --worker, or bare.
-  const leasing = cmd === 'set' && words[2] === 'in-progress' && !has('--header');
-  if (leasing && !has('--worker')) add.push('--worker', TEST_WORKER);
-  const leases = leasing || (cmd === 'set' && has('--worker'));
-  const verdict = cmd === 'review' && flags[2] !== 'retract' && !has('--bot') && flags[flags.indexOf('--by') + 1] !== 'owner';
-  if ((leases || verdict) && !has('--model')) add.push('--model', TEST_MODEL);
+  const leasing = cmd === 'set' && call.args[1] === 'in-progress' && !has('header');
+  if (leasing && !has('worker') && !has('model')) add.push('--worker', TEST_WORKER);
+  const leases = leasing || (cmd === 'set' && has('worker'));
+  const by = call.flags.find(([k]) => k === 'by')?.[1];
+  const verdict = cmd === 'review' && call.args[1] !== 'retract' && !has('bot') && by !== 'owner';
+  if ((leases || verdict) && !has('model')) add.push('--model', TEST_MODEL);
   if (!add.length) return args;
-  return stop === -1 ? [...args, ...add] : [...args.slice(0, stop), ...add, ...args.slice(stop)];
+  // Right after the command: a flag at the end of a call may be one that lacks its value on purpose.
+  const at = words.indexOf(cmd);
+  return [...words.slice(0, at + 1), ...add, ...words.slice(at + 1)];
 }
 // One run of the command line against the loop in `root`: the result of spawnSync, both streams as written. `env` is
 // added to the environment of the process.
