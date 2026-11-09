@@ -1,5 +1,5 @@
 // The vendored Runes code (the MCP adapter, the command table it reads, and the parity, measure and client parts of
-// the test kit), the shared skill fragments in SKILL.md (between the RUNES markers) and the vendoring tool are pinned
+// the test kit), the shared skill fragments in references/family-rules.md (between the RUNES markers) and the vendoring tool are pinned
 // in vendor/runes.pin.json and checked by that tool, offline. The CI job adds the fresh-clone half.
 import './tmp-cleanup.mjs';
 import { test, after } from 'node:test';
@@ -17,14 +17,15 @@ const check = (skillDir) =>
 const tmps = [];
 after(() => { for (const d of tmps) rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); });
 
-// A throwaway repository holding the skill directory as it is here: the tool's own copy, the pin and SKILL.md.
+// A throwaway repository holding the skill directory as it is here: the tool's own copy, the pin and the file of the fragments.
 function copyOfSkill() {
   const repo = mkdtempSync(join(tmpdir(), 'jarl-runes-'));
   tmps.push(repo);
   mkdirSync(join(repo, '.git'));
   const dir = join(repo, 'skills', 'jarl');
   mkdirSync(join(dir, 'scripts'), { recursive: true });
-  cpSync(join(SKILL, 'SKILL.md'), join(dir, 'SKILL.md'));
+  mkdirSync(join(dir, 'references'), { recursive: true });
+  cpSync(join(SKILL, 'references', 'family-rules.md'), join(dir, 'references', 'family-rules.md'));
   cpSync(join(SKILL, 'scripts', 'runes.mjs'), join(dir, 'scripts', 'runes.mjs'));
   cpSync(join(SKILL, 'scripts', 'vendor'), join(dir, 'scripts', 'vendor'), { recursive: true });
   return dir;
@@ -48,9 +49,9 @@ test('a hand edit of a vendored file turns the gate red and names the file', () 
   assert.match(r.stderr, /dist\/mcp\/tools\.mjs/);
 });
 
-test('SKILL.md carries each pinned fragment between its markers, once', () => {
+test('references/family-rules.md carries each pinned fragment between its markers, once', () => {
   const pin = JSON.parse(readFileSync(join(SKILL, 'scripts', 'vendor', 'runes.pin.json'), 'utf8'));
-  const text = readFileSync(join(SKILL, 'SKILL.md'), 'utf8');
+  const text = readFileSync(join(SKILL, 'references', 'family-rules.md'), 'utf8');
   assert.deepEqual(pin.fragments.map((f) => f.name).sort(), ['evidence', 'mcp-first', 'worker-worktree']);
   for (const { name } of pin.fragments) {
     for (const edge of ['START', 'END']) assert.equal(text.split(`<!-- RUNES:${name}:${edge} -->`).length, 2, `${name} ${edge} marker`);
@@ -59,19 +60,19 @@ test('SKILL.md carries each pinned fragment between its markers, once', () => {
 
 test('a hand edit inside a fragment block turns the gate red and names the fragment', () => {
   const dir = copyOfSkill();
-  const path = join(dir, 'SKILL.md');
+  const path = join(dir, 'references', 'family-rules.md');
   const text = readFileSync(path, 'utf8');
   const edited = text.replace('**Evidence is what ran and what it printed.**', '**Evidence is what ran.**');
   assert.notEqual(edited, text);
   writeFileSync(path, edited);
   const r = check(dir);
   assert.equal(r.status, 1, r.stdout);
-  assert.match(r.stderr, /fragment evidence in \.\.\/\.\.\/SKILL\.md: the block between the markers differs/);
+  assert.match(r.stderr, /fragment evidence in \.\.\/\.\.\/references\/family-rules\.md: the block between the markers differs/);
 });
 
 test('an edit outside the blocks leaves the gate green; a lost marker turns it red', () => {
   const dir = copyOfSkill();
-  const path = join(dir, 'SKILL.md');
+  const path = join(dir, 'references', 'family-rules.md');
   const text = readFileSync(path, 'utf8');
   writeFileSync(path, text.replace('In Jarl the coordinator is the jarl', 'In Jarl, the coordinator is the jarl'));
   assert.equal(check(dir).status, 0);

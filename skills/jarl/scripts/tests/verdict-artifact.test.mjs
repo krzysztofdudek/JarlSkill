@@ -105,11 +105,11 @@ test('a path inside the repository is written as given, a $ or a % inside a name
   assert.deepEqual(verdicts.map((e) => e.artifact), WRITTEN);
 });
 
-test('the help and the reviewer reference state the rule of an artifact value in the same words', () => {
+test('the help and the commands reference state the rule of an artifact value in the same words', () => {
   const sentence = (text) => /the value is a relative path inside the repository the work is in, [\s\S]*? is refused/i.exec(text.replace(/`/g, '').replace(/\s+/g, ' '))?.[0].toLowerCase();
   const help = sentence(USAGE);
   assert.ok(help, 'the help states the rule');
-  assert.equal(sentence(skillText('references/reviewer.md')), help);
+  assert.equal(sentence(skillText('references/commands.md')), help);
 });
 
 test('report counts the verdicts that name an artifact', () => {

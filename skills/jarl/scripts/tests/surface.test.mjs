@@ -303,8 +303,8 @@ test('every write that records a judgement names its author: review, answer, dec
 // The walk of the wrong calls of every writing command, and the check that each refusal ends with a form, are in walk.mjs
 // and the refusals-walk test files.
 
-test('SKILL.md, the jarl\'s reference and each role\'s brief say that a refusal ends with the form of the command, filled before it is run and never pasted as printed', () => {
-  for (const file of ['SKILL.md', 'references/jarl.md', 'references/worker.md', 'references/reviewer.md', 'references/merger.md']) {
+test('SKILL.md says, in one place, that a refusal ends with the form of the command, filled before it is run and never pasted as printed; the briefs say it in their own words', () => {
+  for (const file of ['SKILL.md']) {
     assert.match(skillText(file), /a refusal ends with the form of the command with a `<placeholder>`; fill the value and run it; never paste it as printed\. The commands Jarl prints are written for a POSIX shell \(sh, bash, zsh\) on macOS and Linux, and on Windows for PowerShell and cmd, whose double quotes Git Bash reads alike but for a path that starts with two backslashes, which it reads with one; replace every `<placeholder>` before running one\./, file);
     assert.doesNotMatch(skillText(file), /the call corrected|paste it blind/, file);
   }

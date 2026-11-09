@@ -1,295 +1,130 @@
 # The jarl
 
-Read it when you open or resume a loop as the jarl, when you hand a slice of it to a coordinator, or when you run a slice as one. The terms are defined in [glossary.md](glossary.md).
+The director's reference. Read it once when you open or resume a loop as the jarl or run a slice as a coordinator; a raised worker, examiner or merger reads only its brief. Terms: [glossary.md](glossary.md).
 
 ## Contents
 
-- [The moments of work](#the-moments-of-work): where each moment of a loop is described
-- [Opening a loop](#opening-a-loop): what to look at before the first worker
-- [The loop](#the-loop): the turn, in order
-- [Resuming a loop](#resuming-a-loop): where a new session finds what it needs
-- [Filing an issue](#filing-an-issue): the body in the call that files, issues that wait
-- [From research to issues](#from-research-to-issues): `import` and `sources`
-- [Templates](#templates): issues filed again and again in one shape, a release checklist
-- [Worked in place](#worked-in-place): an issue that writes its files where they are checked out, and who commits them
-- [What goes to the owner](#what-goes-to-the-owner): asking well, decisions made under a mandate
-- [An owner who is rarely there](#an-owner-who-is-rarely-there): provisional decisions and questions that hold one issue
-- [Rulings about an area](#rulings-about-an-area): rulings that reach every file of one type of code
-- [Rules with a scope](#rules-with-a-scope): a ruling for one role, slice, tag or moment, delivered to whoever it matches
-- [Closing the branch](#closing-the-branch): the steps before the feature branch merges to `main`
-- [Standing permission to push the feature branch](#standing-permission-to-push-the-feature-branch)
-- [Closing a permanent loop](#closing-a-permanent-loop)
-- [Coordinators: slices of the backlog](#coordinators-slices-of-the-backlog): who runs which part, when a coordinator escalates, one merger
-- [Talking to the owner](#talking-to-the-owner)
-
-## The moments of work
-
-| Moment | Read |
-|---|---|
-| You open a loop | [Opening a loop](#opening-a-loop) |
-| Session start: resume | [Resuming a loop](#resuming-a-loop) |
-| You ask the owner through `ask` | [What goes to the owner](#what-goes-to-the-owner) and [An owner who is rarely there](#an-owner-who-is-rarely-there) |
-| You start researchers: `findings.json`, then `import` | [From research to issues](#from-research-to-issues) |
-| A loop over several repositories | [Code in another repository](repositories.md#code-in-another-repository) and [Parallel workers in worktrees](repositories.md#parallel-workers-in-worktrees) |
-| You close | [Closing the branch](#closing-the-branch) |
+- [Opening a loop](#opening-a-loop)
+- [The loop](#the-loop)
+- [Resuming a loop](#resuming-a-loop)
+- [Filing](#filing)
+- [The shape of the work](#the-shape-of-the-work)
+- [Who decides what](#who-decides-what)
+- [When something fails](#when-something-fails)
+- [Coordinators: slices of the backlog](#coordinators-slices-of-the-backlog)
+- [Closing the branch](#closing-the-branch)
 
 ## Opening a loop
 
-`init "<goal>"` opens it (see First moves in [SKILL.md](../SKILL.md#first-moves)). Before the first worker is raised, look at the checkout with `git status`. A worker sees only what is committed: a worktree is cut from the feature branch, so edits that exist only in the main checkout's working tree, and files git has not seen, are invisible to every worker raised from it. Commit that work on the feature branch first, or tell the owner it waits, and never hand a worker an issue whose files carry changes that are not committed. In a committed loop, `status` and `resume` also name the loop's own files that git has not committed.
+`init "<goal>" --by <who>` opens it; a `Check: <command>` line in the goal names what decides a landing. Before the first worker run `git status`: a worker sees only what is committed, so commit what lives only in the main checkout's tree or tell the owner it waits, and never hand a worker an issue whose files hold uncommitted changes. A loop works on a feature branch: cut one if the work started on `main`, because a merge to `main` is reserved.
 
 ## The loop
 
-Every turn, in this order:
+Every turn, in order:
 
-0. **Continue or archive — once per session.** See First moves in [SKILL.md](../SKILL.md#first-moves): ask the owner once, at the first contact with a loop, never again on each `new` or `evidence` in the same work.
-1. **Boot.** `resume` — one command, the whole state, read live (see [Resuming a loop](#resuming-a-loop)). Then `branches`: one call covers the loop's own repository, every repository an open or in-progress issue names and every one where an issue that is not dropped records a Branch (`--repo <path>` narrows it to one). A worker branch with commits beyond the feature branch is a report, whether or not the worker said so. Open questions come first: the owner may have answered one in the meantime. Read `goal.md` whole, an issue with `show`, or log lines further back only when the section in `resume` is not enough.
-2. **File.** Anything anybody saw becomes an issue before anything else happens. Nobody fixes on the
-   side. A worker reports what it found; the jarl files it, so numbers never collide in this checkout, its worktrees and the branches the clone holds, local and remote-tracking. They can collide across two clones of a committed loop that both file issues before either fetches the other: `verify` then names the two files with their keys and the number stays refused until the coordinator runs `renumber <id> --key <key>`, which gives one file a free number. Each line of the log names the key of the issue it is about, so the issue renumbered keeps its lines, and none is rewritten. Two files with one number and no key (in a loop a composer keeps, or filed before the loop held keys) cannot be told apart: each is read from its own header, before the renumbering and after it, an issue under that number is never closed or approved (its work is filed again under a new number), the coordinator gives one file a free number by hand and records in a log note which of the lines already written belong to which file. A file copied by hand, whose number the log filed once, looks like any issue once one of the two is renumbered. Two copies that filed the same work, under one title, leave two ordinary issues once one of them is renumbered: nothing in the record says they are one piece of work filed twice, so whoever renumbers drops the one that repeats the other. A status set by hand in the file of a number the log cannot attribute is checked against the file alone: `verify` names a closing status that no closing move of the number in the log stands behind, and cannot tell a close the log holds for the other file from this file's own. Pull before leasing and push right after: `next --as jarl` shows an issue two writers leased with no move out between as a conflict, and `verify` refuses an issue file that holds git conflict markers. Every command that writes an issue's text puts a backslash in front of a line that reads as a conflict marker (`\<<<<<<< HEAD`, `\=======`, `\>>>>>>> main`), so a conflict an issue quotes never reads as one a merge left.
-3. **Pick.** `next` lists what can run now: open issues whose files do not overlap with anything
-   in progress, whose **After:** issues are settled and that no open question holds (`next --all` shows the rest and why). Priority first, then whatever unblocks the most.
-   An issue marked `(no acceptance yet)` gets its acceptance line first (`field <id> Acceptance "<line>"`).
-   `set <ids> in-progress "<who>" --branch jarl/7-slug --worker <name>` before
-   raising the worker — one issue, or a package of small neighbouring ones on one branch (see
-   [Packages and leases](repositories.md#packages-and-leases)).
-4. **Raise a worker.** One worker per issue or per package, in its own worktree, on branch `jarl/7-slug` (7 the package's first issue) cut from
-   the feature branch — every agent that may write anything, a research issue's worker included,
-   gets its own worktree (see [Worker branches](worker.md#worker-branches)); only the jarl and the merger work in the main checkout, and read-only readers and
-   verifiers need none — on the tier the issue names — its model set explicitly on every spawn, never inherited, and recorded with the lease (`--model`; see [Which model sits where](models.md#which-model-sits-where)) —
-   and tell the worker it spawns nothing itself. The brief is in [worker.md](worker.md#the-workers-brief); the output of `show <id>` (the issue's current window, not the whole file) is pasted into it,
-   and after the red rounds the loop allows (three unless the goal says otherwise) the takeover block from `round` goes in too, for a fresh worker. A fresh worker on a leased issue, after rounds or for any other reason (a context grown far beyond the others), is a handover: `set <id> in-progress "<why-the-worker-changed>" --branch <worker-branch> --worker <name> --model <model-id> --handover`; a lease without it is refused while the old one holds. A takeover is recorded this way before its brief, with a reason that names the takeover, and the brief then carries the rules of the takeover.
-5. **Review.** A worker's report is a hypothesis. Raise a **fresh one-shot reviewer** for every branch, however small: never the worker, never the merger. The discipline, the verdicts, how a verdict is recorded and the reviewer's brief are in [reviewer.md](reviewer.md).
-6. **Merge.** The merger (see [merger.md](merger.md)) does it: into the feature branch with a merge commit that names
-   the issue, then `merged <id> --sha <sha> --ran "<command>" --saw "<what-it-printed>"`, `set <id> done` (which needs the worker's Proof row), worktree and branch removed. Red check means no merge, a round back to
-   the same worker with what failed, and, once the red rounds the loop allows are used (three unless the goal says otherwise; the limit is read from the goal at each round, the rounds are counted from the last takeover, and a changed limit takes effect at the next round), an issue about the issue.
-7. **Repeat** until nothing is open, then close the branch (see [Closing the branch](#closing-the-branch)). Nothing is written for the next
-   session: it boots from `resume`, so keep intent where `resume` reads it (see [Resuming a loop](#resuming-a-loop)).
+1. **Boot.** `resume`, the whole state read live, then `branches` (a worker branch ahead of its base is a report, whether or not the worker said so). Open questions first: the owner may have answered.
+2. **File.** Anything anybody saw becomes an issue before anything else happens.
+3. **Pick.** `next --as <who>` lists what is on you, each move with its command; `next` lists what can start now.
+4. **Lease.** `set <ids> in-progress "<text>" --branch <worker-branch> --worker <name> --model <model-id> --by <who>`, then make the worktree (see [Parallel workers](repositories.md#parallel-workers-in-worktrees)). An issue tagged `in-place` writes only its declared files, with no branch (see [Worked in place](commands.md#worked-in-place)).
+5. **Raise the worker** with the output of `brief <ids>`, its model set explicitly ([Which model sits where](models.md#which-model-sits-where)). It spawns nothing and reads nothing else.
+6. **Examine.** A worker's report is a hypothesis. Raise a fresh one-shot examiner for every branch with `brief <ids> --role reviewer`: never the worker, never the merger. Its brief gives its depth and its model tier, computed from the lines. Three rules reach it:
+   - Every round, re-check every acceptance line of the issue, not only the findings of the round before.
+   - Work on a record format, a contract or what a person sees is reviewed a tier above the worker.
+   - The verdict judges the issue's acceptance and what the change itself broke; a finding outside that is filed as a new issue and never turns the verdict to changes.
+7. **Land.** Raise the merger with `brief --role merger`: it merges serially, runs the check on the merged result, records `merged` and sets each issue done. Land as approvals arrive; nothing waits to form a batch.
+8. **Repeat** until nothing is open, then close the branch.
 
-Testing, stress and research sessions are the same loop with a different mix: some workers produce
-issues (they test, they probe, they read) while others take issues down. The stream never waits for
-the other side.
-
-A refused call writes nothing: a refusal ends with the form of the command with a `<placeholder>`; fill the value and run it; never paste it as printed. The commands Jarl prints are written for a POSIX shell (sh, bash, zsh) on macOS and Linux, and on Windows for PowerShell and cmd, whose double quotes Git Bash reads alike but for a path that starts with two backslashes, which it reads with one; replace every `<placeholder>` before running one. Brief every role to do the same.
+Testing, stress and research sessions are the same loop with a different mix: some workers produce issues while others take them down.
 
 ## Resuming a loop
 
-Nothing is written for the next session. Everything it needs is in the loop's own files — the goal, the rulings, the issues with their leases and **After:**, the asks, the log — and in the repositories its issues name, so `resume` reads it all at the moment it is asked: nothing it prints can be stale, and a session that is cut off mid-turn leaves nothing unsaid. It holds no lock and writes nothing, so any role may run it at any time, and it needs no network (`--gh` adds the CI of each pushed tip through `gh`).
+`resume` writes nothing and reads everything live, so a session cut off mid-turn loses nothing. What the next session needs lives where it reads: what comes next is **Priority:** and **After:**, why is a ruling or an issue's What and Why, what is on a branch is the lease and the rows, what waits on the owner is an `ask`, never prose.
 
-What to do after a compaction is in First moves in [SKILL.md](../SKILL.md#first-moves): it is a session start, and it begins with `resume`.
+## Filing
 
-What the next session needs lives where `resume` reads it:
+A good issue has a Why, checkable lines with methods, Files or Resources, a Tier and After where it waits; many lines on one issue are normal. `new "<title>" --why "<text>" --acceptance "<test-check-compare-read-or-owner-line>"... --by <who>`, or `field <id> <part> "<value>" --by <who>` later. A finding with a reproduction or a broken line is an issue; wording or taste stays a Minor point of a verdict; in doubt, a defect.
 
-- **What comes next** is the order of the issues: **Priority:** and **After:** (`field <id> Priority 1`, `field <id> After <ids>`). The next session reads it in the ready list and the waiting list.
-- **Why** is a ruling (`decide`, or the owner's `answer`) or the issue's own What and Why (`field <id> Why "<text>"`). A reason worth keeping is never only in a summary.
-- **What is going on in a branch** is the lease (`set in-progress --branch --worker`), the evidence rows and the log line each command writes.
-- **What waits on the owner** is an `ask`, never a sentence in prose.
+**Every line carries one method**, chosen by whoever files it, never by the worker on the lease: the cheapest that can actually fail. A `test` must be shown red first; a `check` must name a command whose result depends on the change. If no method can fail, the line is `read`.
 
-## Filing an issue
+| Method | The line says | `done` asks for |
+|---|---|---|
+| `test` | a behaviour a test proves | a counted row naming the line by the holder of the lease and one by someone else |
+| `check` | a command (`· by: <command>`), or the goal's declared check when none is given | the same rows, or the landing on the declared check |
+| `compare` | output that stays the same (`· by: <command>` required) | those rows, two of the holder's with identical `--saw` |
+| `read` | what only judgement proves | a live approve that quotes it |
+| `owner` | what the owner looks at (`· material: <what-he-reviews> · check: <what-he-checks>`) | his tick: `tick <id> <line-number> --by owner` |
 
-**File the body with the issue.** `new` takes `--where`, `--what`, `--why` and `--acceptance` (one checkable line per flag), so an issue is written whole in the call that files it; `field <id> <part> "<value>"` fills or replaces them later. None of it is required, but an issue with no acceptance line gives the worker nothing to prove and the reviewer nothing to check. So the tool says so without refusing anything: `next` marks such an issue `(no acceptance yet)`, `status` lists the in-progress ones that have none, and `set done` notes it on stderr, together with an issue that has fewer `--ran`/`--saw` rows than acceptance lines (none included). Fill it (`field <id> Acceptance "…"`) before `set <id> in-progress`.
+A line with no mark reads as `read`. An `[owner]` line is agreed with him while the backlog is written, so he is handed the stage instead of having to call a pause.
 
-**A stage the owner wants to see is an acceptance line only he ticks.** While the backlog is written, ask him which stages he wants to look at himself, and write each as `[owner] <line> · material: <what he reviews> · check: <what he checks>`: he is handed the material and a clear instruction instead of having to call a pause. `done` refuses until he ticks it with `tick <id> <line-number> --by owner`, `next --as owner --all` gives him the material and the instruction once the material is there, and work that must wait for his look waits on that issue with **After:** (see [The owner's sign-off](profile.md#the-owners-sign-off)).
+`--after <ids>` holds an issue until those are settled; a blocked issue never sits in-progress. A text that cites an unfinished issue by number with no After between them draws a note from `verify`, `new` and `field`. A piece easier done smaller becomes sub-issues: file them, then `split <id> --line <n>=<id>... --by <who>` shares the parent's lines out and refuses to lose one. A parent keeps a line of its own that proves the whole. Research findings come through `import` and repeated shapes from templates: see [Research import](commands.md#research-import) and [Templates](commands.md#templates).
 
-**An issue that waits on another says so.** `field <id> After <ids>` (or `new --after`) records **After:**. `next` never offers it while any of those issues is still open, in progress or deferred, and `status` counts it as waiting, not as open or in flight, so "in flight" keeps meaning that someone is working on it. Do not park a blocked issue in `in-progress`. It is ordering and bookkeeping, not a schedule: no computed plan, no critical path. A ruling that settles issues names them, `decide <slug> "…" --by <who> --settles <ids>`, and the ruling is written into each one's evidence. Closing the issue is still `set`, and `done` does not count a `Ruling …`, `Dropped:` or `Deferred:` line as evidence of the work.
+## The shape of the work
 
-**An issue easier done in smaller pieces is split into sub-issues.** File one issue per piece with `new`, then `split <id> --line <n>=<id>...` moves each acceptance line of the parent to the piece it belongs to, or keeps it on the parent (`<n>=` the parent's own id); a line named nowhere is refused, so none is lost, and each piece becomes a sub-issue (`field <ids> Parent <id>` sets or clears a parent alone). A sub-issue may be split in turn, and the ids stay numbers. A parent waits on its sub-issues, a sub-issue on the **After:** of every issue above it, a sub-issue with no slice tag is in its parent's slice, and a rule that names an issue reaches its sub-issues. Once every sub-issue is done or dropped, the parent is on its coordinator: check its own acceptance against the whole and record it as a proof row; `done` waits for that row and an approve, both made after the last sub-issue closed. A parent goes dropped or deferred with its unfinished sub-issues in the same call, and nothing is put under a finished parent.
+The unit of record is the line; the unit of work is the lease. **The default is one agent on the whole issue, cut only where it stalls or where the problem clearly falls apart.** One examiner reviews one lease as one diff, however many issues it carries.
 
-**A text that relies on another issue is ordered with it.** When the What, Why or Acceptance of an unfinished issue cites another issue by number, and that issue is neither done nor dropped, is not among the issues the first waits on through After (directly or through other After lines) and does not itself wait on the first, `verify` prints a note naming both, and `new` and `field` print the same note when the text is written (`field` only when it writes the What, Why or Acceptance). The note refuses nothing, changes no exit status and writes nothing to the record; it asks whether the text relies on the cited issue, and if so, `field <id> After <ids>` orders the two. `verify` shows the first twenty notes and counts the rest, and `new` and `field` show those of the issue they wrote. The check walks the After lines for each citation it checks. First it walks from the citing issue to the cited one. If that walk finds nothing, it walks from the cited one back to the citing one. A walk visits each issue at most one time and stops when it reaches the issue it seeks. A pair in which the citing issue waits on the cited one costs the walk to that issue. A pair in which the cited issue waits on the citing one costs a walk over all the issues the citing one waits on through After, then the walk back to it. A pair in which neither waits on the other costs both walks in full, at most the size of the loop twice. On a chain of 2400 issues that each cite the one before, the check takes about 35 ms.
+| Shape | Use it when | How |
+|---|---|---|
+| one agent, one spec | the default | one issue, many lines, one lease |
+| package | small issues that sit near each other | `set <ids> in-progress` on one branch, one commit per issue |
+| fan-out | territories with no shared file or resource, interfaces fixed first | a parent with sub-issues, each its own lease |
+| sequence | one step's output is the next step's input | sub-issues chained by After |
+| a change by tool | a mechanical change across many files | one lease; the examiner reads the tool and a sample |
+| a probe | what is wanted is unknown | a research issue whose product is findings |
 
-Only an explicit citation counts, and only a number that is a whole word of its own: a number after the word issue or task (singular or plural, in any case), of any length, with the numbers that run on from it joined by a comma and a space, by and or or between spaces, or by an ampersand; a number after a hash sign, of any length; a number of three or more digits alone in brackets, or several of them in brackets joined the same way. A comma with no space joins nothing, so a number in a thousands group, or two numbers written with a comma and no space, names none, in brackets or after the word issue. Written as `issues <a>,<worker-branch>`, the list names neither number. A space after the comma, as in `issues <a>, <worker-branch>`, makes it name both. A bracketed list of two-digit numbers, such as `(12, 13)`, names none. A number inside a longer word (a sha, a date, a time, a file with a line, a name with a hyphen or a slash), a decimal or a dotted version, or beside a hyphen or a slash names none, so a range of issues written with a hyphen and no spaces names none: write the numbers out. A range written with spaces around its hyphen names the number before the hyphen only. A number after a hash sign or in brackets and followed by a unit (line, character, char, byte, ms, second, minute, hour, day, percent, test, round, file, time, item, kind, or a percent sign) is an amount, and so is a number in brackets after with, status, code, exit or exits (an exit status). A bare number outside brackets, after none of those words, names no issue, so a possessive such as a number followed by an apostrophe and s names none.
+The director that takes the lease chooses by judgement; tag `shape:<name>` to have `status --group tag` and `models --group tag` count it. As many agents run at once as have territories that share no file or resource and that you and the merger can read reports for.
 
-## From research to issues
+**The Tier sets the prior:** `light` when an executable check will catch a mistake, `strong` when only judgement would (a design, a format, an unknown cause), `standard` otherwise.
 
-When you start researchers, ask each one to leave a `findings.json` beside its report, and then `import` it: the findings become issues in one call, and nobody rewrites a report into issues by hand. A research round leaves a `findings.json` beside its report. `import <findings.json>` files one issue per finding, and each carries **Source:** `<report dir>#<finding id>`. The report directory is dated, so that pair names one finding for good. The directory is the one holding the file, written from the root of its repository (`research/2026-09-25-export`), or given with `--source <report-dir>`. Import is idempotent. A finding whose Source an issue already carries is skipped, so a re-run files nothing twice. That is also how external requirements are followed: file each as a finding, put them under one parent issue, and a re-run reports every finding whose text differs from what its issue holds, with the issue's text and the finding's, whatever the issue's status. The report compares the issue's What and Why paragraph by paragraph and word by word (white space and line endings do not count): a paragraph of the finding that the issue does not hold as it stands counts, a paragraph added by hand, or one the finding drops, does not; import never rewrites the issue, so taking a change over is an edit of its own. Import compares an issue only when its file reads as import filed it: its Source is that finding alone, its Found by is the one this run writes (`research <report dir>`, or `--found-by`, so a re-run repeats the first run's), and its What opens with `Claim:` or `Truth:`; one filed by hand, adopted into a Source, or naming several findings is not, and a finding with neither a `claim` nor a `truth` is not compared. A run with findings already filed prints how many of them it compared, and how many it did not and why. A finding named by an issue that has no **Source:** is not filed again either: `import` reports it, and `--adopt` writes the Source onto that issue. "Named" is read narrowly: the issue's title and its What, Why and Acceptance count, a header field never does, and Evidence only under the strictest rule: an id that reads as unique on its own, on an Evidence line that also names the report directory (a package issue's `Source: <report dir>/report.md … Ids: a-b-01, a-b-02`). An id that reads as unique on its own (a dash and at least eight characters, like `jarl-2-B2`) is enough there by itself. A short id (`F1`, `C1`, `2`), or any id from the angles shape, also needs its report named in the same issue: the report directory's name, or the full `<angle>/<id>`. When two issues name it, import reports it as ambiguous and leaves both alone. `--dry-run` prints what it would do, and `--only <ids>` takes part of the file. `--kind`, `--prio`, `--tier`, `--tags`, `--repo` and `--found-by` replace the mapped values for every issue filed. Import checks every finding it would file against the rules of filing before it writes anything, an adoption included, and a refused import leaves the loop as it found it. `--parent <id>` files every issue the import files as a sub-issue of that issue (an issue that is already filed or adopted keeps its place); the issue must be in the loop and not finished, and the profile must not declare a field Parent of its own.
+**Committing early.** A worker commits at the failing test and at the fix, so that long thinking still shows in `branches` and a replacement can continue from the tree.
 
-Three shapes are read: a flat array of findings; an array of angles, each with its findings under `surviving`; and `{ "results": [{ "area", "kept": [...] }] }`. In the angles shape an id is unique only inside its angle, so the key there is always `<angle>/<id>`, with the angle name slugified (`First Hour` → `first-hour`). Every finding needs an id, and a repeated id refuses the whole file. The mapping:
+**Same worker or a fresh one.** Findings go back to the same worker with `round <ids> "<text>" --by <who>` while its context is alive and they are local. Past the limit (three rounds unless a `Takeover` line of the goal changes it), or with its context gone, a fresh worker takes over after a handover (`set --handover`), with the old diff to use or discard. A retry must differ in model, tier or approach.
 
-| Issue | From the finding |
-|---|---|
-| title | `title`, else the first sentence of `claim`, else the id |
-| **Kind:** | `kind` when it is one of the loop's kinds; `defect` and `inconsistency` → bug, `risk` and `opportunity` → gap, anything else → bug |
-| **Priority:** | `priority`, else `severity`: `blocker`, `critical`, `high` → 1; `medium`, `major`, `important` → 2; `low`, `minor` → 3; 1, 2 or 3 as they are; anything else → 2 |
-| **Where:** | `where`, else `surfaces` |
-| What | `Claim:` `claim`, `Truth:` `truth`, then `evidence` |
-| Why | `impact` or `adopter_impact`, and the finding's `effort` estimate |
-| Acceptance | `proposal`, `suggested_fix` or `fix`, as one line starting `Proposed by the finding`. That line is not counted as an acceptance line, so `next` keeps marking the issue until it is rewritten into something checkable. |
-| Evidence | nothing. `done` still needs evidence of the work. |
+## Who decides what
 
-Keys beyond the table pass: research writes its own (a `verifier`, a `v`, a `language`), and an import that files lists the extra keys it let through, with how many findings carry each. Three misses of a key in the table are refused instead, because the issue would otherwise be filed with that field empty: the key in another case (`CLAIM` for `claim`), a key of five letters or more in the table missed by one letter (`clam` for `claim`, `severety` for `severity`), and two neighbouring letters swapped (`tilte` for `title`). A shorter key one letter off (`file`, `ids`, `fixed`) passes. A refusal names the finding, the key and its nearest key, and lists the keys a finding may carry. Import, `--dry-run` and `sources` refuse the same file alike; an import files nothing.
+Three questions, and one rule beside them: **who does the work never judges it, and cannot ease its own review.**
 
-`sources [<findings.json>...]` is the coverage view. Per report it shows the findings, how many were filed, the unfiled ones (when the file is given) and the status of the issues filed from them, with one row per finding. A finding deliberately left unfiled is recorded as a ruling that names it, never as silence. An issue filed by hand from a finding takes `new --source` or `field <id> Source <report-dir#finding-id>`.
+1. **Is it reserved to the owner?** What leaves the machine or cannot be taken back: a publish, a push, a tag, a deleted branch, a merge to `main`. What the tools' law keeps for a person: ratifying a rule, a suppression, a `review_by`, the architecture file. What the product is and when it ships. And the five stop cases of [SKILL.md](../SKILL.md#the-rules-that-never-bend). An unknown case counts as reserved. Ask, and hold only what depends on the answer.
+2. **Whom does it bind?** One issue: its worker. One slice: its coordinator. The loop: the jarl. The goal or a whole type of code: the owner.
+3. **The owner's by reach and not reserved?** Decide provisionally: `decide <slug> "<text>" --by jarl`, then `ask "<text>" --kind ratify --issue <id> --by jarl`. It blocks nothing; a rejected choice is undone by a new issue.
 
-## Templates
+To ask, `ask "<text>" --by <who>` with what you found, the options with their cost and your recommendation; `answer <id> "<text>" --by <who>` records his answer as a ruling. `--kind stuck --issue <id>` holds one issue; everything else keeps moving, and the loop neither waits for him nor guesses for him. A worker's `stuck` goes to its director, a coordinator's escalation to the jarl, the jarl's to the owner.
 
-An issue that is filed again and again in the same shape — a release phase, a triage of a bug report, a dependency bump — is written once as a template: `.jarl/templates/<name>.md`, an issue file without a number. Its header fields **Kind:**, **Priority:**, **Tier:**, **Tags:** and **Files:** are defaults, and its What, Why, Acceptance and Changelog sections are the body. `new "<title>" --template <name>` files an issue from it; any flag given on the call replaces the template's value, field by field and section by section. The first line is a title and is ignored, unless it is already a field (`**Kind:** process`), which is read as one; a name is letters, digits and `. _ -`. Templates belong to the place, not to one loop: `archive` leaves them in `.jarl/`. In the default mode they are out of git like the rest of the loop, and `close` removes them with it.
+A ruling that reaches every file of one type of code is `decide <slug> "<text>" --by <who> --area <type> --reach <n>` (and `--rule <id>` for a rule of the graph); `close` batches them for the owner (see [Area rulings](commands.md#area-rulings)). A rule for one role, slice, tag or moment takes `--applies-to` and reaches whoever matches it through `resume --as` and `next --as`.
 
-A release checklist is issues filed from a template, not a mode. The checklist lives where the release procedure lives (for a family of repositories, in the skill that runs its releases), and the loop files one issue per phase, chained with `--after`, so `next` sequences them and `status` counts them like any other work:
+To the owner: one sentence of state at boot, plain words, no internal names; "how is it going" gets an assessment, not a list. `next --as owner --all` is what is on him.
 
-```
-# .jarl/templates/release-phase.md
-# release phase
+## When something fails
 
-**Kind:** process
-**Priority:** 1
-**Tags:** release
+| Fails | Seen by | Do |
+|---|---|---|
+| a worker dies | `branches` marks the lease stale (30 minutes of no commit, row or log line, or the goal's `Liveness: <minutes>`) | hand the whole lease over with `set --handover`: the same worktree if the old agent is certainly gone, else a new branch from the old tip |
+| a worker goes in circles | the round limit | a fresh worker one tier up, on another model, or with a changed approach |
+| an examiner dies | proof with no verdict past the threshold | raise another; two verdicts corrupt nothing |
+| a merge goes red | the merger's check | the merger's brief has the three cases |
+| the merger dies | the checkout holds a merge no `merged` line names | look at git and the record, re-run the check, then record it or reset to the merge's parent; never infer the check from git |
+| you compact | your next turn | `resume --as <who>` or `brief --slice <name>` |
+| two clones worked apart | `verify` | `renumber <id> --key <key> --by <who>`, a handover naming the lease to keep |
+| the directing session dies | nothing inside Jarl | a host runs `resume` when `next --as jarl` holds a move and nothing has written for a set time; Jarl raises nobody |
 
-## What
-One phase of the release checklist, done in the order the After chain gives.
-
-## Why
-A phase skipped here is found by someone who uses it after the tag.
-
-## Acceptance
-- every step of the phase is done, with a --ran/--saw row per step
-- the phase's own check is green
-```
-
-```
-jarl_new { title: "Release X · A: freeze and dry run", template: "release-phase", acceptance: ["dry run prints no finding", "every repository's release branch is cut"] }
-jarl_new { title: "Release X · B: versions and changelogs", template: "release-phase", after: "301" }
-jarl_new { title: "Release X · C: tags and CI", template: "release-phase", after: "302" }
-```
-
-Each acceptance line is one step, and `set done` notes a phase closed with fewer `--ran`/`--saw` rows than steps. Nothing here tags, releases or refuses anything; see [What Jarl will not grow](composers.md#what-jarl-will-not-grow).
-
-## Worked in place
-
-An issue that writes its declared files and nothing else, such as one document of a research loop, may be worked in place instead of on a branch: tag it `in-place` (`new --tags in-place --files <paths>`, or `field <id> Tags in-place --add`). Its worker writes those files where they are checked out, in the checkout of their repository (the loop's own, or the one the issue's Repo names for that file, as [Code in another repository](repositories.md#code-in-another-repository) places a path), and commits nothing; the lease takes no `--branch` and no `--worktree`, and is refused while the issue declares no files, which keep two such issues off one file as for any lease. The merger's steps do not apply: there is no branch to review against a base, nothing to merge and no `merged` to record. Once the approve stands, the files are committed by the one committer of the main checkout, the merger where one runs (a commit of their own between two merges) and the coordinator otherwise; the commit is recorded as a row (`evidence <id> --ran "<command>" --saw "<sha> …"`), then the coordinator sets the issue done; `done` refuses while a declared file holds a change its checkout has not committed, and until a row of its proof recorded after its start names a commit, made after that start, on the branch checked out, that changes one of its files in its repository. A declared path is read from the top of its repository (the one the issue's Repo names, or the loop's own, also where the loop sits in a subdirectory of it), the base `scope` reads too, and compared whole with the paths git names there, so a file of the same name elsewhere in it is not the issue's; a symbolic link is followed to the file it points to, and one that leads out of the repository is refused with the form of Files. Review is as for any issue with no branch. An issue that carries code (a Branch or a Merged field) is never tagged `in-place`, and the tag is a line of record format 3: its first write raises the loop, and a loop a composer keeps refuses it.
-
-## What goes to the owner
-
-Decide yourself inside the goal; the cases that stop the loop and go to the owner are listed under the rules that never bend in [SKILL.md](../SKILL.md#the-rules-that-never-bend).
-
-Ask well: where you are, what you found, the options with trade-offs, your recommendation. Never an
-open "what should I do". File it with `ask`, keep the rest of the loop moving, and record the answer
-with `answer` — it becomes a ruling in `decisions.md`.
-
-When the owner has handed the loop a mandate to decide on its own, or is away, how the loop goes on is in [An owner who is rarely there](#an-owner-who-is-rarely-there).
-
-## An owner who is rarely there
-
-The loop neither waits for the owner nor guesses for them. Everything that is theirs goes through `ask`, and the work that does not depend on the answer goes on. The exact grammar in force is printed by `jarl --help`.
-
-- **A provisional decision** is a ruling plus a question that asks for the owner's word afterwards: `decide <slug> "<text>" --by jarl`, then `ask --kind ratify --issue <id> "<text>"`. It is never left in evidence prose. It blocks nothing: the work goes on, `next` and `done` ignore it, and it waits as long as the owner needs. It is listed in `status` (`to ratify N`, one line each) and under its own heading in `resume` until the owner answers. `answer` records the answer as a ruling and writes it into the issue's evidence. When the owner rejects the choice, file the undoing as a new issue.
-- **A question the jarl cannot settle** is `ask --kind stuck --issue <id> "<text>"`. It holds that issue and the sub-issues under it: `next` does not offer them while the question is open, and every other issue goes on.
-- **At every boot** read the questions and the ratify items `resume` prints first: the owner may have answered in the meantime, and an answer is a ruling in force from then on.
-
-## Rulings about an area
-
-A ruling that reaches every file of one type of code — every handler, every migration — is not the loop's alone: the next agent touching any other file of that type has to know it, long after the loop is gone. Such a ruling is written with `decide <slug> "<text>" --by <who> --area <type> --reach <n>`: the type as the repository's graph names it, and how many files it holds. When the ruling admits a rule of the graph on that type — the rule stands `advisory` there until the owner admits it — add `--rule <id>`, the rule's id as the graph names it. It works as a ruling of the loop at once; it becomes the type's own only when the owner admits it. The test for `--area` is the owner's: would an agent touching another file of this type need to know it? Only the thick ones pass.
-
-The owner admits them in one batch when the loop closes. `close` files the batch as ratify items — at most 10, widest reach first; the rest wait for the next close — each one sentence of the ruling, its type and the number of files. `close --batch` files it without closing, so the owner can answer before the loop goes: `answer <question> "yes" --by owner` admits a ruling, `answer <question> "reject" --by owner` rejects it; the first word decides (`yes`, `ok`, `tak`, … or `reject`, `nie`), anything else is refused. A bare `no` decides nothing — it is English no and colloquial Polish yes — so the word after it decides (`no tak` ratifies, `no nie` rejects), and `no` alone is refused with a request for `tak` or `nie`. The batch never holds the close: a ruling nobody ratified stays a ruling of the loop — kept with a permanent loop, gone with a loop on a branch — and never enters the type's decisions.
-
-A ratified area ruling is written into the type's decision log (`yg log add --type <type>`, from the repository holding the loop) when that repository has a Yggdrasil graph (`.yggdrasil/`) and a working `yg` answers `npx --no-install yg --version`; a ruling that supersedes one written there replaces it there too. Without a graph or a working `yg`, nothing is sent. A write `yg` refuses — an unknown type, or decisions already in force that the new one says nothing about — is reported with the command to run by hand, and the ruling stays in `decisions.md`, marked **Ratified:**. A ratified ruling that names a rule (`--rule`) is also written into that rule's own log as a ratification (`yg log add --aspect <id> --ratify --by <who>`), naming as who admitted it the owner, whose answer it is (`answer <question> "yes" --by owner`); Yggdrasil reads the types and the version admitted from the graph — every type the rule reaches, not only the ruling's area, so the batch question for such a ruling says so — and the rule may then stand `enforced` on them without its `type-law-unratified` finding. It is written after the type's decision and independently of it; a rule `yg` does not know, or one no type reaches, is refused and reported with the command to run by hand, and the answer still stands. Entries a graph upgrade recorded for rules already in force name the graph, not a person: they are never the owner's word, and Jarl never skips its write because one is there. This is Jarl's one optional edge to another tool, and its only one. A loop run by a composer — its profile keeps `close` to the record (`lifecycle`) — is written into the graph by that composer, with its own code and into the tree it hands over: there `answer` records the verdict and sends nothing, and says so, so no entry is written twice or into a checkout the composer's work never reaches. A composer files its own batch through the record library (`ask` with `kind: 'ratify'` and `ruling: <slug>`), which refuses a ruling that is not an area ruling in force or was asked about already.
-
-## Rules with a scope
-
-A rule every worker, every reviewer of one tag or the coordinator of one slice must follow is written once, as a ruling that says whom it applies to: `decide <slug> "<a-ruling>" --by <who> --applies-to "<selectors>"`, the selectors `loop`, or one or more of `role <role>`, `slice <coordinator>`, `moment <moment>`, `issue <id>`, `tag <tag>`, `kind <kind>`, `tier <tier>`, `files <path>` and `repo <repository>` joined by `and`, each of which must hold. `--until <yyyy-mm-dd>` ends it after that day and `--until <id>` when that issue closes; a ruling that supersedes it revokes it. `resume --as <who>` and `next --as <who>` print the rules that match whoever asks, whole, and none other; Jarl's own rules for each role, quoted from these references, come with them. An agent that learns a lesson proposes it: `ask "<text>" --kind rule --applies-to "<selectors>"`, on the jarl to accept (`answer <question> "yes" --by jarl`, or `"reject"`), or with `--to owner` on the owner where the rule is his; accepted, it reaches every reader it matches. `close` (and `close --batch`, before the loop goes) offers each rule of the loop for promotion, a question on the owner answered with one way it goes on: `carry` into the next loop, `instructions` in the repository's agent instructions, `law` for a rule about code, written as an area ruling (see [Rulings about an area](#rulings-about-an-area)), or `drop`; the jarl writes the rule where the answer says, and nothing in the loop tracks that write.
-
-## Closing the branch
-
-Before the feature branch merges to `main`, in this order:
-
-1. Every issue is `done` with evidence, or `dropped` or `deferred` with a reason, or listed to the owner as still open.
-2. `report` is the material: the repository's changelog carries every user-visible change from it, in the
-   register the repository asks for; entries still on issues (see [Changelog fragments](worker.md#changelog-fragments)) are
-   printed by `changelog <ids>`.
-3. The repository's own check is green on the branch tip.
-4. `jarl_close` with `batch` (`close --batch`) puts the area rulings to the owner (see [Rulings about an area](#rulings-about-an-area)) and offers him each rule of the loop for promotion (see [Rules with a scope](#rules-with-a-scope)); answer what they answer, and go on either way.
-5. `jarl_close` removes `.jarl/` — it refuses while anything is still open or deferred: `archive "<slug>"` keeps the deferred work under `.jarl/archive/`, and `close --force` removes the loop with it and keeps no copy. In the committed mode
-   that removal is the last commit, so `main` never carries the directory; for that reason `close` also
-   refuses while `.jarl/archive/` holds anything (move it out of the tree, or pass `--force`, which
-   removes the whole directory). In the default mode there is nothing to commit — git never saw it —
-   and `close` leaves `.jarl/archive/` in place.
-
-Merging and pushing are the owner's word, never yours.
-
-## Standing permission to push the feature branch
-
-Some loops have that word already, for good: the owner has said the loop commits and pushes the
-feature branch as it goes (a release loop that keeps `release/<version>` on the remote, say). That
-permission is a rule of the loop, so it is written where the loop's rules live: a line in `goal.md`'s
-rules, or a ruling in `decisions.md` quoting the owner's words, naming the branch it covers. With it
-on file, the merger's brief says so: after a green merge into the feature branch, push that branch.
-A worker's branch `jarl/7-slug` is never pushed, with or without it, and nothing beyond the
-feature branch is covered by it. Without such a line, a push is still the owner's word each time.
-
-## Closing a permanent loop
-
-A loop opened with `init --permanent` has no feature branch to close, so this section applies with
-one difference, at step 5: nothing above it changes — every issue still needs to be `done`, `dropped` or
-`deferred` before closing, `report` still feeds the changelog, the repository's own check still needs
-to be green. But `jarl_close` in this mode never removes `.jarl/`: it refuses exactly as above
-while anything is open or in progress, and once clean it appends a closing line to `log.md` and
-leaves the directory in place — the record `--root` named stays where it was, for a later session
-or any other reader, to read.
+A merger's report is the only signal that it left the main checkout: nobody runs git there or raises a second merger before it arrives. Only worker leases are recorded, so what a dead merger left is read from git and the record.
 
 ## Coordinators: slices of the backlog
 
-The jarl's context is spent best on the owner and on judgement, so once the loop is open the jarl
-hands parts of the backlog to **coordinators** on the standard tier and keeps the rest. The goal's
-`Coordinators:` line names them, and each one's slice is the issues tagged `slice:<name>`
-(`field <ids> Tags --add slice:<name>`); an issue in no slice is the jarl's. A coordinator runs this skill over
-its slice exactly as the jarl would over the loop, with one difference: it never talks to the owner.
-It starts from `next --as <name>`, `status --slice <name>` and `resume --slice <name>`, leases,
-raises workers and reviewers on the tier each issue names, files what they find into its own slice,
-splits an issue into sub-issues where smaller pieces are easier to do and to review, and sends rounds. Everything it raises is its own to reach, so the coordinator holds its workers and
-reviewers and the jarl holds the coordinators. Its brief is this whole skill, plus the repository,
-the feature branch, its slice, the absolute path of the script for a session without the jarl tools,
-and the four reasons to escalate below; `brief --slice <name>` prints the part the record holds, and
-`brief <id>` and `brief <id> --role reviewer` the briefs of its workers and reviewers.
+Add a slice when you hold more than you can read reports for. The goal's `Coordinators:` line names them, and each one's slice is the issues tagged `slice:<name>`, cut by area so files and most After chains stay inside it; an issue in no slice is the jarl's. A coordinator runs this reference over its slice, except that it never talks to the owner, and starts from `next --as <name>`, `status --slice <name>` and `brief --slice <name>`.
 
-**A level waits on the agents it raised, and returns only when the ball is on someone it did not
-raise.** A coordinator keeps working its slice, waiting on its own workers and reviewers, until
-`next --as <name>` holds nothing it can move; it returns to the jarl in one line only when what is
-left waits on the jarl, the owner, another slice or an outside person. The jarl does the same with
-its coordinators and talks with the owner whenever the ball is on the owner.
+**A level waits on the agents it raised, and returns only when the ball is on someone it did not raise.**
 
-**The four reasons a coordinator escalates.** It goes up with
-`ask "<text>" --kind escalation --slice <name>` (and `--issue <id>` when one issue is the
-subject), which the jarl holds and answers, for these four and no other:
+**The four reasons a coordinator escalates.** It goes up with `ask "<text>" --kind escalation --slice <name>` (and `--issue <id>` when one issue is the subject), which the jarl holds and answers, for these four and no other:
 
 1. a gap or a finding outside its slice's goal;
 2. a decision that is the jarl's or the owner's;
 3. its slice empty, or blocked by another slice;
 4. a takeover that failed too.
 
-Counts are never pushed up: the jarl reads them with `status --slice <name>`. With more than one
-slice in play (the issues in no slice count as one), each lease declares its Files or Resources, because across slices only leases hold.
-Pull before leasing and push right after when the loop is shared between clones.
-One shared review covers only issues that are one contract or one screen, at most four.
-An issue's scope does not grow once it is leased: a new ask becomes a new issue.
-A change that adds or rewrites a leased issue's acceptance line prints a note naming it and is logged, and `report` counts such changes per writer.
+Counts are never pushed up: the jarl reads them with `status --slice <name>`. Pull before leasing and push right after when the loop is shared between clones. An issue's scope does not grow once it is leased: a new ask becomes a new issue.
 
-**One merger for the loop.** The goal's `Merger: <name>` line names the one holder, the jarl or one
-coordinator, that raises the merger; every approve not yet merged, in every slice, is on that
-holder's list. A merger's report is the only signal that it has stopped touching the main checkout —
-not a delay, not an assumption that it "must be done by now", not a status the loop tracks some other
-way. The main checkout has exactly one writer at a time: while a merger's report is outstanding,
-nobody — no coordinator, not the jarl — runs a git command there or treats its work as settled, and
-no second merger is raised into it. A coordinator that reconciles state by hand while a merger might
-still be running is writing into a tree another process is also writing into; that is the collision
-the sole-committer rule exists to prevent.
+The goal's `Merger: <name>` line names the one holder, the jarl or one coordinator, that raises the merger; `Merger (<coordinator>): <name>` gives a slice its own, into its own integration branch, in a worktree of its own. Mergers never share a checkout, and only the holder of the main checkout commits `.jarl/`. Every agent names itself with `--by`. A coordinator that cannot spawn writes each brief to a file and sends the jarl one line per spawn (`spawn <role> <id> tier=<tier> worktree=<path> brief=<path>`); the jarl raises from that line and forwards the report's last line back.
 
-**Who wrote what.** Every coordinator, worker and reviewer names itself on each write that takes
-`--by`: the record cannot tell agents apart otherwise, and a raised agent that calls its parent's
-server would write under no name at all.
+## Closing the branch
 
-A coordinator does not guess whether it can raise agents. At boot, before raising anything, it
-checks — a spawn tool in its own reach, or one real attempt on its first worker. If it can, it holds
-every worker and reviewer itself, as above. If it cannot, it reports `no-spawn` to the jarl in one
-line and the relay below begins for the rest of the loop.
-
-On a platform where an agent raised by the jarl cannot raise agents of its own, the split stays and
-only the spawning moves: the coordinator writes every brief to a file and sends the jarl one line per
-spawn (`spawn <role> <id> tier=… worktree=… brief=<path>`); the jarl spawns from that line without
-reading the brief; every raised agent writes its report to a file and ends with one line naming it;
-the jarl forwards that one line to the coordinator. A second round for the same worker, or feeding the
-merger again, is a resume, not a new spawn — the coordinator sends `resume <id> brief=<path>` instead,
-and the jarl resumes that same agent without reading the brief. The jarl's context then carries
-pointers, not briefs and reports.
-
-## Talking to the owner
-
-One sentence of state at boot: how many open, how many in flight, what you do first. "How is it going"
-gets an assessment, not a list. Plain words, no internal names; the owner reads what happened, not how
-the loop works.
+Every issue `done`, `dropped` or `deferred` with a reason, or listed to the owner as open; the check green on the tip; `report` and `changelog <ids>` feed the changelog. `close --batch --by <who>` puts the area rulings and rules to him; `close --by <who>` then removes `.jarl/` (a permanent loop keeps it). Pushing and merging to `main` are his word, unless a goal line or ruling grants it once for good, naming the branch. Worker branches are never pushed.

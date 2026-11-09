@@ -26,8 +26,8 @@ import { leasedByText, subsText } from './evidence.mjs';
 
 // A research round leaves a findings.json beside its report. import turns each finding into one issue whose
 // **Source:** is <report-dir#finding-id>: the report directory is dated, so the pair names that finding for
-// good, and a re-run skips every finding whose Source an issue already carries. The mapping (references/jarl.md, "From
-// research to issues") reads three shapes: a flat array of findings; an array of angles, each with its
+// good, and a re-run skips every finding whose Source an issue already carries. The mapping (references/commands.md, "Research import")
+// reads three shapes: a flat array of findings; an array of angles, each with its
 // surviving findings under `surviving`; and { results: [{ area, kept: [...] }] }. A finding without an id
 // cannot be keyed, so the file is refused whole.
 const KIND_OF = { defect: 'bug', inconsistency: 'bug', risk: 'gap', opportunity: 'gap' };
@@ -100,7 +100,7 @@ export function findingsOf(json, command = 'import') {
   } else if (Array.isArray(json)) list = checkedList(json);
   else if (json && Array.isArray(json.results)) list = checkedList(json.results.flatMap((r) => r.kept || []));
   else if (json && Array.isArray(json.findings)) list = checkedList(json.findings);
-  else refuse('not a findings file this tool reads: expected an array of findings, an array of angles with `surviving`, or { results: [{ kept }] } — see references/jarl.md, "From research to issues"', reader.form);
+  else refuse('not a findings file this tool reads: expected an array of findings, an array of angles with `surviving`, or { results: [{ kept }] } — see references/commands.md, "Research import"', reader.form);
   const seen = new Set();
   const out = list.map((f, n) => {
     need(f && typeof f === 'object' && (typeof f.id === 'string' || typeof f.id === 'number') && String(f.id).trim(), `finding #${n + 1} has no id — every finding needs one to be filed once and only once${reader.stop}`, () => reader.form);

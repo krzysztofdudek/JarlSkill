@@ -194,7 +194,8 @@ function derivedLines() {
 // Every text the tense rule reads, as { where, text } and, for a name of a script, kind 'name'.
 function tenseTexts() {
   const read = (path) => readFileSync(join(REPO, path), 'utf8');
-  const references = readdirSync(join(SKILL, 'references')).filter((f) => f.endsWith('.md')).sort().map((f) => `skills/jarl/references/${f}`);
+  // The conversion file is the one text about the format before, and names it.
+  const references = readdirSync(join(SKILL, 'references')).filter((f) => f.endsWith('.md') && f !== 'converting-from-6-2.md').sort().map((f) => `skills/jarl/references/${f}`);
   const markdown = ['skills/jarl/SKILL.md', ...references, 'README.md', 'CLAUDE.md'].flatMap((p) => proseLines(p, read(p)));
   // The Runes vendoring tool is compared byte for byte with Runes' own copy by the vendor gate, so it is changed in Runes only.
   const scripts = [...readdirSync(SCRIPTS).filter((f) => f.endsWith('.mjs') && f !== 'runes.mjs'), ...readdirSync(join(SCRIPTS, 'lib')).filter((f) => f.endsWith('.mjs')).sort().map((f) => `lib/${f}`)];

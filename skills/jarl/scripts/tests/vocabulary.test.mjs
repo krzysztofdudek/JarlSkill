@@ -106,7 +106,9 @@ test('the reviewer\'s standing and the question\'s type keep their own words: ki
 
 test('the skill, the help and the descriptions speak only of Jarl as it is now: no version, no history word', () => {
   const re = /\b(?:older|earlier|no longer|new in|used to|legacy|backward|compatible with|predates?|formerly)\b|\bv?\d+\.\d+\.\d+\b/i;
-  assert.deepEqual(hits(SKILL_LINES, re, SKILL_LABELS), []);
+  // The one file about the format before names it, and may.
+  const present = SKILL_ENTRIES.filter((e) => e.file !== 'references/converting-from-6-2.md');
+  assert.deepEqual(hits(present.map((e) => e.text), re, present.map((e) => `${e.file}:${e.n}`)), []);
   assert.deepEqual(hits(HELP_LINES, re), []);
   assert.deepEqual(hits(DESCRIPTIONS, re), []);
 });
@@ -117,7 +119,7 @@ test('the skill never says ticket, and names the command only as scope', () => {
 });
 
 // Every term the glossary defines, in the order its table lists them.
-const TERMS = ['issue', 'loop', 'lease', 'package', 'round', 'evidence row', 'proof', 'note', 'verdict', 'standing', 'gate', 'merge record', 'ruling', 'question', 'type', 'profile', 'tier', 'model', 'mode', 'format', 'owner', 'jarl', 'worker', 'reviewer', 'merger', 'composer', 'scope', 'check'];
+const TERMS = ['issue', 'loop', 'lease', 'package', 'round', 'evidence row', 'proof', 'note', 'verdict', 'standing', 'gate', 'merge record', 'ruling', 'question', 'type', 'profile', 'tier', 'model', 'mode', 'format', 'owner', 'jarl', 'worker', 'reviewer', 'merger', 'composer', 'examiner', 'director', 'method', 'shape', 'holder', 'slice', 'scope', 'check'];
 
 test('the skill defines each glossary term once, in the one table of references/glossary.md, in one present-tense sentence', () => {
   const GLOSSARY = 'references/glossary.md';
