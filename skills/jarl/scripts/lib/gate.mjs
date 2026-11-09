@@ -207,7 +207,7 @@ export function gateOf(loop, id) {
     }
     before = null;
     if (e.type === 'move') { closeTip = null; if (closedBy(e)) before = e; continue; }
-    if (e.type === 'merged') { const m = { type: 'merged', n: e.n, at: e.at, sha: e.sha, check: e.check ?? null }; merges.push(m); before = m; mergeTip = null; continue; }
+    if (e.type === 'merged') { const m = { type: 'merged', n: e.n, at: e.at, sha: e.sha, repo: e.repo ?? null, check: e.check ?? null }; merges.push(m); before = m; mergeTip = null; continue; }
     if (e.type === 'verdict') {
       // The kind is the one recorded, or the one today's names give, whichever is stricter: a name the goal
       // declares as a coordinator after its approve was logged as fresh does not stay fresh, and a name that
