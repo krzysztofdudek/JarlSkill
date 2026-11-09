@@ -347,6 +347,17 @@ test('the old text a body line carries ends at its closing quotation mark, so a 
   assert.throws(() => logChanges(root, [line(' (37 characters) · by The owner\'s word "ship it')]), REFUSED);
 });
 
+test('a --by that holds the marker is refused where the name is read, even when it wraps an old text the line carries', () => {
+  const root = loop({ via: 'cli' });
+  const forged = '"[read] The owner\'s words": "ship it"';
+  jarl(root, 'new', 'parent', '--acceptance', '[read] The owner\'s words');
+  jarl(root, 'new', 'child', '--acceptance', '[read] it works');
+  jarl(root, 'field', '2', 'Parent', '1');
+  assert.match(refuses(root, 'split', '1', '--line', '1=2', '--by', forged), REFUSED);
+  assert.throws(() => L.cmdSplit(root, '1', { line: '1=2', by: forged }), REFUSED);
+  assert.doesNotMatch(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /ship it/);
+});
+
 test('the library keeps the author of a ruling as the one name the owner has, and refuses a name that holds his', () => {
   const root = loop();
   L.appendDecision(root, 'rule-a', 'Keep a.', { by: ' The OWNER ' });

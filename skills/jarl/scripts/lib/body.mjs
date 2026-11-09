@@ -38,6 +38,7 @@ export function editorOf(by) {
   need(typeof by === 'string' && name, '--by needs a name: who makes this write', () => ({ flag: '--by', value: '<who>' }));
   need(!/[\r\n]/.test(String(by).trim()), `--by is one name on one line (got ${JSON.stringify(String(by))})`, () => ({ flag: '--by', value: '<one-name>' }));
   need(!name.includes('·'), `--by is one name — not a phrase with "·" in it (got "${name}")`, () => ({ flag: '--by', value: '<one-name>' }));
+  needNoOwnersWords('--by', name);
   return name;
 }
 
