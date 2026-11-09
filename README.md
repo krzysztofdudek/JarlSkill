@@ -1,8 +1,8 @@
-<p align="center"><img src="assets/social-card.png" alt="Jarl: on a feature branch, the agent files everything it sees as an issue, gives each piece of work one worker in its own worktree, and closes nothing without proof of its lines and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough, or the owner waives the review." width="720"></p>
+<p align="center"><img src="assets/social-card.png" alt="Jarl, the loop: organises the work of coding agents, from one session to weeks of them." width="720"></p>
 
 # Jarl
 
-**Your feature branch has more issues than one agent can hold in its head, so it fixes one, forgets two, and loses the third in the diff.** Jarl makes the agent direct a crew instead of working alone.
+**Organises the work of coding agents, from one session to weeks of them.** Your feature branch has more issues than one agent can hold in its head, so it fixes one, forgets two, and loses the third in the diff. Jarl makes the agent direct a crew instead of working alone.
 
 On a feature branch, the agent files everything it sees as an issue, gives each piece of work one worker in its own worktree, and closes nothing without proof of its lines and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough, or the owner waives the review.
 
