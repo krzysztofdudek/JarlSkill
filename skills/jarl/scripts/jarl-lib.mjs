@@ -9,7 +9,7 @@
 // The code lives in lib/, one module per part of the record, each importing only what it uses; this file is
 // the one surface over them that jarl.mjs, record.mjs and the tests import.
 
-export { STATUSES, KINDS, PRIORITIES, TIERS, TIER_DEFAULT, ASK_KINDS, CI_STATES, ROUNDS_BEFORE_TAKEOVER, LIVENESS_MINUTES, HANDOFF_STALE_MS, slugify, need, noSeparators, refuse, Refusal, isFix, isExternal, isPlaceholder, PLACEHOLDERS, hole, HOLE, commandOf, printedLine, afterView, commandLine, commandWords, readyText, breaksLine, escapedEchoes, echoWord, shellOf, printable, printCommand, printingFor, jarlLine, globalWords, rootPrintable } from './lib/base.mjs';
+export { fieldText, STATUSES, KINDS, PRIORITIES, TIERS, TIER_DEFAULT, ASK_KINDS, CI_STATES, ROUNDS_BEFORE_TAKEOVER, LIVENESS_MINUTES, HANDOFF_STALE_MS, slugify, need, noSeparators, refuse, Refusal, isFix, isExternal, isPlaceholder, PLACEHOLDERS, hole, HOLE, commandOf, printedLine, afterView, commandLine, commandWords, readyText, breaksLine, escapedEchoes, echoWord, shellOf, printable, printCommand, printingFor, jarlLine, globalWords, rootPrintable } from './lib/base.mjs';
 export { findRoot, LOOP_WALK_DEPTH, LOOP_WALK_DIRS, loopsUnder, discoverLoop, cmdUse, renderUse, jarlDir, issuesDir, portablePath, canonical } from './lib/where.mjs';
 export { readText, RENAME_RETRY_MS, renameRetry, writeAtomic } from './lib/files.mjs';
 export { ID_SRC, idKey, cmpId, writtenForms, writtenId, newNumber, expandIds, idsNamed } from './lib/ids.mjs';

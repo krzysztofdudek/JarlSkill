@@ -648,12 +648,12 @@ function parentStep(loop, issue, mark, holder) {
 export const subsText = (subs) => subs.map((s) => `${s.id} ${s.status}`).join(', ');
 
 // Who wrote an issue's lease, as { leasedBy }: the writer its last move into a lease status names. A loop whose goal names
-// coordinators shows an unnamed one as null, since several may lease there; in any other loop an unnamed write is the
-// jarl's, and the key is left out unless the line names someone.
+// coordinators shows the writer of every lease (null where none is recorded), since several may lease there; in any other
+// loop the jarl is the one who leases, and the key is left out when the lease names the jarl or nobody.
 export function leaseWriter(loop, issue) {
   const move = (loop.eventsById.get(issue.id) || []).filter((e) => e.type === 'move' && loop.profile.is(e.to, 'holds-claim')).pop();
   const writer = move ? move.writer : null;
-  return writer !== null || loop.goalLines.coordinators.length ? { leasedBy: writer } : {};
+  return loop.goalLines.coordinators.length || (writer !== null && writer !== 'jarl') ? { leasedBy: writer } : {};
 }
 // The writer of a lease as a view prints it.
 export const leasedByText = (x) => (x.leasedBy === undefined ? '' : `leased by ${x.leasedBy ?? '(unnamed)'}`);

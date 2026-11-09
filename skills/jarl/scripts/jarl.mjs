@@ -16,7 +16,7 @@ import { basename, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as R from './record.mjs';
 import {
-  need, refuse, Refusal, isFix, isExternal, isPlaceholder, hole, HOLE, commandOf, printedLine, commandLine, readyText, breaksLine, escapedEchoes, shellWord, shellOf, printable, printCommand, printingFor, jarlLine, rootPrintable, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdRound,
+  fieldText, need, refuse, Refusal, isFix, isExternal, isPlaceholder, hole, HOLE, commandOf, printedLine, commandLine, readyText, breaksLine, escapedEchoes, shellWord, shellOf, printable, printCommand, printingFor, jarlLine, rootPrintable, resetCaches, withLock, readText, isEntry, cmdSet, cmdField, setRouteOf, eachIssue, cmdRound,
   cmdProfile, cmdArchive, cmdList, cmdNext, renderNext, cmdMode, cmdClose, cmdCheck, cmdBranches,
   cmdChangelog, cmdHandoffRead, cmdHandoffWrite, cmdReport, cmdImport, cmdSources, cmdAnswerMany, cmdModels, renderModels,
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
@@ -993,7 +993,11 @@ function dispatchCall(root, commandName, rest, flags) {
 }
 
 // The writer of a call: the name its --by gives, written into every line the call writes, in its fixed place after the stamp.
-function writerOf(cmd, flags) { return MUTATING.has(cmd) && flags.by !== undefined ? editorOf(flags.by) : null; }
+function writerOf(cmd, flags) {
+  if (!MUTATING.has(cmd) || flags.by === undefined) return null;
+  // A write that refuses a bad --by itself says so in its own words: an empty one reaches that refusal.
+  return REFUSE_THEIR_OWN_BY.includes(cmd) && !fieldText(flags.by) ? null : editorOf(flags.by);
+}
 
 // The flags of a grouping view with --group handed on as the grouping the library reads (by).
 function groupedBy(flags) {
