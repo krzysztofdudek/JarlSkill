@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- An issue that names several repositories is done only when its branch has landed in each repository where it has work; the merge queue keeps the ones that have not. The page of numbers shows the lines by method and the count per stage.
+- Closing a loop that removes its record is refused while a question is unanswered, and names them; `--force` still closes it, and a permanent loop keeps its questions.
+- The merger's brief says to skip the changelog step where a repository keeps no changelog, the model guidance says a lone agent holds the merger's role, and a coordinator is told that what is not in its slice is not its business, even when the record shows it.
+- `verify` prints the git commands that take one side of a record file a merge left conflicted, and names an issue two copies of a loop both leased, with the form that keeps one. An examiner on too weak a model is told how to say so instead of giving a verdict, a coordinator is told to start from its slice's brief, `brief` takes a range of issues, and an issue landed through a slice's own branch keeps its gate.
+- The brief a coordinator is raised with lists the open questions of its slice, says how far each issue in flight has come, and marks which issues are promises or waits, so a coordinator taking over a slice sees what the one before it left open.
 - A worker, a reviewer or a merger is raised with one complete brief the tool prints, every command filled in, and reads nothing else for its role. What each agent is told to do next now shows a takeover that is due, sends a stuck worker's question to whoever directs its work, and lists the work nearest to landing first.
 
 - The owner can close chosen tasks without a review, by a decision of his that names them and keeps his own words. Nobody else can. The decision counts until the task is sent back, reopened or its code changes, and the status counts such tasks apart from reviewed ones.

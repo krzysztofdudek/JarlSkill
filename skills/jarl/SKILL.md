@@ -11,7 +11,9 @@ Jarl is the loop of the Yggdrasil family: a director files work as issues with l
 
 - **You were raised to do one job: a worker, an examiner, a merger.** The brief you were given is everything you read. Nothing in this skill is for you; only a director reads it.
 - **After a compaction, or any summary of your own context, you are starting a session: run `resume` before the next action.** A summary is not the state: the record is.
-- **A `.jarl/` already holds a loop.** Run `resume`: one command, the whole state, read live. Continue when your task matches the goal; only when it contradicts the goal, ask the owner once whether to continue or archive it (`archive "<slug>"`, then `init "<goal>"`). Read [references/jarl.md](references/jarl.md) once.
+- **You run a slice as a coordinator.** Start with `brief --slice <name>`, then `resume --slice <name> --as <name>`: nothing outside it is your business, even where the record shows it.
+- **You are asked what waits on the owner.** `next --as owner --all` prints his digest; `resume` is the director's.
+- **A `.jarl/` already holds a loop.** Run `resume`: the whole state, read live. Continue when your task matches the goal; only when it contradicts the goal, ask the owner once whether to continue or archive it (`archive "<slug>"`, then `init "<goal>"`). Read [references/jarl.md](references/jarl.md) once.
 - **No loop yet.** Run `init "<goal>"`: the loop lives out of git by default, `--committed` commits it with the work, `--permanent` keeps it as a standing record. Then file what is known and follow [The loop](references/jarl.md#the-loop).
 
 ## The roles
@@ -52,8 +54,8 @@ node "<skill dir>/scripts/jarl.mjs" <command>
 
 ## The rules that never bend
 
-- **File first.** Anything anybody saw becomes an issue before anything else happens. Nobody fixes on the side. Numbers never collide inside a clone; two clones can each take one number, and `verify` names both files until `renumber <id> --key <key> --by <who>` gives one of them a free number.
-- **One tool moves the record.** Every status, tag, ruling and log line goes through it, never through a hand edit.
+- **File first.** Anything anybody saw becomes an issue before anything else happens. Nobody fixes on the side. Two clones can each take one number; `verify` names both files until `renumber <id> --key <key> --by <who>` frees one.
+- **One tool moves the record.** Every status, tag, ruling and log line goes through it, never through a hand edit. A record file a merge left conflicted is taken back with the git commands `verify` prints.
 - **A code issue is cleared by a fresh examiner**, an agent that neither wrote the code nor runs the loop; the worker never approves its own work, and `done` refuses without a live approve. Where a profile says so, a bot's approve or the owner's waiver stands in.
 - **Only the holder of the main checkout commits `.jarl/`**; everyone else writes it through the tool. One merger per target branch.
 - **Merging to `main` and pushing are the owner's word.** A worker's branch is never pushed; the feature branch only with his word, once for good in a goal line or a ruling, or each time.

@@ -126,7 +126,7 @@ test('status --slice and resume --slice are scoped to the slice, the way status 
   assert.deepEqual(odin.questions.map((a) => a.id), ['1']);
   assert.deepEqual(odin.held.map((x) => x.id), ['2']);
   assert.ok(odin.log.length > 3, 'the log is the loop\'s');
-  assert.match(jarl(root, 'resume', '--slice', 'odin'), /^scoped to the slice of odin, the issues tagged slice:odin: in flight, waiting, the questions, held and next ready are its own; the rulings, the merge queue, the tips and the log are the loop's$/m);
+  assert.match(jarl(root, 'resume', '--slice', 'odin'), /^scoped to the slice of odin, the issues tagged slice:odin: in flight, waiting, the questions, held and next ready are its own; the rulings, the merge queue, the tips and the log are the loop's: what they show of another slice is the jarl's, not yours$/m);
   assert.match(refuses(root, 'resume', '--slice', 'loki'), /no coordinator loki on the goal's Coordinators line/);
 });
 

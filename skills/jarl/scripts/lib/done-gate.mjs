@@ -165,7 +165,7 @@ const inPlaceStep = (issue) => `once the approve stands, its files are committed
 // Why a code issue's code as it is now is not merged (see unmergedCode), as done says it, or null.
 function unmergedRefusal(issue, g) {
   const u = unmergedCode(issue, g);
-  return u ? `${issue.id} carries code (its lease records Branch ${fieldText(issue.fields.branch)}) and ${unmergedText(u)} — a code issue is merged before it is done: the merger lands the branch and records it, ${jarlLine('merged', issue.id, '--sha', '<sha>')}, then done` : null;
+  return u ? `${issue.id} carries code (its lease records Branch ${fieldText(issue.fields.branch)}) and ${unmergedText(u)} — a code issue is merged before it is done: the merger lands the branch and records it, ${jarlLine('merged', issue.id, '--sha', '<sha>', ...(u.why === 'repo' ? ['--repo', '<name-or-path>'] : []))}, then done` : null;
 }
 
 // The done gate's requires-merged: the issue records a merge (merged --sha) and that commit is in the base of the

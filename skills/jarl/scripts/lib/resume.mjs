@@ -22,7 +22,8 @@ import { loopRules, ruleLines, rulesFor, withUnder } from './rules.mjs';
 import { jarlDir, today } from './where.mjs';
 import { IN_FLIGHT_MARKS, closedGateFlags, leaseWriter, retractedNotesText, leasedByText, modelText, nextRows, resourceAgeText, statusOf, subsText, uncommittedLoopFiles } from './evidence.mjs';
 import { cmdQueue, renderQueue } from './queue.mjs';
-import { countsLine } from './import.mjs';
+import { countsLine, stagesText } from './import.mjs';
+import { linesCountText } from './lines.mjs';
 
 // The questions a worker's stuck put on its director, each with whom it is on; next --as holds the same: a key only when any stands.
 function toDirectorKey(loop, asks) {
@@ -159,7 +160,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null, asked = 
     `# Resume${o.goal ? ` · ${o.goal}` : ''}`,
     `opened ${o.opened || '?'} · last activity ${o.lastActivity || '?'}${o.archived ? ` · ${o.archived} archived loop(s)` : ''}${profile.declared ? ` · profile ${profile.name}` : ''}`,
     countsLine(st, profile),
-    ...(o.slice !== undefined ? [`scoped to the slice of ${o.slice}, the issues tagged slice:${o.slice}: in flight, waiting, the questions, held and next ready are its own; the rulings, the merge queue, the tips and the log are the loop's`] : []),
+    ...(o.slice !== undefined ? [`scoped to the slice of ${o.slice}, the issues tagged slice:${o.slice}: in flight, waiting, the questions, held and next ready are its own; the rulings, the merge queue, the tips and the log are the loop's: what they show of another slice is the jarl's, not yours`] : []),
     ...(note ? [note] : []),
     '',
   ];
@@ -276,7 +277,9 @@ export function cmdReport(root, flags = {}) {
     '', `## Still open (${left.length})`, ...left.map((i) => `- ${i.id} ${i.title}${mark(i)} (${i.status})`),
     ...(flags.found ? ['', `## Found along the way (${found.length})`, ...found.map((i) => `- ${i.id} ${i.title} — ${i.fields['found by']}`)] : []),
   ];
-  const lines = flags.metrics ? [...head, renderMetrics(metrics)] : [...head, renderMetrics(metrics), '', ...lists];
+  const st = statusOf(root, loop, {});
+  const numbers = [renderMetrics(metrics), ...(st.lines && st.lines.total ? [linesCountText(st.lines)] : []), stagesText(st.stages)];
+  const lines = flags.metrics ? [...head, ...numbers] : [...head, ...numbers, '', ...lists];
   return { done: done.length, dropped: dropped.length, deferred: deferred.length, left: left.length, found: found.length, reviews: split,
     ...(profile.declared ? { statuses: Object.fromEntries(profile.statuses.map((st) => [st, issues.filter((i) => i.status === st).length])) } : {}),
     byRepo: Object.fromEntries(repos.map((r) => [r, byRepo[r].map((i) => i.id)])), issues: rows, text: lines.join('\n') + '\n', check: metrics.check, metrics, closedGate };

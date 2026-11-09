@@ -15,7 +15,7 @@ import { attachmentOf, journalById, rowLinesText } from './log.mjs';
 import { acceptanceLineCount, acceptanceLines, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteLogText, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, repoNames, reposWhere, tipLinesOf, whereLines, whereOf } from './repositories.mjs';
 import { approveKind, carriesCode, inFlightMark, roundSinceLease, sentBack, unmergedCode, unmergedText, gateOf, gateState, reviewSplit, waiverVoid, worksInPlace } from './gate.mjs';
-import { coordinatorOf, sameSlice, sliceNamed, sliceOf, slicesOf } from './slices.mjs';
+import { coordinatorOf, sameSlice, sliceMerger, sliceNamed, sliceOf, slicesOf } from './slices.mjs';
 import { disagreementText, headerReadNotes, recordDisagreements } from './disagreements.mjs';
 import { readLoop, scopedLoop } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText, closedNoCheck } from './metrics.mjs';
@@ -598,10 +598,11 @@ const SENT_BACK = 'sent back by a round, no new proof yet — it is back with th
 const APPROVED_IN_PLACE = 'approved and worked in place, so no merge waits — next its files are committed, a row names the commit, and it is set done';
 // Why an issue's recorded merge does not count for its code as it is now (see unmergedCode), as the words after "and":
 // done refuses that merge, so the views ask for the merge again. Null when the issue records no merge, or one that counts.
-export function mergeAgainWhy(loop, issue) {
+export function mergeAgainWhy(loop, issue, repo) {
   if (!mergedOf(issue)) return null;
   const u = unmergedCode(issue, gateOf(loop, issue.id));
   if (!u) return null;
+  if (u.why === 'repo') return repo === undefined || u.repos.includes(repo) ? unmergedText(u) : null;
   return u.why === 'tip' ? 'the branch has commits after its last merge' : 'its last merge was spent by a later start, reopen or red round';
 }
 // An approve refused for its model on an issue whose merge counts for its code as it is now: the merge queue has nothing
@@ -706,7 +707,10 @@ export function cmdClose(root, flags = {}) {
   const deferred = loadIssues(root).filter((i) => i.status === 'deferred').map((i) => i.id);
   const permanent = existsSync(join(jarlDir(root), '.permanent'));
   need(permanent || flags.force || deferred.length === 0, `${deferred.length} issue(s) deferred: ${deferred.join(', ')} — close removes .jarl/ with them, and deferred work waits, it is not gone. Keep it: ${jarlLine('archive', '<slug>')} puts the loop under .jarl/archive/ with its deferred issues. Or remove it with them, on the owner's word (close --force)`, () => (['jarl.mjs', 'archive', '<slug>', ...(typeof flags.by === 'string' ? ['--by', flags.by] : [])]));
-  // The ratification batch is assembled here and never holds the close: in a permanent loop its items stay open for
+  // A question nobody has answered leaves with the directory, and nothing else holds it: only a loop that keeps its record closes over one.
+  const unanswered = loadAsks(root).filter((a) => a.state === 'open').map((a) => `a-${a.id}`);
+  need(permanent || flags.force || unanswered.length === 0, `${unanswered.length} question(s) still open: ${unanswered.join(', ')} — close removes .jarl/ and every question with it, and nothing else holds an unanswered question; have each answered, or close --force removes them with it`, () => ['jarl.mjs', 'answer', hole('<question>'), hole('<text>'), '--by', hole('<the-owner-himself>')]);
+  // The ratification batch this close files is assembled here and never holds it: in a permanent loop its items stay open for
   // the owner's word; in a loop on a branch the rulings no one ratified leave with the directory, rulings of that loop.
   // In the committed mode the archive is committed content: leaving it would put .jarl/archive/ on the branch that merges to
   // main, so close refuses while it holds anything, unless --force removes the whole directory.
@@ -798,7 +802,10 @@ export function closedGateFlags(loop) {
         }
       }
       const doneAt = Math.max(-1, ...events.filter((e) => e.type === 'move' && profile.is(e.to, 'closes-record')).map((e) => e.n));
-      if (merges.some((m) => m.n > doneAt)) flag('a merge was recorded after it went done', reopen);
+      // A slice with a merger of its own lands its issues on its integration branch, then that branch on the feature branch:
+      // the later merge is the landing of work already closed on its merge, and asks nothing of the gate.
+      const landsThroughSlice = sliceMerger(loop.goalLines, issue) && merges.some((m) => m.n < doneAt);
+      if (!landsThroughSlice && merges.some((m) => m.n > doneAt)) flag('a merge was recorded after it went done', reopen);
       const unmerged = unmergedCode(issue, g);
       if (unmerged) flag(unmerged.why === 'none' ? 'a code issue done with no merge recorded' : `a code issue done, and ${unmergedText(unmerged)}`, reopen);
     }

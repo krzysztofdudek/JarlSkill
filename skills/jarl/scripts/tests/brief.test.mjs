@@ -823,7 +823,7 @@ test('brief --slice <coordinator> is the coordinator\'s: its issues in play, its
   for (const absent of ['frigg-only', 'ui-workers', 'reviewers', 'takeovers', 'jarl:worker-only-the-issue']) assert.ok(!slugs(o).includes(absent), absent);
   assert.deepEqual(slugs(json(root, 'brief', '--slice', 'FRIGG')).filter((s) => !s.startsWith('jarl:')), ['loop-rule', 'coordinators', 'frigg-only'], 'a slice is named in any case');
   const text = jarl(root, 'brief', '--slice', 'odin');
-  assert.match(text, /^The coordinator's brief for the slice odin \(slice:odin\), assembled from the record; it writes nothing\.\n\n## The issues of the slice in play \(1\)\n- 1 open · odin ui\n/);
+  assert.match(text, /^The coordinator's brief for the slice odin \(slice:odin\), assembled from the record; it writes nothing\.\n\n## Your first moves\n1\. This brief\.\n2\. jarl\.mjs resume --slice odin --as odin\n3\. jarl\.mjs next --as odin\nYour business is the slice odin alone[^\n]*\n\n## The issues of the slice in play \(1\)\n- 1 open · odin ui\n/);
   assert.match(text, /\n## Rules for the coordinator of the slice odin \(6\)\n/);
   assert.match(text, /\n## The role\nreferences\/jarl\.md, section "Coordinators: slices of the backlog"/);
   assert.match(text, /\n## Recording the result\n- what is on the coordinator now, each line with the command that moves it: jarl\.mjs next --as odin\n- an escalation to the jarl, for one of the four reasons: jarl\.mjs ask "<text>" --kind escalation --slice odin --by odin$/);

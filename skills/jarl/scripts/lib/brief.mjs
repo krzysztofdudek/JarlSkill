@@ -12,15 +12,15 @@ import { firstLine, firstLineReadings, goalLineOf, goalPath } from './journal.mj
 import { outOfGit } from './loop-git.mjs';
 import { acceptanceLines, evidenceNotes, evidenceTable, issueNamed, reviewEntries } from './issues.mjs';
 import { countedRowsOf, lineChanges, lineStates, linesAtFirstLease, noRowOwed, readLine, shownRowLines, tierAtFirstLease } from './lines.mjs';
-import { gateOf, worksInPlace } from './gate.mjs';
+import { gateOf, inFlightMark, worksInPlace } from './gate.mjs';
 import { readLoop } from './loop.mjs';
 import { integrationBranch, sameSlice, sliceNamed, sliceOf } from './slices.mjs';
 import { loopRepos, takenOver } from './rounds.mjs';
 import { findingOfLog, modelLinesIn } from './models.mjs';
 import { loopRules, ruleLines, rulesFor } from './rules.mjs';
-import { issueView } from './evidence.mjs';
+import { IN_FLIGHT_MARKS, issueView } from './evidence.mjs';
 import { baseOf, isGitRepo, issueRepos, refsIn, repoLabel, worktreeState, worktreesOf } from './repositories.mjs';
-import { cmpId } from './ids.mjs';
+import { cmpId, expandIds } from './ids.mjs';
 import { sameLease } from './leases.mjs';
 
 // The tool the commands of a brief run: its own absolute path, under the runtime running it now.
@@ -227,8 +227,7 @@ function findingsOf(loop, issue, events, notes) {
 // The issues a brief is for, as one lease: the ids named, and, when one is leased, every issue of its lease. Two leases, or
 // a lease beside work no lease holds, are refused: a brief is for one agent.
 function leaseIssues(loop, rawIds) {
-  const raw = String(rawIds).split(',').map((s) => s.trim()).filter(Boolean);
-  const named = raw.map((rawId) => {
+  const named = expandIds(rawIds).map((rawId) => {
     const issue = issueNamed(loop.issues, rawId);
     need(issue, `no such issue: ${rawId} — the issues: ${jarlLine('list', '--all')}`, () => ({ arg: 0, value: hole('<id>') }));
     return issue;
@@ -342,7 +341,8 @@ function reviewerCommands(ctx, issues, lease) {
   const diffs = lease.branch ? lease.repos.map((r) => ({ what: `the diff in ${r.label}`, command: printCommand(['git', '-C', r.repo, 'diff', `${r.base}...${lease.branch}`], { globals: [] }) })) : [];
   const each = issues.map((i) => ({ forIssue: i.id, what: `a re-run of a line of ${i.id}`, command: tool('evidence', i.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>'), '--by', hole('<reviewer>')) }));
   return [...diffs, ...each,
-    { what: 'the verdict, as the last step (with `--outside "<finding-outside-the-issue>"` for each finding outside the issue, filed as a new issue, never a reason for changes)', command: verdict }];
+    { what: 'the verdict, as the last step (with `--outside "<finding-outside-the-issue>"` for each finding outside the issue, filed as a new issue, never a reason for changes)', command: verdict },
+    { what: 'a model below that tier, instead of a verdict', command: tool('ask', hole('<text>'), '--kind', 'escalation', '--issue', issues[0].id, '--by', hole('<reviewer>')) }];
 }
 
 function issueData(root, loop, issue, role) {
@@ -432,7 +432,7 @@ function mergerBrief(root, loop, slice, ctx) {
     { what: 'what waits for you, branch by branch', command: tool(...(m ? ['next', '--as', m.name, '--all'] : ['resume', ...repoFlag])) },
     { what: 'the settings of the merge drivers', command: printCommand([RUNTIME, SCRIPT, 'merge-driver', 'flags'], { globals: [] }) },
     { what: 'what the branch may touch', command: tool('scope', hole('<id>'), '--branch', hole('<branch>')) },
-    { what: 'a green merge', command: tool('merged', hole('<ids>'), '--sha', hole('<sha>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), ...repoFlag) },
+    { what: `a green merge${repoFlag.length ? ', one per repository with work, then done' : ''}`, command: tool('merged', hole('<ids>'), '--sha', hole('<sha>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), ...repoFlag) },
     { what: 'a red, the work\'s fault', command: tool('round', hole('<id>'), hole('<text>')) },
     { what: 'a red from outside the branch', command: tool('new', hole('<what-is-red>'), '--tier', hole('<tier>')) },
     { what: 'a landing on red', command: tool('merged', hole('<ids>'), '--sha', hole('<sha>'), '--red', hole('<another-issue>')) },
@@ -456,9 +456,15 @@ function sliceBrief(root, loop, name) {
   const notes = [];
   if (!declared) notes.push(`the goal's Coordinators line does not name ${slice}: its approve counts as fresh and what its slice holds is the jarl's until the line names it — ${jarlLine('goal', '--set', hole('<machine-line>'))}`);
   if (!inPlay.length) notes.push(`no issue of the slice ${slice} is in play`);
+  const inScope = new Set(inPlay.map((i) => i.id));
+  // A replacement is told what the old coordinator left open: what the slice asked and has no answer to, and how far each lease has come.
+  const questions = loop.asks.filter((a) => a.state === 'open' && ((a.issue && inScope.has(a.issue)) || sameSlice(a.slice ?? null, slice)));
+  const stageOf = (i) => { if (!loop.profile.is(i.status, 'holds-claim')) return {}; const mark = inFlightMark(loop, i); return mark === 'no-rows' ? {} : { stage: IN_FLIGHT_MARKS[mark] }; };
   return {
     role: 'coordinator', slice, declared, roles: ['coordinator'], moments: [...COORDINATOR_MOMENTS].sort(),
-    issues: inPlay.map((i) => ({ id: i.id, title: i.title, status: i.status, worker: fieldText(i.fields.worker) || null, ...(i.tree && i.tree.parent ? { parent: i.tree.parent.id } : {}) })),
+    firstMoves: [jarlLine('resume', '--slice', slice, '--as', slice), jarlLine('next', '--as', slice)],
+    issues: inPlay.map((i) => ({ id: i.id, title: i.title, status: i.status, worker: fieldText(i.fields.worker) || null, ...(i.tree && i.tree.parent ? { parent: i.tree.parent.id } : {}), ...(loop.profile.keptKind(i.kind) ? { kept: loop.profile.keptKind(i.kind) } : {}), ...stageOf(i) })),
+    questions: questions.map((a) => ({ id: a.id, kind: a.kind || 'stuck', issue: a.issue ?? null, question: a.question })),
     rules, reference: REFERENCES.coordinator,
     record: [{ what: 'what is on the coordinator now, each line with the command that moves it', command: jarlLine('next', '--as', slice) },
       { what: 'an escalation to the jarl, for one of the four reasons', command: jarlLine('ask', hole('<text>'), '--kind', 'escalation', '--slice', slice, '--by', slice) }],
@@ -542,7 +548,7 @@ function renderReviewer(o, out) {
   for (const p of o.parents) section(out, `Why ${p.id} exists`, `${p.id} is part of ${p.parent.id} (${p.parent.title}): ${p.parent.why}`);
   for (const issue of o.issues) out.push(issue.text, '');
   section(out, 'Where to look', [
-    `Depth: ${depth.says}. Run at tier ${depth.tier} or above${depth.secondFamily ? `, on ${depth.secondFamily} where you can` : ''}.`,
+    `Depth: ${depth.says}. Run at tier ${depth.tier} or above${depth.secondFamily ? `, on ${depth.secondFamily} where you can` : ''}. On a model below that tier give no verdict: say so with the question below, and stop.`,
     lease.inPlace ? 'No branch: the work is in the files the issue declares.' : `Branch ${lease.branch ?? 'none'}.`,
     ...lease.repos.map((r) => `Repository ${r.label} (${r.repo}), base ${r.base}${lease.branch ? `, worktree ${r.worktree ?? 'none here'}` : ''}.`),
     `Loop root: ${o.root}. Tool: ${RUNTIME} ${o.script}. Read-only: never \`git checkout\` in the main checkout; reproduce with \`git show\` or \`git archive\` into a scratch directory.`,
@@ -601,7 +607,7 @@ function renderMerger(o, out) {
   section(out, 'Where you merge', [
     `You are ${o.merger ?? 'the merger'}. Your target: ${o.target ?? o.repos.map((r) => `${r.base} in ${r.label}`).join(', ') ?? 'the branch the loop lands on'}.`,
     ...o.repos.map((r) => `Repository ${r.label} (${r.repo}), base ${r.base}${o.target ? `, target ${r.target}` : ''}. ${r.checkout ? `Merge in ${r.checkout}: it holds ${r.target}, and a second worktree of a checked-out branch is refused.` : `No checkout holds ${r.target}: cut a worktree of your own with ${printCommand(['git', '-C', r.repo, 'worktree', 'add', ...(r.exists ? [hole('<path>'), r.target] : ['-b', r.target, hole('<path>'), r.base])], { globals: [] })}.`}`),
-    `Loop root: ${o.root}. Tool: ${RUNTIME} ${o.script} (every command below is written with both).`,
+    `Loop root: ${o.root}. Tool: ${RUNTIME} ${o.script}.`,
     'One writer per target branch: only you merge into it, in a worktree of your own where no checkout holds the target, never a checkout another merger uses; only the holder of the main checkout commits `.jarl/`.',
     o.committed
       ? 'The loop is committed: if you hold the main checkout, commit `.jarl/` before each merge and again after each landing, even one in another repository. If you do not, you never commit `.jarl/`.'
@@ -615,7 +621,7 @@ function renderMerger(o, out) {
     '4. Branches sharing no file may go as one batch, checked once; never batch two that touch one file.',
     '5. Run the repository\'s check on the merged result, in the foreground, with your tool\'s own timeout set; report only after it has finished.',
     '6. Green: the green-merge command for the issues on the branch, close each issue, then `show` it and confirm it reads done. `NO PROOF FROM THE WORKER`: done waits for the worker\'s row. `MERGE WITHOUT THE BRANCH` or `WITHOUT THE BASE`: merge and check again. `APPROVED ON ANOTHER TIP`: report the two tips.',
-    '7. Changelog entries, once the batch is green: paste them under `[Unreleased]`, edited into the repository\'s register, committed as that file alone.',
+    '7. Changelog entries, once the batch is green: paste them under `[Unreleased]` in the repository\'s register, committed as that file alone. No changelog: skip this step.',
     '8. Push nothing unless a goal line or a ruling grants the branch; then push it after a green merge. A worker\'s branch is never pushed.',
     '9. An issue worked in place brings no branch: once its approve stands, commit its declared files as a commit of their own between two merges, record it with the in-place command, then close it.',
   ]);
@@ -645,8 +651,10 @@ export function renderBrief(o) {
   if (o.role === 'coordinator') {
     out.push(`The coordinator's brief for the slice ${o.slice} (slice:${o.slice}), assembled from the record; it writes nothing.`);
     out.push(...o.notes.map((n) => `note: ${n}`), '');
+    out.push('## Your first moves', '1. This brief.', ...o.firstMoves.map((c, k) => `${k + 2}. ${c}`), `Your business is the slice ${o.slice} alone: what is not in it is not your business, even when \`resume\` without --slice or the record files show it. Do not report it or act on it.`, '');
     out.push(`## The issues of the slice in play (${o.issues.length})`);
-    out.push(...(o.issues.length ? o.issues.map((i) => `- ${i.id} ${i.status}${i.worker ? ` · ${i.worker}` : ''} · ${i.title}${i.parent ? ` · sub-issue of ${i.parent}` : ''}`) : ['- (none)']));
+    out.push(...(o.issues.length ? o.issues.map((i) => `- ${i.id} ${i.status}${i.kept ? ` · ${i.kept}` : ''}${i.worker ? ` · ${i.worker}` : ''} · ${i.title}${i.parent ? ` · sub-issue of ${i.parent}` : ''}${i.stage ? ` · ${i.stage}` : ''}`) : ['- (none)']));
+    if (o.questions.length) out.push('', `## Open questions of the slice (${o.questions.length})`, ...o.questions.map((q) => `- a-${q.id} (${q.kind})${q.issue ? ` · issue ${q.issue}` : ''} · ${q.question}`));
     out.push('', `## Rules for the coordinator of the slice ${o.slice} (${o.rules.length})`, ...(o.rules.length ? o.rules.flatMap(ruleLines) : ['- (none)']), `${o.rulings.inForce} ruling(s) in force in the loop: ${o.rulings.command}`);
     out.push('', '## The role', `${o.reference.file}, section "${o.reference.section}", in the jarl skill's directory: the role in full; this brief adds what the record holds.`);
     out.push('', '## Recording the result', ...o.record.map((r) => `- ${r.what}: ${r.command}`));

@@ -343,7 +343,7 @@ test('the refusal says what to do with markers that only quote a conflict', () =
   writeFileSync(file, readFileSync(file, 'utf8').replace('## What\n', '## What\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> main\n'));
   const r = run(a.dir, ['verify']);
   assert.equal(r.status, 2, r.stdout);
-  assert.match(r.stdout, /if the lines only quote a conflict, put a backslash in front of each marker line \(\\<<<<<<<\) or remove them/);
+  assert.match(r.stdout, /if the lines only quote a conflict, write the text again with jarl\.mjs field 1 "<section-or-field>" "<text>" --by "<who>", which escapes each marker line/);
 });
 
 test('with CRLF line endings, a real conflict is refused, and text with CRLF breaks that quotes one is written escaped, a note into an Evidence section with no parts included', () => {

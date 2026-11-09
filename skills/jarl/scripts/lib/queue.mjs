@@ -95,8 +95,8 @@ function queueRows(root, loop, repo, real, base, branches, { unsettled, gate, re
     // A branch the target holds whole has nothing to land: its approved issue is listed only when its merge is to be
     // recorded, the one on record not counting now (mergeAgainWhy says why) or none being on record at all, and then the
     // row is record only.
-    const unrecorded = ahead === 0 ? on.filter((i) => mergeAgainWhy(loop, i) || !mergedOf(i)) : [];
-    const recordWhy = unrecorded.length ? mergeAgainWhy(loop, unrecorded[0]) ?? 'no merge is on record for it' : null;
+    const unrecorded = ahead === 0 ? on.filter((i) => mergeAgainWhy(loop, i, real) || !mergedOf(i)) : [];
+    const recordWhy = unrecorded.length ? mergeAgainWhy(loop, unrecorded[0], real) ?? 'no merge is on record for it' : null;
     if (!ahead && !recordWhy) continue;   // nothing its target lacks: merged already, or never worked on
     const listed = ahead === 0 ? unrecorded : on;
     const others = issuesOnBranch(root, unsettled, real, branch).filter((i) => !on.includes(i));

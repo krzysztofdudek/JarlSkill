@@ -4,7 +4,7 @@
 import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need, shellWord, slugify } from './base.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
 import { mergedOf } from './issues.mjs';
-import { carriesCode, gateOf, holderKey, inFlightMark, leaseConflictOf, roundSinceLease, sameHolder, sentBack, statusWith, worksInPlace } from './gate.mjs';
+import { carriesCode, gateOf, holderKey, inFlightMark, leaseConflictForm, leaseConflictOf, leaseConflictText, roundSinceLease, sameHolder, sentBack, statusWith, worksInPlace } from './gate.mjs';
 import { coordinatorOf, integrationBranch, sameSlice, sliceOf } from './slices.mjs';
 import { git } from './git.mjs';
 import { readLoop } from './loop.mjs';
@@ -474,16 +474,12 @@ const cites = (text, slug) => new RegExp(`(?<![\\p{L}\\p{N}_.-])${slug.replace(/
 // to settle.
 function leaseConflictRows(ctx) {
   const { loop, profile } = ctx;
-  const leaseStatus = statusWith(profile, 'holds-claim');
   const out = [];
   for (const i of loop.issues) {
     if (i.id === null || i.shared) continue;
     const c = leaseConflictOf(loop, i);
     if (!c) continue;
-    const lease = (e) => `${e.writer}${e.lease?.worker ? ` (worker ${e.lease.worker}${e.lease.branch ? `, ${e.lease.branch}` : ''})` : ''} at ${e.at}`;
-    out.push({ what: 'conflict', id: i.id, title: i.title, priority: i.priority, holder: JARL_HOLDER,
-      says: `leased twice with no move out between: by ${lease(c.first)} and by ${lease(c.second)}, in two copies of the loop that each leased it before either saw the other; settle which lease stands`,
-      command: jarlLine('set', i.id, leaseStatus, '--handover', '--branch', '<branch>', '--worker', '<name>', '--model', '<model-id>', '<why-the-worker-changed>') });
+    out.push({ what: 'conflict', id: i.id, title: i.title, priority: i.priority, holder: JARL_HOLDER, says: leaseConflictText(c), command: leaseConflictForm(profile, i.id) });
   }
   return out;
 }

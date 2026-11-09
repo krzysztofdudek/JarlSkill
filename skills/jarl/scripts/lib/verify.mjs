@@ -2,7 +2,8 @@
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { fieldText, jarlLine, need } from './base.mjs';
+import { fieldText, hole, jarlLine, need, printCommand } from './base.mjs';
+import { git } from './git.mjs';
 import { canonical, jarlDir } from './where.mjs';
 import { readText } from './files.mjs';
 import { ISSUE_FILE_RE, cmpId, idKey } from './ids.mjs';
@@ -13,6 +14,7 @@ import { parentCycle, parseIssue, sharedNumberText, sharedNumbers } from './issu
 import { REPOS_DECLARED_IN, declaredNames, issueRepos, repoIdentity, repoValueKind, reposNamed, worktreesOf } from './repositories.mjs';
 import { headerReadNotes, recordDisagreements } from './disagreements.mjs';
 import { readLoop, unorderedNamings, unorderedText } from './loop.mjs';
+import { leaseConflictForm, leaseConflictOf, leaseConflictText } from './gate.mjs';
 import { attachmentFindings } from './attachments.mjs';
 import { modelLines, unknownModels } from './models.mjs';
 import { hasLiveLoop } from './shared.mjs';
@@ -39,6 +41,18 @@ export const VERIFY_SHOWN = 20;
 function shownText(text) {
   const s = JSON.stringify(String(text)).slice(1, -1);
   return s.length > 120 ? `${s.slice(0, 119)}…` : s;
+}
+// How a record file a merge left conflicted is taken back: with git, one side whole, never by hand. The commands are the ones
+// its state allows: a merge still in progress, a merge committed with the markers in it, any other commit, or no commit.
+function conflictWay(root, file, id) {
+  const path = `.jarl/issues/${file}`;
+  const cmd = (...words) => printCommand(['git', '-C', root, ...words], { globals: [] });
+  const quoted = `; if the lines only quote a conflict, write the text again with ${jarlLine('field', id ?? hole('<id>'), hole('<section-or-field>'), hole('<text>'))}, which escapes each marker line`;
+  if (git(root, ['ls-files', '-u', '--', path])) return `; take one side whole, never by hand: ${cmd('checkout', '--ours', '--', path)} or ${cmd('checkout', '--theirs', '--', path)}, then ${cmd('add', '--', path)}, and read this again${quoted}`;
+  const [sha, ...parents] = (git(root, ['log', '-1', '--format=%H %P', '--', path]) || '').trim().split(' ').filter(Boolean);
+  if (sha && parents.length === 2) return `; take one side of that merge whole, never by hand: ${cmd('checkout', `${sha}^1`, '--', path)} or ${cmd('checkout', `${sha}^2`, '--', path)}, commit it, and read this again${quoted}`;
+  if (sha) return `; take the file from the last commit before the markers, never by hand: ${cmd('log', '--oneline', '--', path)} names the commits, ${cmd('checkout', hole('<sha>'), '--', path)} takes one; commit it, and read this again${quoted}`;
+  return `; no commit holds this file, so git cannot take a side of it: restore it from the copy it came from${quoted}`;
 }
 // The lines of a profile error: the problems list validateProfile throws, or the message itself.
 function profileProblems(message) {
@@ -94,8 +108,9 @@ export function cmdVerify(root) {
   for (const s of goalSkips) add('goal', `${GOAL_FILE} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`, s.n);
   for (const f of issueFilesOf(dir)) {
     const issueSkips = [];
-    parseIssue(readText(join(dir, 'issues', f)), join(dir, 'issues', f), issueSkips);
-    for (const s of issueSkips) add('issues', `issues/${shownText(f)} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}`);
+    const parsed = parseIssue(readText(join(dir, 'issues', f)), join(dir, 'issues', f), issueSkips);
+    const way = issueSkips.some((s) => s.conflict) ? conflictWay(root, f, parsed.id) : '';
+    for (const s of issueSkips) add('issues', `issues/${shownText(f)} line ${s.n}`, `"${shownText(s.text)}" — ${s.reason}${s.conflict ? way : ''}`);
   }
   for (const f of existsSync(join(dir, 'issues')) ? readdirSync(join(dir, 'issues')) : []) {
     if (!ISSUE_FILE_RE.test(f)) add('issues', `issues/${shownText(f)}`, 'a file the loop does not read as an issue: an issue file is its number, a dash and its title, ending in .md');
@@ -117,6 +132,12 @@ export function cmdVerify(root) {
     else if (!i.tree.parent) add('issues', `issue ${i.id}`, `names ${i.parent} in its Parent field, which the loop does not hold`);
     else if (parentCycle(i)) add('issues', `issue ${i.id}`, `its parents come back to it (${[i, ...i.tree.ancestors, i].map((a) => a.id).join(' → ')}), so none of them is ever offered`);
     else if (finished && profile.unfinished(i.status)) add('issues', `issue ${i.id}`, `is ${i.status} under ${finished.id}, which is ${finished.status}: reopen ${finished.id}, or finish ${i.id}`);
+  }
+  // Two copies that each leased one issue: the log holds both leases, and only a handover says which stands.
+  for (const i of loop.issues) {
+    if (i.id === null || i.shared) continue;
+    const c = leaseConflictOf(loop, i);
+    if (c) add('leases', `issue ${i.id}`, `${leaseConflictText(c)} — ${leaseConflictForm(profile, i.id)}`);
   }
   retractionChecks(events, add);
   // A shared number is the issues check's finding. A number the log files more than once, now one file's, is read from

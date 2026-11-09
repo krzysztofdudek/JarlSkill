@@ -54,7 +54,7 @@ export function parseIssue(text, file, skipped) {
   if (skipped && !head) skipped.push({ n: 1, text: lines[0] || '', reason: 'not an issue header: the first line is "# <id> · <title>"' });
   // A merge git could not join leaves both sides in the file between its markers, and every reader would take the lines of
   // both for the issue's own.
-  if (skipped) for (const n of conflictsIn(lines)) skipped.push({ n, text: lines[n - 1], reason: 'a git conflict marker: the file holds both sides of a merge git could not join, and the issue reads as both; keep one side of each conflict and remove the markers; if the lines only quote a conflict, put a backslash in front of each marker line (\\<<<<<<<) or remove them' });
+  if (skipped) for (const n of conflictsIn(lines)) skipped.push({ n, text: lines[n - 1], reason: 'a git conflict marker: the file holds both sides of a merge git could not join, and the issue reads as both', conflict: true });
   if (skipped) {
     lines.forEach((line, i) => {
       const f = FIELD_RE.exec(line);
