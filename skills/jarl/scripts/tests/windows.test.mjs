@@ -101,7 +101,7 @@ test('readText gives LF whatever the file holds', () => {
   assert.equal(readText(f), 'a\nb\nc\n');
 });
 
-test('a loop whose files came back with CRLF (a Windows checkout with core.autocrlf) reads and writes as with LF', () => {
+test('a loop whose files came back with CRLF (a Windows checkout with core.autocrlf) reads as with LF, and a file it writes keeps them', () => {
   const root = mkdtempSync(join(tmpdir(), 'jarl-crlf-loop-'));
   mkdirSync(join(root, '.git'));
   assert.equal(run(root, 'init', 'goal').status, 0);
@@ -118,8 +118,12 @@ test('a loop whose files came back with CRLF (a Windows checkout with core.autoc
   assert.equal(run(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'pass').status, 0);
   const again = JSON.parse(run(root, 'show', '1', '--json').stdout);
   assert.equal(again.status, 'in-progress');
-  assert.match(readFileSync(join(dir, readdirSync(dir)[0]), 'utf8'), /\*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* npm test/);
+  const issue = join(dir, readdirSync(dir)[0]);
+  assert.match(readFileSync(issue, 'utf8'), /\*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* npm test/);
   assert.match(run(root, 'status').stdout, /in flight 1/);
+  // Written back and appended to, each file keeps the CRLF it came back with: a repository with autocrlf off would
+  // otherwise see the whole file change on the first write.
+  for (const f of [issue, join(root, '.jarl', 'log.md')]) assert.doesNotMatch(readFileSync(f, 'utf8'), /(?:^|[^\r])\n/, `${f} keeps its CRLF`);
 });
 
 test('renameRetry: on win32 a busy rename is retried until it goes through; elsewhere, and for other errors, the first error stands', () => {
