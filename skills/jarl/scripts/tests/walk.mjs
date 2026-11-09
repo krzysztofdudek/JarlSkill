@@ -142,7 +142,7 @@ const RECORDING = 'for a in "$@"; do printf \'%s\\037\' "$a"; done >> "$JARL_PAS
 const BIN = process.platform === 'win32' ? null : (() => { const d = mkdtempSync(join(tmpdir(), 'jarl-refusals-bin-')); writeFileSync(join(d, 'jarl.mjs'), `#!/bin/sh\n${RECORDING}\n`, { mode: 0o755 }); return d; })();
 export function runPrinted(cwd, line, sh = SHELLS[0]) {
   writeFileSync(PASTED, '');
-  const env = { ...process.env, JARL_PASTED: PASTED };
+  const env = { ...process.env, JARL_PASTED: PASTED.replaceAll('\\', '/') };   // Git for Windows' bash reads a path with slashes
   const pasted = sh === 'bash'
     ? spawnSync(bashBin(), ['-c', `jarl.mjs() { ${RECORDING.replace('exit 1', 'return 1')}; }\n${line}`], { cwd, encoding: 'utf8', timeout: 60000, env })
     : spawnSync(sh, [...(sh.endsWith('zsh') ? ['-f'] : []), '-c', line], { cwd, encoding: 'utf8', timeout: 60000, env: { ...env, PATH: `${BIN}:${process.env.PATH}` } });

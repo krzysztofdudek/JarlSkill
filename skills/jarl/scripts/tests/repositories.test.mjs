@@ -487,7 +487,7 @@ test('set --worktree through the command line refuses a wrong path and writes no
   const before = readFileSync(join(w.hub, '.jarl', 'log.md'), 'utf8');
   const lease = ['set', '1', 'in-progress', 'go', '--branch', 'jarl/1-a', '--worker', 'w1', '--worktree'];
   assert.match(refuses(w.hub, ...lease, plain), /--worktree .*plain'? is not a worktree of tool/, 'quoted where the path holds a backslash');
-  assert.match(refuses(w.hub, ...lease, wrongBranch), /--worktree .*wrong-branch has jarl\/9-other checked out, not jarl\/1-a, the branch of the lease/);
+  assert.match(refuses(w.hub, ...lease, wrongBranch), /--worktree .*wrong-branch'? has jarl\/9-other checked out, not jarl\/1-a, the branch of the lease/);
   assert.match(refuses(w.hub, ...lease, w.tool), /has main checked out, not jarl\/1-a/);
   assert.equal(readFileSync(join(w.hub, '.jarl', 'log.md'), 'utf8'), before, 'a refused call writes nothing');
   assert.match(w.issue(1), /^\*\*Status:\*\* open$/m);

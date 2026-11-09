@@ -32,6 +32,7 @@ function copyScene() {
 // A text with what changes from one run to the next masked: the place of the copy, a time, a key.
 function masked(text, dir) {
   return String(text)
+    .split(JSON.stringify(realpathSync(dir)).slice(1, -1)).join('<COPY>').split(JSON.stringify(dir).slice(1, -1)).join('<COPY>')   // in JSON on Windows, each backslash doubled
     .split(realpathSync(dir)).join('<COPY>').split(dir).join('<COPY>').split(basename(dir)).join('<NAME>')
     .replace(/\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?Z?)?/g, 'TIME').replace(/\b\d{8}T\d{4}-[a-z0-9]+\b/g, 'KEY').replace(/"ageMs": \d+/g, '"ageMs": 0');
 }
