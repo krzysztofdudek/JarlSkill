@@ -621,7 +621,7 @@ function renderMerger(o, out) {
     '4. Branches sharing no file may go as one batch, checked once; never batch two that touch one file.',
     '5. Run the repository\'s check on the merged result, in the foreground, with your tool\'s own timeout set; report only after it has finished.',
     '6. Green: the green-merge command for the issues on the branch, close each issue, then `show` it and confirm it reads done. `NO PROOF FROM THE WORKER`: done waits for the worker\'s row. `MERGE WITHOUT THE BRANCH` or `WITHOUT THE BASE`: merge and check again. `APPROVED ON ANOTHER TIP`: report the two tips.',
-    '7. Changelog entries, once the batch is green: paste them under `[Unreleased]`, edited into the repository\'s register, committed as that file alone. A repository with no changelog skips this step.',
+    '7. Changelog entries, once the batch is green: paste them under `[Unreleased]` in the repository\'s register, committed as that file alone. No changelog: skip this step.',
     '8. Push nothing unless a goal line or a ruling grants the branch; then push it after a green merge. A worker\'s branch is never pushed.',
     '9. An issue worked in place brings no branch: once its approve stands, commit its declared files as a commit of their own between two merges, record it with the in-place command, then close it.',
   ]);

@@ -171,7 +171,7 @@ test('a slice\'s integration branch landed after its issues went done leaves the
 test('the merger\'s brief skips the changelog step where the repository keeps no changelog', () => {
   const { dir } = gitRepo({ prefix: 'jarl-ways-', branch: 'feature' });
   jarl(dir, 'init', 'one issue');
-  assert.match(jarl(dir, 'brief', '--role', 'merger'), /^7\. Changelog entries, once the batch is green:[^\n]* A repository with no changelog skips this step\.$/m);
+  assert.match(jarl(dir, 'brief', '--role', 'merger'), /^7\. Changelog entries, once the batch is green:[^\n]* No changelog: skip this step\.$/m);
 });
 
 test('the model guidance says a lone agent holds the merger\'s role, on whatever model it runs', () => {
