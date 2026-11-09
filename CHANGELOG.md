@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- On Windows, a brief names a worktree with backslashes, as the platform does.
+
 - On Windows, the form a refused call prints carries an empty `--root=` as given, instead of naming the loop root by its placeholder.
 - On Windows, the `git` commands Jarl prints for a kept worktree and for a merge that moved past its review are quoted for PowerShell and cmd, and a record file that came back with CRLF keeps its line endings when Jarl writes to it.
 
