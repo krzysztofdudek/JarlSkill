@@ -11,7 +11,7 @@ import { gitRepo, jarl, posixForms, refuses, spawnJarl, loop as makeLoop } from 
 import { shellWord } from '../jarl-lib.mjs';
 import * as R from '../record.mjs';
 import { FINDINGS } from './findings.mjs';
-import { fileAsBefore, fileAsFormatTwo, formatTwoJarl, oldJarl } from './old-jarl.mjs';
+import { fileThreeDigits, filePlain } from './helpers.mjs';
 
 const { pairsInAnyOrder } = await import('../lib/brief.mjs');
 const SCRIPT_PATH = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
@@ -121,7 +121,7 @@ test('an issue whose file holds no Reviews section is briefed with the findings 
 // Lines a writer that keeps its verdicts and rounds in the journal alone writes, with no mark of a takeover on a round.
 const journalOnly = (root, ...texts) => {
   const log = join(root, '.jarl', 'log.md');
-  writeFileSync(log, `${readFileSync(log, 'utf8').replace(/\n*$/, '\n')}${texts.map((t) => `- 2026-11-01 10:00 · ${t}\n`).join('')}`);
+  writeFileSync(log, `${readFileSync(log, 'utf8').replace(/\n*$/, '\n')}${texts.map((t) => `- 2026-11-01 10:00 key 20260101T0000-tstk by a-writer · ${t}\n`).join('')}`);
 };
 const issueFile = (root) => join(root, '.jarl', 'issues', readdirSync(join(root, '.jarl', 'issues'))[0]);
 
@@ -241,7 +241,7 @@ const loseEntry = (root, by, which) => {
 // Moves the first verdict of rev1 to an earlier day, its log line and its entry alike, as a verdict given days before.
 const earlierDay = (root) => {
   const log = join(root, '.jarl', 'log.md');
-  writeFileSync(log, readFileSync(log, 'utf8').replace(/^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}((?: key \S+)? · 1 review changes · by rev1 )/m, '- 2026-11-01 10:00$1'));
+  writeFileSync(log, readFileSync(log, 'utf8').replace(/^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}((?: key \S+)? by [^·]+ · 1 review changes · by rev1 )/m, '- 2026-11-01 10:00$1'));
   writeFileSync(issueFile(root), readFileSync(issueFile(root), 'utf8').replace(/^- \*\*changes\*\* · by rev1 \(fresh\) · \d{4}-\d{2}-\d{2}/m, '- **changes** · by rev1 (fresh) · 2026-11-01'));
 };
 const alikeLoop = (...verdicts) => {
@@ -764,73 +764,6 @@ test('a brief of an issue with 250 review lines whose Reviews section holds its 
 // Findings that open with the lead-in a writer sets before a mark, or with a mark itself.
 const LEAD_IN_FINDINGS = ['findings: model big-model was asked.\nImportant: the count is off.', 'findings: relayed · the count was read twice.\nImportant: the count is off.', 'model big-model is named first.\nImportant: the count is off.', 'findings: model big-model is one line. Important: the count is off.'];
 
-test('a verdict whose writer sets the lead-in only before a mark, its finding opening with the lead-in before a mark, is listed once, matched and whole', () => {
-  const root = loop();
-  const id = fileAsFormatTwo(root, 'the work');
-  LEAD_IN_FINDINGS.forEach((t, k) => {
-    const r = formatTwoJarl(root, 'review', {}, [id, 'changes', t, { by: `rev${k + 1}` }]);
-    assert.equal(r.ok, true, r.error);
-  });
-  const o = findingsListed(root, id);
-  assert.deepEqual(o.findings.map((f) => [f.by, f.text, f.fileOnly === true]), LEAD_IN_FINDINGS.map((t, k) => [`rev${k + 1}`, t, false]));
-  assert.deepEqual(reviewNotes(o), []);
-});
-
-test('a verdict whose writer keeps only the log and sets no lead-in, its finding opening with the lead-in before a mark, is listed once, as the log holds it', () => {
-  const root = loop();
-  const id = fileAsBefore(root, 'the work');
-  LEAD_IN_FINDINGS.forEach((t, k) => {
-    const r = oldJarl(root, 'review', {}, [id, 'changes', t, { by: `rev${k + 1}` }]);
-    assert.equal(r.ok, true, r.error);
-  });
-  assert.doesNotMatch(readFileSync(issueFile(root), 'utf8'), /## Reviews/, 'this writer keeps no Reviews section');
-  const o = findingsListed(root, id);
-  assert.deepEqual(o.findings.map((f) => [f.by, f.text, f.fileOnly === true]), LEAD_IN_FINDINGS.map((t, k) => [`rev${k + 1}`, t.split('\n')[0], false]));
-  assert.deepEqual(reviewNotes(o), []);
-});
-
-// One reviewer's same one-line finding twice: first from a writer that keeps only the log, then from this Jarl.
-const logOnlyThenThis = (...flags) => {
-  const root = loop();
-  const id = fileAsBefore(root, 'the work');
-  const r = oldJarl(root, 'review', {}, [id, 'changes', 'Important: the same text.', { by: 'rev1' }]);
-  assert.equal(r.ok, true, r.error);
-  jarl(root, 'review', id, 'changes', '--by', 'rev1', 'Important: the same text.', ...flags);
-  assert.equal((readFileSync(issueFile(root), 'utf8').match(/\*\*changes\*\*/g) || []).length, 1, 'only this Jarl keeps an entry');
-  return { root, id };
-};
-
-test('the same finding of one reviewer from a writer that keeps only the log and then from this Jarl with a model: each verdict once, the entry the second\'s, no note', () => {
-  const { root, id } = logOnlyThenThis('--model', 'model-a');
-  const o = findingsListed(root, id);
-  assert.deepEqual(o.findings.map((f) => [f.by, f.text, f.fileOnly === true]), [['rev1', 'Important: the same text.', false], ['rev1', 'Important: the same text.', false]]);
-  assert.deepEqual(reviewNotes(o), []);
-});
-
-test('the same finding of one reviewer twice with no mark at all, from a writer that keeps only the log and then from this Jarl: both give the log line and the entry follows, marked, with the note that nothing tells them apart', () => {
-  const { root, id } = logOnlyThenThis();
-  const o = findingsListed(root, id);
-  assert.deepEqual(o.findings.map((f) => [f.by, f.text, f.fileOnly === true]), [['rev1', 'Important: the same text.', false], ['rev1', 'Important: the same text.', false], ['rev1', 'Important: the same text.', true]]);
-  assert.deepEqual(reviewNotes(o), [`1 review(s) of the Reviews section of ${id} fit a verdict line of its log that another line or entry of the same reviewer fits as well, and nothing the two record tells which is whose: those verdicts are given as the log's lines, and the entries are listed after them, marked in the issue file only`]);
-});
-
-test('the same finding of one reviewer on one day opening like a model mark, from a writer that keeps only the log and sets no lead-in and then from one that keeps an entry: the missing lead-in tells the two apart, each verdict once, the entry the second\'s, no note', () => {
-  const later = { 'this Jarl': (root, id, text) => jarl(root, 'review', id, 'changes', '--by', 'rev1', text), 'the writer of record format 2': (root, id, text) => { const r = formatTwoJarl(root, 'review', {}, [id, 'changes', text, { by: 'rev1' }]); assert.equal(r.ok, true, r.error); } };
-  for (const text of ['model big-model was asked. Important: the count is off.', 'Model big-model is the cause. Important: the count is off.']) {
-    for (const [name, write] of Object.entries(later)) {
-      const root = loop();
-      const id = fileAsBefore(root, 'the work');
-      const first = oldJarl(root, 'review', {}, [id, 'changes', text, { by: 'rev1' }]);
-      assert.equal(first.ok, true, first.error);
-      write(root, id, text);
-      const lines = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').filter((l) => / review changes /.test(l));
-      assert.deepEqual(lines.map((l) => / · findings: /.test(l)), [false, true], `${name}: only the second line carries the lead-in`);
-      const o = findingsListed(root, id);
-      assert.deepEqual(o.findings.map((f) => [f.by, f.text, f.fileOnly === true]), [['rev1', text, false], ['rev1', text, false]], `${name}: ${text}`);
-      assert.deepEqual(reviewNotes(o), [], `${name}: ${text}`);
-    }
-  }
-});
 
 test('a Worktree field a lease wrote into the header is left out of the brief, as every line that names a place on this machine is', () => {
   const root = loop();

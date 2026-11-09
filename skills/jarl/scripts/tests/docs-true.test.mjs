@@ -130,7 +130,7 @@ test('close --force closes with issues still open, as the reference says, and re
   const { dir } = gitRepo({ prefix: 'jarl-docs-close-' });
   jarl(dir, 'init', 'g');
   jarl(dir, 'new', 'still open', '--acceptance', '[read] it works');
-  assert.match(refuses(dir, 'close'), /still open or in progress.*close --force removes it with them\)\njarl\.mjs ask "<question-for-the-owner>"\n$/);
+  assert.match(refuses(dir, 'close'), /still open or in progress.*close --force removes it with them\)\njarl\.mjs ask "<question-for-the-owner>" --by "<who>"\n$/);
   assert.match(jarl(dir, 'close', '--force'), /^removed /);
   assert.equal(existsSync(join(dir, '.jarl')), false);
 });
@@ -426,12 +426,12 @@ test('jarl_help prints the usage the command line prints, and the server instruc
 
 test('a tool call does what its description says: jarl_ask without a kind files a stuck question, jarl_close with force closes', () => {
   const root = loop({ prefix: 'jarl-docs-call-', via: 'cli' });
-  const asked = mcp.callTool('jarl_ask', { text: 'which way?', root });
+  const asked = mcp.callTool('jarl_ask', { by: 'test-writer', text: 'which way?', root });
   assert.equal(asked.isError, false);
   assert.match(readFileSync(join(root, '.jarl', 'asks.md'), 'utf8'), /stuck/);
-  mcp.callTool('jarl_new', { title: 'open', root });
-  assert.equal(mcp.callTool('jarl_close', { root }).isError, true, 'close refuses while an issue is open');
-  assert.equal(mcp.callTool('jarl_close', { force: true, root }).isError, false);
+  mcp.callTool('jarl_new', { by: 'test-writer', title: 'open', root });
+  assert.equal(mcp.callTool('jarl_close', { by: 'test-writer', root }).isError, true, 'close refuses while an issue is open');
+  assert.equal(mcp.callTool('jarl_close', { by: 'test-writer', force: true, root }).isError, false);
 });
 
 // ---- the rules as the tool applies them ---------------------------------------------------------------------------

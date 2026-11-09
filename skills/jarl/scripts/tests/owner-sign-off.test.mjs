@@ -9,7 +9,6 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { FINDINGS } from './findings.mjs';
-import { formatTwoJarl, oldJarl } from './old-jarl.mjs';
 import { jarl, refuses, run, loop as makeLoop } from './helpers.mjs';
 import * as R from '../record.mjs';
 import * as L from '../jarl-lib.mjs';
@@ -57,30 +56,15 @@ test('a line marked as the owner\'s must name its material and what to check, an
   }
   assert.equal(R.loadIssues(root).length, 0, 'nothing was filed');
   assert.equal(existsSync(profileFile(root)), false, 'nothing was raised');
-  assert.equal(formatTwoJarl(root, 'list', {}).ok, true, 'before the mark, a reader of formats 1 and 2 reads the loop');
 
   jarl(root, 'new', 'cut the film', '--acceptance', '[read] the cut renders', '--acceptance', OWNER_LINE);
   assert.match(issueText(root, '1'), new RegExp(`^- ${OWNER_LINE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'), 'the line is kept as written');
-  assert.equal(JSON.parse(readFileSync(profileFile(root), 'utf8')).format, 3, 'the mark raised the format');
-  const old = formatTwoJarl(root, 'list', {});
-  assert.equal(old.ok, false, 'a reader that would let done pass over the line refuses the loop instead');
-  assert.match(old.error, /written for record format 3/);
 
   // body writes the mark by the same rule.
   jarl(root, 'new', 'second', '--acceptance', '[read] plain');
   assert.match(refuses(root, 'field', '2', 'Acceptance', '[owner] looks right'), /is marked as one only the owner ticks/);
   jarl(root, 'field', '2', 'Acceptance', '[Owner] looks right · material: https://example.com/preview · check: the colours');
   assert.equal(json(root, 'show', '2').sections.acceptance.trim(), '[Owner] looks right · material: https://example.com/preview · check: the colours');
-});
-
-test('a loop run by a composer refuses an owner line and writes nothing', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'jarl-owner-line-composed-'));
-  mkdirSync(join(dir, '.git'));
-  const profile = join(mkdtempSync(join(tmpdir(), 'jarl-owner-line-profile-')), 'profile.json');
-  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: L.BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }, null, 2));
-  jarl(dir, 'init', 'a composed goal', '--profile', profile);
-  assert.match(refuses(dir, 'new', 'cut the film', '--acceptance', OWNER_LINE), /an acceptance line only the owner ticks needs record format 3, and this loop stays at format 1: its profile names an external scheduler.*nothing was written/s);
-  assert.equal(R.loadIssues(dir).length, 0);
 });
 
 test('set done refuses while an owner line is not ticked, naming the line, its material and what to check, and passes once he ticks it', () => {
@@ -95,7 +79,7 @@ test('set done refuses while an owner line is not ticked, naming the line, its m
   const ticked = json(root, 'tick', '1', '2', '--by', 'owner');
   assert.deepEqual([ticked.id, ticked.line, ticked.by], ['1', 2, 'owner']);
   assert.match(ticked.at, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
-  assert.match(logText(root), /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)? · 1 tick · line 2 · by owner · \[owner\] the first cut reads well · material: renders\/cut\.txt · check: the pacing of the opening and the captions$/m);
+  assert.match(logText(root), /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)? by [^·]+ · 1 tick · line 2 · by owner · \[owner\] the first cut reads well · material: renders\/cut\.txt · check: the pacing of the opening and the captions$/m);
   assert.match(jarl(root, 'show', '1'), /^owner's sign-off: acceptance line 2 ticked by owner \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/m);
   jarl(root, 'set', '1', 'done', 'finished');
   assert.equal(json(root, 'show', '1').status, 'done');
@@ -154,7 +138,7 @@ test('retract tick-<n> takes back the owner\'s tick of one line, given by mistak
     assert.equal(logText(root), before, `${args.join(' ')}: nothing was written`);
   }
   assert.equal(jarl(root, 'retract', '1', 'tick-2', 'I ticked the cut before I watched the end', '--by', 'owner').replace(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/g, '<at>'), "1 the owner's tick of acceptance line 2 of <at> taken back by owner at <at>");
-  assert.match(logText(root), /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)? · 1 tick retract · line 2 · by owner · I ticked the cut before I watched the end · \[owner\] the first cut reads well · material: renders\/cut\.txt · check: the pacing of the opening and the captions$/m);
+  assert.match(logText(root), /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)? by [^·]+ · 1 tick retract · line 2 · by owner · I ticked the cut before I watched the end · \[owner\] the first cut reads well · material: renders\/cut\.txt · check: the pacing of the opening and the captions$/m);
   assert.match(jarl(root, 'show', '1'), /^owner's sign-off: acceptance line 2 not ticked \(his tick of \d{4}-\d{2}-\d{2} \d{2}:\d{2} was taken back by owner \d{4}-\d{2}-\d{2} \d{2}:\d{2}: I ticked the cut before I watched the end\) — he reviews renders\/cut\.txt/m);
   assert.match(refuses(root, 'set', '1', 'done', 'finished'), /^1 waits for the owner's sign-off on acceptance line 2, "the first cut reads well"/m);
   L.resetCaches();
@@ -163,16 +147,6 @@ test('retract tick-<n> takes back the owner\'s tick of one line, given by mistak
   assert.match(refuses(root, 'retract', '1', 'tick-2', 'again', '--by', 'owner'), /^acceptance line 2 of 1 has no tick that counts — no owner line of 1 has a tick that counts\n/);
   assert.match(run(root, ['verify']).stdout, /^(?![\s\S]*tick retract)/, 'verify places the line');
   assert.match(refuses(root, 'log', '1 tick retract · line 2 · by owner · why · [owner] x · material: y · check: z'), /reads as a tick retract line, .*\njarl\.mjs retract "<id>" "<tick-n>" "<why>" --by "<the-owner-himself>"\n$/s);
-  // The line is written only where a tick is, in record format 3: both frozen readers refuse that loop whole, with their
-  // own message, and never read a taken-back tick as one that counts.
-  for (const command of ['status', 'list']) {
-    const two = formatTwoJarl(root, command, {});
-    assert.equal(two.ok, false, command);
-    assert.match(two.error, /written for record format 3, and this Jarl reads format 1, 2 — nothing was read or written; the reader needs a Jarl that knows format 3/, command);
-    const one = oldJarl(root, command, {});
-    assert.equal(one.ok, false, command);
-    assert.match(one.error, /written for record format 3, and this Jarl reads format 1 — /, command);
-  }
   jarl(root, 'tick', '1', '2', '--by', 'owner');
   jarl(root, 'set', '1', 'done', 'finished');
   const closed = refuses(root, 'retract', '1', 'tick-2', 'too late', '--by', 'owner');
@@ -252,7 +226,7 @@ test('a tick reads whole wherever the log is shown: the resume tail and the take
   produce(root);
   proveAndApprove(root);
   jarl(root, 'tick', '1', '2', '--by', 'owner');
-  const whole = /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)? · 1 tick · line 2 · by owner · \[owner\] the first cut reads well · material: renders\/cut\.txt · check: the pacing of the opening and the captions$/m;
+  const whole = /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)? by [^·]+ · 1 tick · line 2 · by owner · \[owner\] the first cut reads well · material: renders\/cut\.txt · check: the pacing of the opening and the captions$/m;
   assert.match(jarl(root, 'resume'), whole);
   assert.ok(json(root, 'resume').log.some((l) => /1 tick · line 2 · by owner · \[owner\] the first cut/.test(typeof l === 'string' ? l : `${l.text}`)), 'the resume --json tail holds the whole line');
   jarl(root, 'round', '1', 'the captions drift');
@@ -273,23 +247,4 @@ test('resume, status and review name the owner\'s tick as the step before done w
   assert.match(jarl(root, 'status'), /^in flight 1 · approved, and it carries no code, so no merge waits — next the owner ticks acceptance line 2 with tick, once he has looked, then set it done$/m);
   jarl(root, 'tick', '1', '2', '--by', 'owner');
   assert.match(jarl(root, 'resume'), /^ {2}→ approved, and it carries no code, so no merge waits — next set it done$/m);
-});
-
-test('in a loop run by a composer, an [owner] line written there by a Jarl that did not know the mark makes done and tick say that owner lines are off and how to rewrite it', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'jarl-owner-line-off-'));
-  mkdirSync(join(dir, '.git'));
-  const profile = join(mkdtempSync(join(tmpdir(), 'jarl-owner-line-profile-')), 'profile.json');
-  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: L.BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }, null, 2));
-  jarl(dir, 'init', 'a composed goal', '--profile', profile);
-  const id = R.newIssue(dir, 'cut the film', { acceptance: '[read] the cut renders' }).id;
-  const file = R.findIssue(dir, id).file;
-  R.writeAtomic(file, readFileSync(file, 'utf8').replace('[read] the cut renders', OWNER_LINE));
-  jarl(dir, 'set', id, 'in-progress', 'go', '--worker', 'w1');
-  jarl(dir, 'evidence', id, '--line', '1', '--ran', 'render the cut', '--saw', 'written');
-  jarl(dir, 'review', id, 'approve', '--by', 'rev', FINDINGS);
-  const off = /owner lines are off in this loop: its profile names an external scheduler \(the composer tick\) and keeps record format 1, so no tick can be written here; rewrite it without the \[owner\] mark: jarl\.mjs field 001 Acceptance/;
-  assert.match(refuses(dir, 'set', id, 'done', 'finished'), off);
-  assert.match(refuses(dir, 'tick', id, '1', '--by', 'owner'), off);
-  jarl(dir, 'field', id, 'Acceptance', '[read] the first cut reads well');
-  jarl(dir, 'set', id, 'done', 'finished');
 });

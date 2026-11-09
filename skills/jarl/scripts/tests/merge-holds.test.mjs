@@ -142,7 +142,7 @@ test('scope, branches and the merge queue of resume read the declared base, as t
 // A profile whose done gate closes an issue only on a merge that landed in the base, with the default approve.
 function landedGateProfile() {
   const file = join(mkdtempSync(join(tmpdir(), 'jarl-holds-profile-')), 'profile.json');
-  writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, format: 1, name: 'landed-gate', statuses: BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true } }));
+  writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'landed-gate', statuses: BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true } }));
   return ['--profile', file];
 }
 const readyToClose = (hub) => {
@@ -306,7 +306,7 @@ test('a merge of a branch that gained a commit after its approve names both tips
   const [a, b] = [tip.slice(0, 12), now.slice(0, 12)];
   assert.ok(out.includes(`approve by rev-fresh (fresh) was recorded on jarl/1-x at ${a}, and the branch stands at ${b} at this merge`), out);
   assert.ok(out.includes(`see it: ${seeing(repo, a, b)}`), out);
-  assert.ok(out.includes("jarl.mjs review 1 \"<verdict>\" --by \"<a-fresh-reviewer>\" \"<text>\""), out);
+  assert.ok(out.includes("jarl.mjs review 1 \"<verdict>\" --by \"<a-fresh-reviewer>\" --model \"<model-id>\" \"<text>\""), out);
   assert.doesNotMatch(out, /MERGE WITHOUT/);
   assert.match(jarl(repo, 'show', '1'), new RegExp(`Merged:\\*\\* ${sha}`));
 });

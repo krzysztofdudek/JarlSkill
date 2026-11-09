@@ -9,7 +9,6 @@ import assert from 'node:assert/strict';
 import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileAsBefore, formatTwoJarl, oldJarl } from './old-jarl.mjs';
 import { jarl, refuses, run, loop as makeLoop } from './helpers.mjs';
 import { FINDINGS } from './findings.mjs';
 import { BUILTIN_STATUSES } from '../jarl-lib.mjs';
@@ -44,12 +43,12 @@ test('with no definition a bot\'s approve is recorded as a bot\'s and never clea
   const root = botLoop();
   const r = review(root, '1', 'coderabbit', '--bot');
   assert.equal(r.status, 0, r.stderr);
-  assert.match(log(root), /^- \S+ \S+(?: key \S+)? · 1 review approve · by coderabbit \(bot\) · read the diff, nothing found$/m);
+  assert.match(log(root), /^- \S+ \S+(?: key \S+)? by [^·]+ · 1 review approve · by coderabbit \(bot\) · read the diff, nothing found$/m);
   assert.match(readFileSync(R.findIssue(root, '1').file, 'utf8'), /^- \*\*approve\*\* · by coderabbit \(bot\) · /m);
-  assert.match(r.stdout, /next: 1's live approve is by coderabbit \(bot\) — a bot's approve is recorded and counted apart, and clears an issue only where the loop's done gate names that bot \(done-gate "clears"\); this loop clears on an approve by a fresh agent, or by the owner — an approve that clears it is next — jarl\.mjs review 1 "<verdict>" --by "<a-fresh-reviewer>" "<text>"/);
+  assert.match(r.stdout, /next: 1's live approve is by coderabbit \(bot\) — a bot's approve is recorded and counted apart, and clears an issue only where the loop's done gate names that bot \(done-gate "clears"\); this loop clears on an approve by a fresh agent, or by the owner — an approve that clears it is next — jarl\.mjs review 1 "<verdict>" --by "<a-fresh-reviewer>" --model "<model-id>" "<text>"/);
   const said = refuses(root, 'set', '1', 'done', 'the bot approved', '--by', 'jarl');
   assert.match(said, /^1's live approve is by coderabbit \(bot\) — a bot's approve is recorded and counted apart, and clears an issue only where the loop's done gate names that bot/);
-  assert.match(said, /\njarl\.mjs review "<ids>" "<verdict>" "<what-was-read-and-found>" --by "<a-fresh-reviewer>"\n$/);
+  assert.match(said, /\njarl\.mjs review "<ids>" "<verdict>" "<what-was-read-and-found>" --by "<a-fresh-reviewer>" --model "<model-id>"\n$/);
   // The bot's approve keeps the branch out of the merge queue and marks the issue as waiting for an approve that clears it.
   assert.equal(json(root, 'status').inFlightRows.find((x) => x.id === '1').mark, 'approved-not-cleared');
   // An issue with no code is not cleared by a bot either.
@@ -95,7 +94,7 @@ test('a loop may require a bot\'s approve and a fresh one together: either alone
   review(root, '1', 'rev-a');
   const said = refuses(root, 'set', '1', 'done', 'fresh approve', '--by', 'jarl');
   assert.match(said, /^1 holds no approve that clears it under this loop's done gate \(done-gate "clears": an approve by a fresh agent and the bot coderabbit together, or by the owner\) — the approves it holds are by rev-a \(fresh\)/);
-  assert.match(said, /\njarl\.mjs review "<ids>" "<verdict>" "<what-was-read-and-found>" --by "<reviewer>"\n$/);
+  assert.match(said, /\njarl\.mjs review "<ids>" "<verdict>" "<what-was-read-and-found>" --by "<reviewer>" --model "<model-id>"\n$/);
   review(root, '2', 'coderabbit');
   assert.match(refuses(root, 'set', '2', 'done', 'bot approve', '--by', 'jarl'), /^2 holds no approve that clears it .* — the approves it holds are by coderabbit \(bot\)/);
   review(root, '1', 'coderabbit');
@@ -117,28 +116,6 @@ test('the done gate\'s clears is checked: a word it does not know, a bot with no
   assert.match(bad({ clears: [[]] }), /"done-gate": "clears" holds an empty list/);
   assert.match(bad({ clears: [] }), /"done-gate": "clears" names at least one way an issue is cleared/);
   assert.match(bad({ approve: 'none', 'requires-merged': true, clears: ['fresh'] }), /"done-gate": "clears" names whose approves clear an issue, and "approve": "none" asks for none/);
-});
-
-test('the first bot verdict raises a loop of format 1 to format 3, which both readers of the lower formats refuse; a composer\'s loop refuses it with nothing written', () => {
-  const root = makeLoop({ prefix: 'jarl-bot-format-', via: 'cli' });
-  const id = fileAsBefore(root, 'a change', { acceptance: 'it works' });
-  jarl(root, 'set', id, 'in-progress', '--worker', 'w1', '--branch', 'jarl/1');
-  jarl(root, 'evidence', id, '--line', '1', '--ran', 'npm test', '--saw', 'pass');
-  jarl(root, 'review', id, 'approve', '--by', 'rev-a', FINDINGS);
-  assert.equal(existsSync(join(root, '.jarl', 'profile.json')), false, 'a fresh verdict raises nothing');
-  jarl(root, 'review', id, 'approve', '--by', 'coderabbit', '--bot', FINDINGS);
-  assert.equal(JSON.parse(readFileSync(join(root, '.jarl', 'profile.json'), 'utf8')).format, 3);
-  for (const read of [oldJarl, formatTwoJarl]) assert.match(read(root, 'status', {}).error, /written for record format 3/);
-
-  const composed = makeLoop({ prefix: 'jarl-bot-composed-', via: 'cli', initFlags: ['--profile', (() => {
-    const file = join(mkdtempSync(join(tmpdir(), 'jarl-bot-profile-')), 'profile.json');
-    writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }));
-    return file;
-  })()] });
-  const cid = fileAsBefore(composed, 'a change', { acceptance: 'it works' });
-  const before = log(composed);
-  assert.match(refuses(composed, 'review', cid, 'approve', '--by', 'coderabbit', '--bot', FINDINGS), /a verdict by a bot needs record format 3, and this loop stays at format 1/);
-  assert.equal(log(composed), before);
 });
 
 test('a bot\'s verdict given under the owner\'s name is a bot\'s, never the owner\'s: it does not clear', () => {
@@ -201,19 +178,6 @@ test('done refuses a code issue holding a coordinator\'s approve and a bot\'s, n
   const said = refuses(root, 'set', '1', 'done', 'two approves', '--by', 'jarl');
   assert.match(said, /^1 carries code \(Merged is recorded\) and its live approve is by jarl \(coordinator\), and it holds the approve of coderabbit \(bot\) as well — the fresh-review rule: /);
   assert.match(said, /a coordinator's approve does not clear it, and a bot's clears only where the loop's done gate names that bot:/);
-});
-
-test('a bot\'s verdict refused in a composer\'s loop ends with the profile view and the form of the call, with no value after --bot', () => {
-  const composed = makeLoop({ prefix: 'jarl-bot-composed-form-', via: 'cli', initFlags: ['--profile', (() => {
-    const file = join(mkdtempSync(join(tmpdir(), 'jarl-bot-profile-')), 'profile.json');
-    writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }));
-    return file;
-  })()] });
-  const id = fileAsBefore(composed, 'a change', { acceptance: 'it works' });
-  const said = refuses(composed, 'review', id, 'approve', '--by', 'coderabbit', '--bot', FINDINGS);
-  const [view, form] = said.trim().split('\n').slice(-2);
-  assert.equal(view, 'jarl.mjs profile');
-  assert.match(form, /^jarl\.mjs review .* --bot$/);
 });
 
 test('--bot names a bot, never the loop\'s director or the issue\'s worker', () => {

@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import * as R from '../record.mjs';
 import { jarl, refuses, run, loop as makeLoop } from './helpers.mjs';
 import { FINDINGS } from './findings.mjs';
-import { oldJarl, fileAsBefore } from './old-jarl.mjs';
+import { fileThreeDigits } from './helpers.mjs';
 
 const L = await import('../jarl-lib.mjs');
 
@@ -20,11 +20,10 @@ const evidence = (root, id) => issueText(root, id).slice(issueText(root, id).ind
 
 // A loop with `n` code issues in progress on a branch, worked by w1, each approved by a fresh reviewer and holding no row.
 // With `padded`, the issues are filed as a loop filed before it held keys holds them (three digits, no key), so the loop
-// stays format 1 (for the frozen reader).
 function approved(n = 1, padded = false, line = '[test] it works') {
   const root = makeLoop({ prefix: 'jarl-proofnotes-', via: 'cli' });
   for (let k = 1; k <= n; k += 1) {
-    if (padded) fileAsBefore(root, `issue ${k}`, { acceptance: 'it works' });
+    if (padded) fileThreeDigits(root, `issue ${k}`, { acceptance: '[read] it works' });
     else jarl(root, 'new', `issue ${k}`, '--acceptance', line);
     jarl(root, 'set', String(k), 'in-progress', 'go', '--branch', `jarl/${k}-x`, '--worker', 'w1');
     jarl(root, 'review', String(k), 'approve', '--by', 'rev-fresh', FINDINGS);
@@ -55,7 +54,7 @@ test('the merge check lands in the merge record: the Merge check field beside Me
   const root = approved();
   assert.equal(jarl(root, 'merged', '1', '--sha', 'abc1234', '--ran', 'npm test', '--saw', '3 pass', '--ci', 'green', '--keep'), '1 merged abc1234 · check npm test · CI green');
   assert.match(issueText(root, 1), /^\*\*Merged:\*\* abc1234\n\*\*Merge check:\*\* npm test · saw 3 pass\n\*\*CI:\*\* green$/m);
-  assert.match(log(root), /^- \S+ \S+(?: key \S+)? · 1 merged abc1234 · check npm test · saw 3 pass · CI green$/m);
+  assert.match(log(root), /^- \S+ \S+(?: key \S+)? by [^·]+ · 1 merged abc1234 · check npm test · saw 3 pass · CI green$/m);
 });
 
 test('a merge without a check removes the Merge check of the earlier merge; a CI line alone leaves it', () => {
@@ -203,7 +202,7 @@ function parts(root, id) {
 const fresh = (n = 1, padded = false) => {
   const root = makeLoop({ prefix: 'jarl-proofnotes-', via: 'cli' });
   for (let k = 1; k <= n; k += 1) {
-    if (padded) fileAsBefore(root, `issue ${k}`, { acceptance: 'it works' });
+    if (padded) fileThreeDigits(root, `issue ${k}`, { acceptance: '[read] it works' });
     else jarl(root, 'new', `issue ${k}`, '--acceptance', '[read] it works');
   }
   return root;
@@ -259,23 +258,6 @@ test('free text and a reason cannot hold a line that reads as a sub-heading or a
   assert.match(evidence(root, 1), /Deferred: later\n\\### Notes/);
 });
 
-test('a row written under Notes by a writer that does not know the parts is followed by the next row, and the row numbers hold', () => {
-  const root = fresh(1, true);
-  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'one', '--saw', 'ok');
-  jarl(root, 'evidence', '1', 'a note');
-  // The writer that does not know the parts appends its row at the end of the section, under Notes.
-  assert.equal(oldJarl(root, 'evidence', {}, ['1', null, { ran: 'two', saw: 'ok' }]).ok, true);
-  assert.equal(parts(root, 1).notes.trim(), 'a note\n- **ran:** two · **saw:** ok');
-  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'three', '--saw', 'ok');
-  const rows = L.evidenceTable(L.findIssue(root, 1).sections.evidence).rows.map((r) => `${r.n}:${r.ran}`);
-  assert.deepEqual(rows, ['1:one', '2:two', '3:three']);
-  assert.equal(noMark(parts(root, 1).notes.trim()), 'a note\n- **ran:** two · **saw:** ok\n- **ran:** three · **saw:** ok', 'the row follows the last row, under Notes');
-  // A retraction names the same row after the new one was written.
-  jarl(root, 'retract', '1', '2', '--by', 'rev', 'two was the wrong run');
-  assert.match(evidence(root, 1), /^- ~~\*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* two · \*\*saw:\*\* ok~~$/m);
-  assert.match(evidence(root, 1), /^- \*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* one · \*\*saw:\*\* ok$/m);
-});
-
 test('a Proof entry that is not a row (an attachment) goes after the last row at the end of Proof, in front of Notes', () => {
   const root = fresh();
   jarl(root, 'evidence', '1', 'a note first');
@@ -298,28 +280,6 @@ test('a section that already holds content and no sub-heading is never converted
   assert.doesNotMatch(evidence(root, 1), /^### /m);
 });
 
-// ---- the frozen reader --------------------------------------------------------------------------------------------
-
-test('the frozen reader reads a loop in the split form right: done is refused on the merge check alone, and the Deferred reason shows in report; the record format stays', () => {
-  const root = approved(2, true);
-  fileAsBefore(root, 'three', { acceptance: 'it works' });
-  jarl(root, 'evidence', '2', '--line', '1', '--ran', 'npm test', '--saw', 'pass');
-  jarl(root, 'evidence', '2', 'a note under Notes');
-  jarl(root, 'decide', 'split-ruling', 'the split is read right', '--settles', '2', '--by', 'coordinator');
-  for (const id of ['1', '2']) jarl(root, 'merged', id, '--sha', 'abc1234', '--ran', 'npm test', '--saw', '3 pass', '--keep');
-  jarl(root, 'set', '3', 'deferred', 'waits for the probe of 2');
-  assert.match(evidence(root, 2), /### Proof[\s\S]*### Notes/);
-  assert.equal(L.workEvidence(L.findIssue(root, 1)), '', 'the merge check is not in the section');
-  // The first issue holds the merge check only: the frozen gate finds no row line.
-  const refused = oldJarl(root, 'set', {}, ['1', 'done', 'x', {}]);
-  assert.equal(refused.ok, false);
-  assert.match(refused.error, /001 has no evidence yet/);
-  // The Deferred reason, under Notes, is the one the frozen report prints.
-  const report = oldJarl(root, 'report', {});
-  assert.equal(report.ok, true);
-  assert.match(JSON.stringify(report.value), /waits for the probe of 2/);
-  assert.equal(JSON.parse(jarl(root, 'profile', '--json')).format, 1, 'the split form does not raise the record format');
-});
 
 // ---- reading the parts ---------------------------------------------------------------------------------------------
 

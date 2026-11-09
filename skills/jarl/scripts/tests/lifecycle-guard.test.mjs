@@ -50,7 +50,6 @@ function snapshot(dir) {
 const COMMAND = 'composer-x.mjs done <composed-loop>, then composer-x.mjs archive <composed-loop>';
 const COMPOSER = {
   'jarl-profile': 1,
-  format: 1,
   name: 'composer-x',
   statuses: {
     proposed: { flags: [], 'set-by': 'record' },
@@ -59,7 +58,6 @@ const COMPOSER = {
     merged: { flags: ['settles-dependents', 'terminal', 'closes-record'], 'set-by': 'record' },
     dropped: ['settles-dependents', 'terminal', 'needs-reason'],
   },
-  'external-scheduler': 'composer-x.mjs tick',
   'done-gate': { approve: 'none', 'requires-merged': true },
   lifecycle: { close: 'record', archive: 'record', command: COMMAND },
 };

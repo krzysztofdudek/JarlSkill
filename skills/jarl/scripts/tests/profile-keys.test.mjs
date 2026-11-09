@@ -13,7 +13,6 @@ import { fileURLToPath } from 'node:url';
 import { sh } from './portable.mjs';
 import { FINDINGS } from './findings.mjs';
 import { run, jarl, refuses } from './helpers.mjs';
-import { oldJarl, fileAsBefore } from './old-jarl.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const R = await import('../record.mjs');
@@ -34,7 +33,6 @@ const reason = (fn) => { try { fn(); } catch (e) { return e.message; } throw new
 // the base holds, with no approve of Jarl's own.
 const COMPOSER = {
   'jarl-profile': 1,
-  format: 1,
   name: 'composer-x',
   statuses: {
     proposed: { flags: [], 'set-by': 'record' },
@@ -46,7 +44,6 @@ const COMPOSER = {
     merged: { flags: ['settles-dependents', 'terminal', 'closes-record'], 'set-by': 'record' },
     dropped: ['settles-dependents', 'terminal', 'needs-reason'],
   },
-  'external-scheduler': 'composer-x.mjs tick',
   'done-gate': { approve: 'none', 'requires-merged': true },
 };
 
@@ -63,26 +60,10 @@ function composedLoop(profile = COMPOSER) {
 
 // ---- the schema ----
 
-test('format: a record format this Jarl does not know is refused first and alone; the known one is accepted', () => {
-  const later = reason(() => R.validateProfile({ ...COMPOSER, format: 4, bogus: true }, 'p'));
-  assert.match(later, /written for record format 4, and this Jarl reads format 1, 2, 3/);
-  assert.doesNotMatch(later, /bogus/, 'the other keys of a later format are not read at all');
-  assert.match(reason(() => R.validateProfile({ ...COMPOSER, format: '1' }, 'p')), /record format "1"/);
-  assert.equal(R.validateProfile(COMPOSER).format, 1);
-  assert.equal(R.DEFAULT_PROFILE.format, 1);
-  // A loop opened on a later format refuses every command, the views too.
-  const { root } = composedLoop();
-  const p = join(root, '.jarl', 'profile.json');
-  writeFileSync(p, JSON.stringify({ ...COMPOSER, format: 7 }));
-  assert.match(refuses(root, 'status'), /record format 7/);
-  assert.match(refuses(root, 'list'), /record format 7/);
-});
-
 test('set-by, external-scheduler and done-gate are checked with every other problem', () => {
   const e = reason(() => R.validateProfile({
     'jarl-profile': 1,
     statuses: { open: { flags: ['dispatchable'], 'set-by': 'nobody' }, run: { flags: ['holds-claim'], who: 1 }, done: ['terminal', 'settles-dependents', 'closes-record'] },
-    'external-scheduler': 'two\nlines',
     'done-gate': { approve: 'none', extra: 1 },
   }, 'p'));
   assert.match(e, /status "open": "set-by" is one of any, record/);
@@ -110,7 +91,6 @@ test('profile describes the new keys, as JSON and as text', () => {
   assert.deepEqual(d.statuses.filter((s) => s.setBy).map((s) => s.name), ['proposed', 'queued', 'merged']);
   assert.equal(d.externalScheduler, 'composer-x.mjs tick');
   assert.deepEqual(d.doneGate, { approve: 'none', 'requires-merged': true });
-  assert.equal(d.format, 1);
   const t = jarl(root, 'profile');
   assert.match(t, /queued {2}dispatchable {2}\(set by the record only, never jarl set\)/);
   assert.match(t, /external scheduler: composer-x\.mjs tick/);
@@ -210,77 +190,6 @@ test('no done-gate: a loop without the key closes exactly as before — no merge
 
 // ---- every view on a composed loop ----
 
-test('every view tells the truth on a composed loop: next, status, resume with its merge queue and tips, branches, report, list', () => {
-  const { repo, root } = composedLoop();
-  // 1 merged and landed; 2 in flight on its branch; 3 queued but held back by the composer's own edges (Jarl
-  // cannot see them); 4 proposed; 5 dropped.
-  for (const t of ['landed one', 'in flight', 'queued', 'proposed', 'gone']) jarl(root, 'new', t, '--acceptance', '[read] it works');
-  R.setStatus(root, '1,2,3,5', 'queued');
-  sh(repo, 'git checkout -q -b jarl/1-landed && echo 2 > src/a.mjs && git commit -qam one && git checkout -q main && git merge -q --ff-only jarl/1-landed');
-  jarl(root, 'set', '1', 'running', '--branch', 'jarl/1-landed', '--worker', 'w1');
-  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'gate', '--saw', 'green');
-  R.recordMerged(root, '1', { sha: sh(repo, 'git rev-parse HEAD'), ci: 'none' });
-  R.setStatus(root, '1', 'merged');
-  sh(repo, 'git checkout -q -b jarl/2-flight && echo 3 > src/b.mjs && git add src/b.mjs && git commit -qm two && git checkout -q main');
-  jarl(root, 'set', '2', 'running', '--branch', 'jarl/2-flight', '--worker', 'w2');
-  jarl(root, 'set', '5', 'dropped', 'out of scope');
-
-  // next and queue: the composer schedules, Jarl computes nothing.
-  assert.equal(jarl(root, 'next'), 'scheduling is led by the composer: composer-x.mjs tick');
-  assert.deepEqual(json(root, 'next'), { scheduler: 'composer-x.mjs tick', note: 'scheduling is led by the composer: composer-x.mjs tick' });
-  assert.match(jarl(root, 'resume'), /^## Next ready and merge queue\n- scheduling is led by the composer: composer-x\.mjs tick$/m);
-  assert.deepEqual(json(root, 'resume').queue.repos, []);
-
-  // status: the counts by status, no ready count of Jarl's own.
-  const st = json(root, 'status');
-  assert.equal(st.ready, null);
-  assert.equal(st.scheduler, 'composer-x.mjs tick');
-  assert.deepEqual(st.statuses, { proposed: 1, queued: 1, running: 1, landed: 0, changes: 0, held: 0, merged: 1, dropped: 1 });
-  assert.equal(st.inFlight, 1);
-  const stText = jarl(root, 'status');
-  assert.match(stText, /^goal: the composed goal\n.*profile composer-x\nqueued 1 · in flight 1 · proposed 1 · held 0 · merged 1 · dropped 1 · questions 0/);
-  assert.match(stText, /scheduling is led by the composer: composer-x\.mjs tick/);
-  assert.match(stText, /closed on a merge in the base, no approve required/);
-  assert.doesNotMatch(stText, /ready/);
-
-  // resume: in flight is true, the ready list and the merge queue are the composer's.
-  const rs = json(root, 'resume');
-  assert.deepEqual(rs.inFlight.map((x) => [x.id, x.branch, x.worker]), [['002', 'jarl/2-flight', 'w2']], 'the command line files a composed loop\'s issues with three digits');
-  assert.deepEqual(rs.next, []);
-  assert.equal(rs.readyTotal, null);
-  assert.deepEqual(rs.held, []);
-  assert.equal(rs.scheduler, 'composer-x.mjs tick');
-  const rsText = jarl(root, 'resume');
-  assert.match(rsText, /## Next ready and merge queue\n- scheduling is led by the composer: composer-x\.mjs tick/);
-  assert.doesNotMatch(rsText, /## Next ready \(|## Merge queue|nothing ready/);
-
-  // tips: the feature branch of the work in flight and the base, in the repository the loop lives in.
-  const tips = json(root, 'resume', '--gh').tips;
-  assert.equal(tips.repos.length, 1);
-  const rows = tips.repos[0].rows.map((r) => [r.role, r.branch, r.issues || []]);
-  assert.deepEqual(rows, [['worker', 'jarl/2-flight', ['002']], ['feature', 'main', []]]);
-
-  // branches: the landed branch is done and deletable, the one in flight is not.
-  const br = Object.fromEntries(json(root, 'branches').map((b) => [b.branch, b]));
-  assert.equal(br['jarl/1-landed'].done, 'delete');
-  assert.deepEqual(br['jarl/1-landed'].issues, ['001']);
-  assert.equal(br['jarl/2-flight'].done, null);
-
-  // report: merged is the done work, with the merge it closed on; dropped with its reason; the rest still open.
-  const rp = json(root, 'report');
-  assert.equal(rp.done, 1);
-  assert.equal(rp.dropped, 1);
-  assert.equal(rp.left, 3);
-  assert.deepEqual(rp.statuses, st.statuses);
-  assert.equal(rp.issues.find((i) => i.id === '001').merged, sh(repo, 'git rev-parse HEAD'));
-  assert.match(rp.text, /## Done \(1\)\nclosed on a merge in the base, no approve required \(this loop's done gate\)/);
-  assert.match(rp.text, /## Dropped \(1\)\n- 005 gone — out of scope/);
-  assert.match(rp.text, /## Still open \(3\)\n- 002 in flight \(running\)\n- 003 queued \(queued\)\n- 004 proposed \(proposed\)/);
-
-  // list: the unfinished ones, by the profile's statuses.
-  assert.deepEqual(json(root, 'list').map((i) => [i.id, i.status]), [['002', 'running'], ['003', 'queued'], ['004', 'proposed']]);
-});
-
 test('no profile: next is still the list and the merge queue of resume the rows, with no scheduler key anywhere', () => {
   const root = mkdtempSync(join(tmpdir(), 'jarl-keys-plain-'));
   mkdirSync(join(root, '.git'));
@@ -297,62 +206,3 @@ test('no profile: next is still the list and the merge queue of resume the rows,
 });
 
 // ---- a composer's loop keeps its record format ----
-
-test('a loop opened with a composer\'s profile is never raised: new writes three digits, and a retraction, a repository name or a plain number is refused with nothing written', () => {
-  const { repo, root } = composedLoop();
-  const marker = join(root, '.jarl', 'profile.json');
-  const log = () => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
-  const issueFiles = () => readdirSync(join(root, '.jarl', 'issues')).sort();
-  const before = readFileSync(marker, 'utf8');
-  // new: the command line writes the number with three digits there, so the loop stays in format 1.
-  assert.match(jarl(root, 'new', 'first issue', '--acceptance', '[read] it works'), /filed 001\b/);
-  assert.match(jarl(root, 'ask', 'which way?', '--issue', '1'), /a-001\b/);
-  assert.equal(readFileSync(marker, 'utf8'), before);
-  assert.equal(R.loadProfile(root).format, 1);
-  assert.equal(oldJarl(root, 'list', {}).ok, true, 'the frozen reader of format 1 reads the composed loop');
-  // A retraction of an evidence row.
-  jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'ok');
-  let at = log();
-  assert.match(refuses(root, 'retract', '1', '1', '--by', 'rev', 'it ran in the wrong place'), /the retraction of a verdict or an evidence row needs record format 2, and this loop stays at format 1: its profile names an external scheduler \(composer-x\.mjs tick\), the composer that reads this record, so Jarl never raises its format; .* — nothing was written/);
-  assert.equal(log(), at);
-  assert.match(readFileSync(join(root, '.jarl', 'issues', issueFiles()[0]), 'utf8'), /^- \*\*ran(?: \(line [0-9a-f, ]+\))?:\*\* npm test/m, 'the row stands, not struck');
-  // A repository beside the loop's own checkout: given by its name alone it is refused, since format 1 holds no name;
-  // given by its path it keeps the path, which format 1 reads.
-  const toolName = `${repo.split(/[\\/]/).pop()}-tool`;
-  const tool = join(repo, '..', toolName);
-  mkdirSync(tool);
-  sh(tool, 'git init -q -b main && git config user.email t@t && git config user.name t && echo 1 > a.txt && git add -A && git commit -qm base');
-  const files = issueFiles();
-  at = log();
-  assert.match(refuses(root, 'new', 'named', '--repo', toolName), /a repository name needs record format 2, and this loop stays at format 1/);
-  assert.deepEqual(issueFiles(), files, 'no issue was filed');
-  assert.equal(log(), at);
-  const byPath = run(root, ['new', 'by its path', '--acceptance', '[read] it works', '--repo', tool]);
-  assert.equal(byPath.status, 0, byPath.stderr);
-  assert.match(byPath.stderr, /is stored as the path .*: the loop's profile names an external scheduler, so its record format stays at 1, which holds paths and no names/);
-  assert.match(readFileSync(join(root, '.jarl', 'issues', issueFiles().find((f) => f.startsWith('002-'))), 'utf8'), /^\*\*Repo:\*\* (\.\.?\/|\/)\S*-tool$/m);
-  assert.equal(oldJarl(root, 'list', {}).ok, true, 'the frozen reader of format 1 still reads the composed loop');
-  at = log();
-  // A number written plain, in a file made by hand: a write that names it is refused.
-  writeFileSync(join(root, '.jarl', 'issues', '7-plain.md'), readFileSync(join(root, '.jarl', 'issues', files[0]), 'utf8').replace(/^# 001 · first issue$/m, '# 7 · plain'));
-  assert.match(refuses(root, 'field', '7', 'Tags', '--add', 'x'), /a number written plain, below 100 or of 1000 or more needs record format 2, and this loop stays at format 1/);
-  assert.equal(log(), at);
-  assert.equal(readFileSync(marker, 'utf8'), before, 'the marker never moved');
-});
-
-test('an ordinary loop is raised by what it is written: new writes a key and a plain number, and a retraction raises a loop of three-digit numbers to 2', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'jarl-keys-plain-'));
-  mkdirSync(join(dir, '.git'));
-  jarl(dir, 'init', 'the goal');
-  assert.match(jarl(dir, 'new', 'first', '--acceptance', '[read] it works'), /filed 1\b/);
-  assert.equal(R.loadProfile(dir).format, 3, 'the key is written in format 3');
-  assert.equal(oldJarl(dir, 'list', {}).ok, false, 'the frozen reader of format 1 refuses it');
-  const library = mkdtempSync(join(tmpdir(), 'jarl-keys-library-'));
-  R.initLoop(library, 'the goal');
-  // Filed with three digits and no key (fileAsBefore), so nothing but the retraction raises the loop.
-  fileAsBefore(library, 'first');
-  R.addEvidence(library, '1', undefined, { line: 1, ran: 'npm test', saw: 'ok' });
-  assert.equal(R.loadProfile(library).format, 1);
-  R.addEvidence(library, '1', 'it ran in the wrong place', { retract: '1', by: 'rev' });
-  assert.equal(R.loadProfile(library).format, 2);
-});

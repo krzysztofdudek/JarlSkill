@@ -131,7 +131,7 @@ test('next --as jarl asks for the merge again when a red round spent it, and a l
   proved();
   assert.equal(rowOf(root).says, 'approved, and its last merge was spent by a later start, reopen or red round; merge it again and record the merge');
   const profile = join(mkdtempSync(join(tmpdir(), 'jarl-merge-now-profile-')), 'profile.json');
-  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, format: 1, name: 'landed-no-approve', statuses: BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true, approve: 'none' } }));
+  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, name: 'landed-no-approve', statuses: BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true, approve: 'none' } }));
   const bare = codeIssue(['--profile', profile], { approve: false });
   bare.merge();
   assert.equal(rowOf(bare.root).says, 'proof recorded; close it');
@@ -154,7 +154,7 @@ test('a red round after a merge spends it as it spends the approve', () => {
 
 test('a loop that closes only on a landed merge refuses a merge from before the reopen, though its commit is in the base', () => {
   const profile = join(mkdtempSync(join(tmpdir(), 'jarl-merge-now-profile-')), 'profile.json');
-  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, format: 1, name: 'landed-gate', statuses: BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true } }));
+  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, name: 'landed-gate', statuses: BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true } }));
   const { root, work, proved, merge } = codeIssue(['--profile', profile]);
   merge();
   jarl(root, 'set', '1', 'done', 'merged');
@@ -180,7 +180,7 @@ test('status flags a code issue closed on a merge from before its reopen, naming
   // Closed past the gate, as a hand edit or another tool can: the move line and the file's status.
   const log = join(root, '.jarl', 'log.md');
   const stamp = [...readFileSync(log, 'utf8').matchAll(/^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) · /gm)].pop()[1];
-  writeFileSync(log, `${readFileSync(log, 'utf8')}- ${stamp} · 1 → done · closed by hand\n`);
+  writeFileSync(log, `${readFileSync(log, 'utf8')}- ${stamp} key 20260101T0000-tstk by a-writer · 1 → done · closed by hand\n`);
   const file = join(root, '.jarl', 'issues', readdirSync(join(root, '.jarl', 'issues')).find((f) => f.startsWith('1-')));
   writeFileSync(file, readFileSync(file, 'utf8').replace(/^\*\*Status:\*\* .*$/m, '**Status:** done'));
   const flags = json(root, 'status').closedGate;

@@ -8,7 +8,6 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, writeFil
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { jarl, loop as makeLoop, refuses } from './helpers.mjs';
-import { oldJarl } from './old-jarl.mjs';
 
 const loop = () => makeLoop({ prefix: 'jarl-import-changes-', via: 'cli', dotGit: false });
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
@@ -242,15 +241,13 @@ test('an import stopped before its closing line leaves every issue it filed comp
 const older = () => {
   const root = mkdtempSync(join(tmpdir(), 'jarl-import-older-'));
   mkdirSync(join(root, '.git'));
-  assert.equal(oldJarl(root, 'init', {}, ['an older loop', {}]).ok, true);
   return root;
 };
 function mergedCopies() {
   const a = older();
-  const imported = oldJarl(a, 'import', {}, [findingsFile(written([finding()])), { source: SOURCE }]);
-  assert.equal(imported.ok, true, imported.error);
+  jarl(a, 'import', findingsFile(written([finding()])), '--source', SOURCE);
   const b = older();
-  assert.equal(oldJarl(b, 'new', {}, ['Print by hand', { acceptance: 'it works', source: `${SOURCE}#T-2`, 'found-by': `research ${SOURCE}`, what: 'Our own words about printing.' }]).ok, true);
+  jarl(b, 'new', 'Print by hand', '--acceptance', '[read] it works', '--source', `${SOURCE}#T-2`, '--found-by', `research ${SOURCE}`, '--what', 'Our own words about printing.', '--why', 'because');
   const [byHand] = readdirSync(join(b, '.jarl', 'issues'));
   writeFileSync(join(a, '.jarl', 'issues', byHand), readFileSync(join(b, '.jarl', 'issues', byHand), 'utf8'));
   writeFileSync(logFile(a), `${readFileSync(logFile(a), 'utf8')}${readFileSync(logFile(b), 'utf8').match(/^.*· filed 001 · .*\n/m)[0]}`);

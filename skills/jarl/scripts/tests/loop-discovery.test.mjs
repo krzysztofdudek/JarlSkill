@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { SCRIPT, SPAWN_TIMEOUT } from './helpers.mjs';
+import { SCRIPT, SPAWN_TIMEOUT, withNames } from './helpers.mjs';
 import * as R from '../record.mjs';
 import { BUILTIN_STATUSES, LOOP_WALK_DEPTH, loopsUnder } from '../jarl-lib.mjs';
 import * as mcp from '../jarl-mcp.mjs';
@@ -27,7 +27,7 @@ function cli(cwd, args, env = {}) {
   const inherited = { ...process.env };
   delete inherited.JARL_ROOT;
   delete inherited.CLAUDE_PLUGIN_ROOT;
-  const r = spawnSync(process.execPath, [SCRIPT, ...args], { cwd, encoding: 'utf8', timeout: SPAWN_TIMEOUT, env: { ...inherited, ...env } });
+  const r = spawnSync(process.execPath, [SCRIPT, ...withNames(args)], { cwd, encoding: 'utf8', timeout: SPAWN_TIMEOUT, env: { ...inherited, ...env } });
   return { status: r.status, stdout: (r.stdout ?? '').trim(), stderr: (r.stderr ?? '').trim() };
 }
 const listing = (dir) => readdirSync(dir, { recursive: true }).map(String).sort();
@@ -136,7 +136,7 @@ test('a tool session names its loop once with jarl_use; the server holds it for 
   assert.equal(other.isError, true);
   assert.match(other.content[0].text, /^the call names no loop, this checkout holds none at its root, and 2 loops are below it: releases\/6\.3\.0, topics\/a — .*\njarl_status \{"root":"<loop-root>"\}$/);
   // jarl_init opens a loop at the checkout's root, which holds none.
-  assert.equal(mcp.callTool('jarl_init', { goal: 'opened at the root' }, {}, mkdtempSync(join(tmpdir(), 'jarl-discovery-init-')), { root: null }).isError, false);
+  assert.equal(mcp.callTool('jarl_init', { by: 'test-writer', goal: 'opened at the root' }, {}, mkdtempSync(join(tmpdir(), 'jarl-discovery-init-')), { root: null }).isError, false);
   mcp.callTool('jarl_use', { path: 'topics/a' }, {}, dir, session);
   assert.match(mcp.callTool('jarl_status', {}, {}, dir, session).content[0].text, /^goal: the loop at topics\/a/, 'use names another');
   assert.match(mcp.callTool('jarl_use', {}, {}, dir, { root: null }).content[0].text, /^loops under this checkout \(2, down to 4 levels\):/);

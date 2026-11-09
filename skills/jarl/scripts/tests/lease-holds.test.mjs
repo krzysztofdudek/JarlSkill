@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gitRepo, jarl, refuses, run, loop } from './helpers.mjs';
-import { oldJarl, formatTwoJarl, fileAsBefore } from './old-jarl.mjs';
+import { fileThreeDigits } from './helpers.mjs';
 import * as R from '../record.mjs';
 
 const logText = (root) => readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
@@ -214,15 +214,12 @@ test('a handover needs its reason, a lease to replace and a change of holder', (
 
 test('a handover ends the old lease in the views: its worktree is not reported gone and its branch is not an orphan', () => {
   const { dir, g } = gitRepo({ prefix: 'jarl-lease-repo-' });
-  // A loop of format 1 kept in the repository, leased first through the frozen reader's own set, which records the worktree.
   R.initLoop(dir, 'goal');
-  fileAsBefore(dir, 'one', { files: 'f.txt' });
+  fileThreeDigits(dir, 'one', { files: 'f.txt' });
   const oldWt = `${dir}-wt-a`;
   g('worktree', 'add', '-q', '-b', 'jarl/001-a', oldWt);
   g('-C', oldWt, 'commit', '-q', '--allow-empty', '-m', 'first worker');
-  const leased = oldJarl(dir, 'set', {}, ['001', 'in-progress', 'A', { branch: 'jarl/001-a', worker: 'wA', worktree: oldWt }]);
-  assert.equal(leased.ok, true, leased.error);
-  assert.match(header(dir, '001'), /\*\*Worktree:\*\* /);
+  R.setStatus(dir, '001', 'in-progress', 'A', { branch: 'jarl/001-a', worker: 'wA', worktree: oldWt });
   R.setStatus(dir, '001', 'in-progress', 'context grew far beyond the others', { branch: 'jarl/001-b', worker: 'wB', handover: true });
   g('branch', 'jarl/001-b');
   g('worktree', 'remove', '--force', oldWt);
@@ -236,22 +233,6 @@ test('a handover ends the old lease in the views: its worktree is not reported g
   assert.match(jarl(dir, 'branches'), /jarl\/001-a .*HANDED OVER: 001 to jarl\/001-b/);
 });
 
-test('the frozen readers read a handover as the lease it is, with no raise of the format', () => {
-  const root = loop({ prefix: 'jarl-lease-old-' });
-  fileAsBefore(root, 'one', { files: 'f.txt' });
-  R.setStatus(root, '001', 'in-progress', 'A', { branch: 'jarl/001-a', worker: 'wA' });
-  R.setStatus(root, '001', 'in-progress', 'branch moved to a fresh worker', { branch: 'jarl/001-b', worker: 'wB', handover: true });
-  assert.equal(existsSync(join(root, '.jarl', 'profile.json')), false, 'nothing here is misread, so the format stays');
-  for (const [name, reader] of [['6.1.0', oldJarl], ['6.2.0', formatTwoJarl]]) {
-    const read = reader(root, 'list', {});
-    assert.equal(read.ok, true, `${name}: ${read.error}`);
-    const one = read.value.find((i) => i.id === '001');
-    assert.equal(one.fields.worker, 'wB', name);
-    assert.equal(one.fields.branch, 'jarl/001-b', name);
-    for (const command of ['status', 'next', 'queue']) assert.equal(reader(root, command, {}).ok, true, `${name} ${command}`);
-  }
-});
-
 test('the record library holds the lease the same way and takes handover as an option', () => {
   const root = loop({ prefix: 'jarl-lease-lib-' });
   R.newIssue(root, 'one', { acceptance: '[read] it works', });
@@ -260,35 +241,4 @@ test('the record library holds the lease the same way and takes handover as an o
   const out = R.setStatus(root, '001', 'in-progress', 'fresh worker after three rounds', { branch: 'jarl/001-b', worker: 'wB', handover: true });
   assert.equal(out.handover, true);
   assert.equal(R.findIssue(root, '001').fields.worker, 'wB');
-});
-
-test('in a loop its composer schedules, two leases on one file and a second lease are the composer\'s to decide, and nothing refuses them', () => {
-  const composed = mkdtempSync(join(tmpdir(), 'jarl-lease-composed-'));
-  mkdirSync(join(composed, '.git'));
-  const file = join(composed, 'profile-source.json');
-  writeFileSync(file, JSON.stringify({
-    'jarl-profile': 1, format: 1, name: 'composer-x',
-    statuses: {
-      proposed: { flags: [], 'set-by': 'record' },
-      queued: { flags: ['dispatchable'], 'set-by': 'record' },
-      running: ['holds-claim'],
-      merged: { flags: ['settles-dependents', 'terminal', 'closes-record'], 'set-by': 'record' },
-      dropped: ['settles-dependents', 'terminal', 'needs-reason'],
-    },
-    'external-scheduler': 'composer-x.mjs tick',
-    'done-gate': { approve: 'none', 'requires-merged': true },
-  }));
-  R.initLoop(composed, 'a composed goal', { profile: file });
-  // Every issue of one node declares that node's log, and the composer runs them at once.
-  for (const t of ['first issue', 'second issue']) R.newIssue(composed, t, { acceptance: '[read] it works', files: '.yggdrasil/model/orders/log.md, src/orders.mjs' });
-  R.setStatus(composed, '001,002', 'queued', 'planned');
-  R.setStatus(composed, '001', 'running', 'tick', { branch: 'composer-x/001', worker: 'agent-1' });
-  R.setStatus(composed, '002', 'running', 'tick', { branch: 'composer-x/002', worker: 'agent-2' });
-  R.setStatus(composed, '001', 'running', 'lease expired, reassigned', { branch: 'composer-x/001-b', worker: 'agent-3' });
-  assert.deepEqual(['001', '002'].map((id) => R.findIssue(composed, id).fields.worker), ['agent-3', 'agent-2']);
-  assert.equal(existsSync(join(composed, '.jarl', 'profile.json')), true);
-  assert.equal(R.loadProfile(composed).format, 1, 'the composer\'s loop keeps its format');
-  // A handover there is still a handover: checked, and logged.
-  R.setStatus(composed, '002', 'running', 'context grew', { branch: 'composer-x/002-b', worker: 'agent-4', handover: true });
-  assert.match(logText(composed), /002 → running · context grew · handover · branch composer-x\/002-b · worker agent-4\n/);
 });

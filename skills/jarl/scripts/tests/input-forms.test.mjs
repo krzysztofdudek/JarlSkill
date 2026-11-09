@@ -27,12 +27,12 @@ function formOf(message, tool, root) {
 }
 
 test('a root that is not absolute is refused with the form of the call and the root as a placeholder', () => {
-  const e = refusal(() => mcp.callTool('jarl_new', { title: 't', root: 'some/loop' }));
+  const e = refusal(() => mcp.callTool('jarl_new', { by: 'test-writer', title: 't', root: 'some/loop' }));
   assert.equal(e.code, -32602);
   assert.match(e.message, /"root" must be the absolute path/);
   assert.deepEqual(formOf(e.message, 'jarl_new'), { title: '<title>', root: '<loop-root>' });
   assert.deepEqual(formOf(refusal(() => mcp.callTool('jarl_status', { root: '' })).message, 'jarl_status'), { root: '<loop-root>' });
-  assert.deepEqual(formOf(refusal(() => mcp.callTool('jarl_decide', { slug: 's', text: 't', by: 'jarl', root: 5 })).message, 'jarl_decide'), { slug: '<slug>', text: '<text>', by: '<who>', root: '<loop-root>' });
+  assert.deepEqual(formOf(refusal(() => mcp.callTool('jarl_decide', { by: 'test-writer', slug: 's', text: 't', by: 'jarl', root: 5 })).message, 'jarl_decide'), { slug: '<slug>', text: '<text>', by: '<who>', root: '<loop-root>' });
 });
 
 test('a JARL_ROOT that is not absolute is refused with the form of the call and the root as a placeholder', () => {
@@ -43,13 +43,13 @@ test('a JARL_ROOT that is not absolute is refused with the form of the call and 
 
 test('a field the tool does not take, a wrong type and a missing argument are refused with the form of the call and the root given', () => {
   const root = loopDir();
-  let e = refusal(() => mcp.callTool('jarl_set', { ids: '1', status: 'done', bogus: 1, root }));
+  let e = refusal(() => mcp.callTool('jarl_set', { by: 'test-writer', ids: '1', status: 'done', bogus: 1, root }));
   assert.match(e.message, /unknown field "bogus"/);
   assert.deepEqual(formOf(e.message, 'jarl_set', root), { ids: '<ids>', status: '<status>', root });
   e = refusal(() => mcp.callTool('jarl_decisions', { live: 'true', root, json: true }));
   assert.match(e.message, /"live" must be true or false/);
   assert.deepEqual(formOf(e.message, 'jarl_decisions', root), { root, json: true });
-  e = refusal(() => mcp.callTool('jarl_field', { name: 'After', clear: true, root }));
+  e = refusal(() => mcp.callTool('jarl_field', { by: 'test-writer', name: 'After', clear: true, root }));
   assert.match(e.message, /"ids" is required/);
   assert.deepEqual(formOf(e.message, 'jarl_field', root), { ids: '<ids>', name: '<name>', root });
   e = refusal(() => mcp.callTool('jarl_help', { bogus: 1 }));
@@ -59,7 +59,7 @@ test('a field the tool does not take, a wrong type and a missing argument are re
 
 test('a refusal that names the field a value belongs in carries one form, not two', () => {
   const root = loopDir();
-  const e = refusal(() => mcp.callTool('jarl_set', { ids: '1', status: 'deferred', why: 'later', root }));
+  const e = refusal(() => mcp.callTool('jarl_set', { by: 'test-writer', ids: '1', status: 'deferred', why: 'later', root }));
   assert.equal(e.message.split('jarl_set {').length, 2, e.message);
 });
 

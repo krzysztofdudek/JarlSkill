@@ -200,7 +200,7 @@ test('rule 7: no comment in the scripts names a version or a past', () => {
   assert.equal(datedComments('x.mjs', '// a 6.1.x reader\n// the v2 shape\n// since 6.2\n// a ratio of 0.5 lines\n// nothing dated here\n').length, 4, 'N.N.x, vN and N.N are version-shaped');
 });
 
-// The same words in the tests' comments and test titles (not in the frozen reader or in data a test feeds a command), and
+// The same words in the tests' comments and test titles (not in data a test feeds a command), and
 // in the prose files.
 const TESTS = readdirSync(new URL('tests/', SCRIPTS)).filter((f) => f.endsWith('.test.mjs') && f !== 'seams.test.mjs');
 const titlesOf = (text) => text.split('\n').flatMap((line, i) => (/^\s*test\('/.test(line) ? [`${i + 1}: ${line.trim()}`] : [])).filter((l) => VERSIONED.test(l));
@@ -237,7 +237,7 @@ test('rule 7: no title of the one-store tests and no changelog entry of the sing
 
 test('every process a test starts carries a timeout', () => {
   const calls = (text) => text.split('\n').flatMap((l, i) => (/\b(spawnSync|execFileSync|execSync)\(/.test(l) && !/timeout/.test(l) && !/^\s*(\/\/|import|assert)/.test(l) ?[`${i + 1}: ${l.trim().slice(0, 100)}`] : []));
-  const files = [...TESTS, 'helpers.mjs', 'portable.mjs', 'old-jarl.mjs'];
+  const files = [...TESTS, 'helpers.mjs', 'portable.mjs'];
   assert.deepEqual(files.flatMap((f) => calls(read(`tests/${f}`)).map((l) => `tests/${f}:${l}`)), []);
   assert.equal(calls('const r = spawnSync(process.execPath, [x], { encoding: \'utf8\' });\nconst ok = spawnSync(a, b, { timeout: 1 });').length, 1);
 });

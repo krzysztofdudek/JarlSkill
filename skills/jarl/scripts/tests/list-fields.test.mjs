@@ -11,8 +11,9 @@ import { join } from 'node:path';
 import { loop, gitRepo, jarl, refuses } from './helpers.mjs';
 
 const mcp = await import('../jarl-mcp.mjs');
+const J = await import('../jarl.mjs');
 
-const raw = (root, name, input) => mcp.callTool(`jarl_${name}`, { ...input, root });
+const raw = (root, name, input) => mcp.callTool(`jarl_${name}`, { ...(J.MUTATING.has(name) ? { by: 'test-writer' } : {}), ...input, root });
 const call = (root, name, input) => { const r = raw(root, name, input); assert.equal(r.isError, false, `${name}: ${r.content[0].text}`); return r; };
 const refusedByTool = (root, name, input) => {
   let r;

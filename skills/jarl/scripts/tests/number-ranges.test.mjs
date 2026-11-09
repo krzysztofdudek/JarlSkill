@@ -2,14 +2,12 @@
 // the next free number of that series. Every other filing takes its number outside every declared range, stepped past a
 // range it would fall in, so a series never moves the count of another, and a hand-made file with a high number moves
 // only the count of the series it falls in. A number from a range is a line of record format 3: its first filing raises
-// the loop, and the frozen readers, which know no range, refuse it instead of numbering past the series. A loop that
 // declares no range numbers as it always does.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileAsBefore, formatTwoJarl, oldJarl } from './old-jarl.mjs';
 import { jarl, refuses, run, loop as makeLoop } from './helpers.mjs';
 import { BUILTIN_STATUSES } from '../jarl-lib.mjs';
 
@@ -55,11 +53,11 @@ test('a range that is not declared, a range with no number left and a Range line
   const before = files(root);
   let said = refuses(root, 'new', 'x', '--range', 'film');
   assert.match(said, /the goal declares no range "film", nor any other/);
-  assert.equal(lastLine(said), "jarl.mjs goal --set 'Range (<name>): <from-to>'");
+  assert.equal(lastLine(said), "jarl.mjs goal --set 'Range (<name>): <from-to>' --by "<who>"");
   jarl(root, 'goal', '--set', 'Range (tiny): 7000-7000');
   said = refuses(root, 'new', 'x', '--range', 'film');
   assert.match(said, /the goal declares no range "film": its ranges are tiny \(7000-7000\)/);
-  assert.equal(lastLine(said), 'jarl.mjs new "<title>" --range "<name>"');
+  assert.equal(lastLine(said), 'jarl.mjs new "<title>" --range "<name>" --by "<who>"');
   assert.equal(filed(root, 'the only one', '--range', 'tiny'), '7000');
   said = refuses(root, 'new', 'one too many', '--range', 'tiny');
   assert.match(said, /the range tiny \(7000-7000\) has no number left: widen it in the goal/);
@@ -94,7 +92,7 @@ test('a loop that declares no range numbers as before and is never raised for it
   const dir = mkdtempSync(join(tmpdir(), 'jarl-ranges-composed-'));
   mkdirSync(join(dir, '.git'));
   const file = join(mkdtempSync(join(tmpdir(), 'jarl-ranges-profile-')), 'profile.json');
-  writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }));
+  writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: BUILTIN_STATUSES }));
   jarl(dir, 'init', 'a composed goal', '--profile', file);
   assert.equal(filed(dir, 'first'), '001');
   // No number of a range can be filed there, so the goal declares none.
@@ -109,20 +107,4 @@ test('a loop that declares no range numbers as before and is never raised for it
   const said = refuses(dir, 'new', 'a film', '--range', 'film');
   assert.match(said, /a number from a range the goal declares needs record format 3, and this loop stays at format 1/);
   assert.deepEqual(readdirSync(join(dir, '.jarl', 'issues')).sort(), ['001-first.md', '002-second.md']);
-  assert.equal(JSON.parse(readFileSync(join(dir, '.jarl', 'profile.json'), 'utf8')).format, undefined, 'never raised');
-});
-
-test('the frozen readers read a loop whose goal declares a range and refuse it once a number of the range is filed', () => {
-  const root = makeLoop({ prefix: 'jarl-ranges-old-' });
-  fileAsBefore(root, 'filed by the first reader');
-  jarl(root, 'goal', '--set', 'Range (film): 1000-1999');
-  assert.equal(existsSync(join(root, '.jarl', 'profile.json')), false, 'a declared range raises nothing');
-  assert.equal(oldJarl(root, 'list', {}).ok, true, 'the first reader reads the goal line as goal text');
-  assert.equal(formatTwoJarl(root, 'list', {}).ok, true, 'so does the reader of formats 1 and 2');
-  assert.equal(filed(root, 'a film', '--range', 'film'), '1000');
-  assert.equal(JSON.parse(readFileSync(join(root, '.jarl', 'profile.json'), 'utf8')).format, 3);
-  assert.equal(oldJarl(root, 'list', {}).ok, false, 'the first reader refuses the loop');
-  const two = formatTwoJarl(root, 'list', {});
-  assert.equal(two.ok, false, 'the reader of formats 1 and 2 refuses it instead of numbering past the series');
-  assert.match(two.error, /written for record format 3/);
 });

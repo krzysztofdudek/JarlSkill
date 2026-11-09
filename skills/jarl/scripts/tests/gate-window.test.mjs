@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { jarl, loop as makeLoop, refuses, gitRepo, run } from './helpers.mjs';
-import { oldJarl, fileAsBefore, formatTwoJarl } from './old-jarl.mjs';
+import { fileThreeDigits } from './helpers.mjs';
 
 const L = await import('../jarl-lib.mjs');
 const R = await import('../record.mjs');
@@ -87,12 +87,11 @@ test('gateWindow gives the anchor and the cut for every event, from each closing
 
 // A loop at the root of a git repository on main, its first issue leased on the branch jarl/1-x with one commit of its
 // own, proved and approved by a fresh reviewer. `commit` adds a commit on the branch; `fresh` reads the gate as a new
-// command does. With `library` the issue is filed by the pinned frozen reader, as 001 with no key; the first tip line,
 // the row's, raises the loop to record format 3.
 function leased({ library = false } = {}) {
   const { dir: root, g } = gitRepo({ prefix: 'jarl-pause-', branch: 'main' });
   jarl(root, 'init', 'goal');
-  if (library) fileAsBefore(root, 'issue 1', { acceptance: 'it works' }); else jarl(root, 'new', 'issue 1', '--acceptance', '[read] it works');
+  if (library) fileThreeDigits(root, 'issue 1', { acceptance: '[read] it works' }); else jarl(root, 'new', 'issue 1', '--acceptance', '[read] it works');
   g('branch', 'jarl/1-x');
   const commit = (name) => { g('checkout', '-q', 'jarl/1-x'); writeFileSync(join(root, `${name}.txt`), `${name}\n`); g('add', `${name}.txt`); g('commit', '-qm', name); g('checkout', '-q', 'main'); };
   commit('work');
@@ -206,87 +205,6 @@ test('verify names the tip mark on a line that is no tip line, and the reader re
   assert.equal(verified.stdout.match(/the tip mark on a line that is no tip line/g)?.length, 2, `verify names each such line: ${verified.stdout}`);
 });
 
-test('the first tip line raises a loop of record format 1 to 3, and the pinned frozen readers of format 1 and of formats 1 and 2 refuse it with their own message; this Jarl keeps the row and the approve of the unchanged tip', () => {
-  const { root, g } = leased({ library: true });
-  assert.deepEqual(JSON.parse(readFileSync(join(root, '.jarl', 'profile.json'), 'utf8')), { 'jarl-profile': 1, format: 3 }, 'raised by the first tip');
-  for (const command of ['list', 'status']) {
-    const one = oldJarl(root, command, {});
-    assert.equal(one.ok, false, command);
-    assert.match(one.error, /written for record format 3, and this Jarl reads format 1 — /, command);
-    const two = formatTwoJarl(root, command, {});
-    assert.equal(two.ok, false, command);
-    assert.match(two.error, /written for record format 3, and this Jarl reads format 1, 2 — nothing was read or written; the reader needs a Jarl that knows format 3/, command);
-  }
-  jarl(root, 'set', '1', 'open', 'reordered'); resume(root);
-  jarl(root, 'merged', '1', '--sha', g('rev-parse', 'jarl/1-x').trim(), '--ci', 'none', '--keep');
-  assert.equal(jarl(root, 'set', '1', 'done'), '001 → done', 'this Jarl keeps the row and the approve of the unchanged tip');
-});
-
-test('a loop that records no tip is never raised: a row, an approve and a close on an issue with no branch, or on a branch that is not there', () => {
-  for (const branch of [null, 'jarl/1-gone']) {
-    const { dir: root } = gitRepo({ prefix: 'jarl-no-tip-', branch: 'main' });
-    jarl(root, 'init', 'goal');
-    fileAsBefore(root, 'issue 1', { acceptance: 'it works' });
-    if (branch) jarl(root, 'set', '1', 'in-progress', '--branch', branch, '--worker', 'w1');
-    row(root, 1);
-    jarl(root, 'review', '1', 'approve', '--by', 'rev1', 'read the diff, nothing found');
-    if (branch) jarl(root, 'merged', '1', '--sha', 'abc1234', '--ci', 'none', '--keep');
-    assert.equal(jarl(root, 'set', '1', 'done'), '001 → done');
-    assert.doesNotMatch(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), / · 001 tip /, `${branch ?? 'no branch'}: no tip line`);
-    assert.equal(existsSync(join(root, '.jarl', 'profile.json')), false, `${branch ?? 'no branch'}: the loop stays at record format 1`);
-  }
-});
-
-// The issue of a format-1 loop leased by this Jarl on its branch, its row and its approve written by the pinned frozen
-// reader, each followed at once by a line of the tip's text that the frozen reader's log command writes, so each pair
-// shares one stamp as the write of a row and its tip does. A minute that turns between the two lines makes another try.
-test('a tip line without the tip mark, written by the pinned frozen log command right after its row and its approve under the same stamp, keeps nothing across a pause', () => {
-  for (let attempt = 1; ; attempt += 1) {
-    const { dir: root, g } = gitRepo({ prefix: 'jarl-unmarked-', branch: 'main' });
-    jarl(root, 'init', 'goal');
-    fileAsBefore(root, 'issue 1', { acceptance: 'it works' });
-    g('branch', 'jarl/1-x');
-    g('checkout', '-q', 'jarl/1-x'); writeFileSync(join(root, 'work.txt'), 'work\n'); g('add', 'work.txt'); g('commit', '-qm', 'work'); g('checkout', '-q', 'main');
-    jarl(root, 'set', '1', 'in-progress', '--branch', 'jarl/1-x', '--worker', 'w1');
-    const tip = g('rev-parse', 'jarl/1-x').trim();
-    assert.equal(oldJarl(root, 'evidence', {}, ['001', null, { ran: 'npm test', saw: 'pass' }]).ok, true);
-    assert.equal(oldJarl(root, 'log', {}, [`001 tip ${tip}`]).ok, true, 'the pinned frozen log writes a line of the tip text');
-    assert.equal(oldJarl(root, 'review', {}, ['001', 'approve', 'read the diff, nothing found', { by: 'rev1' }]).ok, true);
-    assert.equal(oldJarl(root, 'log', {}, [`001 tip ${tip}`]).ok, true);
-    const lines = readFileSync(join(root, '.jarl', 'log.md'), 'utf8').trim().split('\n').slice(-4);
-    const stamps = lines.map((l) => /^- (\S+ \S+) · /.exec(l)?.[1]);
-    assert.match(lines[0], / · 001 evidence row(?: \(line [0-9a-f]+\))? · npm test$/);
-    assert.match(lines[2], / · 001 review approve · /);
-    if (stamps[0] !== stamps[1] || stamps[2] !== stamps[3]) { if (attempt < 3) continue; assert.fail(`a minute turned between a line and its tip on every try: ${lines.join(' / ')}`); }
-    assert.deepEqual([lines[1], lines[3]], [`- ${stamps[1]} · 001 tip ${tip}`, `- ${stamps[3]} · 001 tip ${tip}`], 'each line of the tip text right after its line, under its stamp, without the mark');
-    jarl(root, 'set', '1', 'open', 'reordered'); resume(root);
-    L.resetCaches();
-    const s = L.gateState(root, '1');
-    assert.deepEqual([s.rowsSince, s.approved], [0, false], 'the row and the approve are spent by the pause: a line without the mark is the tip of nothing');
-    const verified = run(root, ['verify']);
-    assert.equal(verified.stdout.match(/a tip line without the tip mark before the separator/g)?.length, 2, `verify names each such line: ${verified.stdout}`);
-    assert.equal(existsSync(join(root, '.jarl', 'profile.json')), false, 'this Jarl wrote no tip, so the loop is not raised');
-    break;
-  }
-});
-
-test('a loop whose profile names an external scheduler records no tip below record format 3: the row is recorded, nothing is raised, and the tip is listed as off', () => {
-  const { dir: root, g } = gitRepo({ prefix: 'jarl-composed-tip-', branch: 'main' });
-  const file = join(root, 'composed-profile.json');
-  writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: L.BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }));
-  jarl(root, 'init', 'goal', '--profile', file);
-  R.newIssue(root, 'issue 1', { acceptance: '[read] it works' });
-  g('branch', 'jarl/1-x');
-  R.setStatus(root, '1', 'in-progress', undefined, { branch: 'jarl/1-x', worker: 'w1' });
-  const before = readFileSync(join(root, '.jarl', 'profile.json'), 'utf8');
-  R.addEvidence(root, '1', undefined, { line: 1, ran: 'npm test', saw: 'pass' });
-  R.review(root, '1', 'approve', 'read the diff, nothing found', { by: 'rev1' });
-  assert.doesNotMatch(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), / · 001 tip /);
-  assert.equal(readFileSync(join(root, '.jarl', 'profile.json'), 'utf8'), before, 'the format is the composer\'s: nothing is raised');
-  assert.ok(R.recordFormat(root).off.includes('tip-mark'));
-  assert.match(jarl(root, 'status'), /the tip of a branch after a row, a verdict, a merge or a close \(format 3\)/);
-});
-
 // The log of a leased loop with its tip lines taken out: the row and the approve as a Jarl that writes no tip line
 // records them.
 const withoutTips = (root) => {
@@ -306,11 +224,8 @@ test('a tip line written by a log command after a verdict keeps nothing across a
     const log = withoutTips(root);
     commit('more');
     const tip = g('rev-parse', 'jarl/1-x').trim();
-    if (how === 'a later minute') appendFileSync(log, `- ${minuteAfterLast(log)} · 001 tip ${tip}\n`);
-    else {
-      assert.equal(oldJarl(root, 'log', {}, ['a note about the loop']).ok, true);
-      assert.equal(oldJarl(root, 'log', {}, [`001 tip ${tip}`]).ok, true, 'the pinned frozen log writes a line of the tip shape');
-    }
+    if (how === 'a later minute') appendFileSync(log, `- ${minuteAfterLast(log)} by a-writer · 001 tip ${tip}\n`);
+    else appendFileSync(log, `- ${minuteAfterLast(log)} by a-writer · a note about the loop\n- ${minuteAfterLast(log)} by a-writer · 001 tip ${tip}\n`);
     jarl(root, 'set', '1', 'open', 'reordered'); resume(root);
     assert.deepEqual(fresh(), [0, false], `${how}: the approve made before the new commit is spent`);
   }

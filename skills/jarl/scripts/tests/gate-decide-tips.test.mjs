@@ -142,11 +142,11 @@ test('done: an issue the journal does not know (a hand-made file) closes on what
   const dir = join(root, '.jarl', 'issues');
   const f = readdirSync(dir).find((x) => x.startsWith('1-'));
   writeFileSync(join(dir, f.replace('1-', '2-')), readFileSync(join(dir, f), 'utf8').replace('# 1 ·', '# 2 ·').replace(/## Evidence\n/, '## Evidence\nold proof\n'));
-  appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 · 2 review approve · legacy approve\n');
+  appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 key 20260101T0000-tstk by a-writer · 2 review approve · legacy approve\n');
   // A read line needs an approve and no row, so the hand-made file closes on the approve its log holds.
   assert.equal(jarl(root, 'set', '2', 'done', 'legacy'), '2 → done');
   jarl(root, 'evidence', '1', '--line', '1', '--ran', 'x', '--saw', 'y');
-  appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 · 1 review approve · by w (self) · hand-written\n');
+  appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 key 20260101T0000-tstk by a-writer · 1 review approve · by w (self) · hand-written\n');
   assert.match(refuses(root, 'set', '1', 'done', 'x'), /self-approve does not count/);
 });
 
@@ -156,7 +156,7 @@ test('status and report show who reviewed the done work', () => {
   jarl(root, 'evidence', '1-3', '--line', '1', '--ran', 't', '--saw', 'ok');
   jarl(root, 'review', '1', 'approve', '--by', 'fresh-opus', FINDINGS);
   jarl(root, 'review', '2', 'approve', '--by', 'jarl', FINDINGS);
-  appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 · 3 review approve · an approve from before --by\n');
+  appendFileSync(join(root, '.jarl', 'log.md'), '- 2026-01-01 00:00 key 20260101T0000-tstk by a-writer · 3 review approve · an approve from before --by\n');
   jarl(root, 'set', '1-3', 'done', 'ok');
   assert.match(jarl(root, 'status'), /^done reviewed by: fresh 1 · coordinator 1 · self 0 · unrecorded 1$/m);
   assert.match(jarl(root, 'report'), /## Done \(3\)\nReviewed by: fresh 1 · coordinator 1 · self 0 · unrecorded 1/);

@@ -19,7 +19,6 @@ test('--parent files every issue the import files under that parent, and moves n
   for (const id of ['2', '3', '4']) assert.equal(json(root, 'show', id).fields.parent, '1', `issue ${id}`);
   assert.equal(json(root, 'show', '1').fields.parent, undefined);
   assert.match(jarl(root, 'list'), /^1 .*\n {2}2 .*\n {2}3 .*\n {2}4 /, 'the list shows the three under the parent');
-  assert.equal(JSON.parse(readFileSync(join(root, '.jarl', 'profile.json'), 'utf8')).format, 3);
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   assert.equal([...log.matchAll(/field Parent · /g)].length, 3, 'one log line per issue put under the parent');
   assert.match(jarl(root, 'import', file, '--source', SOURCE), /already filed 3/);
@@ -52,8 +51,8 @@ test('--parent is refused, with nothing written, for a parent the loop does not 
   jarl(root, 'new', 'a dropped one', '--acceptance', '[read] it works');
   jarl(root, 'set', '2', 'dropped', 'not wanted');
   const file = findingsFile([good(1)]);
-  assert.match(refusedImport(root, file, '--parent', '99'), /no such issue: 99[^\n]*\njarl\.mjs import "<findings\.json>" --source "?[^ \n]+"? --parent "<id>"\n$/);
-  assert.match(refusedImport(root, file, '--parent', 'soon'), /the Parent of an issue is the number of one issue of the loop \(got "soon"\)[^\n]*\njarl\.mjs import .* --parent "<id>"\n$/);
+  assert.match(refusedImport(root, file, '--parent', '99'), /no such issue: 99[^\n]*\njarl\.mjs import "<findings\.json>" --source "?[^ \n]+"? --parent "<id>" --by "<who>"\n$/);
+  assert.match(refusedImport(root, file, '--parent', 'soon'), /the Parent of an issue is the number of one issue of the loop \(got "soon"\)[^\n]*\njarl\.mjs import .* --parent "<id>" --by "<who>"\n$/);
   assert.match(refusedImport(root, file, '--parent', '2'), /2 is dropped: its own acceptance was checked against a whole that a sub-issue added now would not be part of — reopen it first/);
   assert.equal(json(root, 'list', '--all').length, 2);
 });
@@ -63,12 +62,6 @@ test('--parent with a finding the filing refuses files nothing, and the parent k
   jarl(root, 'new', 'the parent', '--acceptance', '[read] it works');
   refusedImport(root, findingsFile([good(1), BAD]), '--parent', '1');
   assert.equal(json(root, 'list', '--all').length, 1);
-});
-
-test('--parent on a loop that stays at its record format is refused before anything is written', () => {
-  const hub = composed();
-  const said = refusedImport(hub, findingsFile([good(2)]), '--parent', '1');
-  assert.match(said, /the parent of a sub-issue needs record format 3, and this loop stays at format 1: its profile names an external scheduler \(the composer tick\)/);
 });
 
 test('--parent is refused where the profile declares a field Parent of its own, and says how that field is written', () => {

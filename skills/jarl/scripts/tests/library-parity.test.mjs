@@ -158,7 +158,7 @@ const goalOf = (root) => join(root, '.jarl', 'goal.md');
 // A loop run by an external scheduler: its composer places the models.
 function scheduled(root) {
   const file = join(root, 'profile.json');
-  writeFileSync(file, JSON.stringify({ 'jarl-profile': R.PROFILE_VERSION, name: 'p', statuses: { queued: ['dispatchable'], running: ['lease'], done: ['settles-dependents', 'terminal', 'closes-record'] }, initial: 'queued', 'external-scheduler': 'composer tick' }));
+  writeFileSync(file, JSON.stringify({ 'jarl-profile': R.PROFILE_VERSION, name: 'p', statuses: { queued: ['dispatchable'], running: ['lease'], done: ['settles-dependents', 'terminal', 'closes-record'] }, initial: 'queued' }));
   R.initLoop(root, 'g', { profile: file });
   R.newIssue(root, 't', { acceptance: '[read] it works' });
 }

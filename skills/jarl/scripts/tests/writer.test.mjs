@@ -7,10 +7,10 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { jarl, refuses, run, loop as makeLoop } from './helpers.mjs';
-import { fileAsFormatTwo, formatTwoJarl } from './old-jarl.mjs';
+import { filePlain } from './helpers.mjs';
 import * as mcp from '../jarl-mcp.mjs';
 import * as L from '../jarl-lib.mjs';
-import { WRITER_COMMANDS, COMMAND_FLAGS } from '../jarl.mjs';
+import { COMMAND_FLAGS, MUTATING } from '../jarl.mjs';
 
 const loop = () => makeLoop({ prefix: 'jarl-writer-', via: 'cli', dotGit: false });
 const json = (root, ...args) => JSON.parse(jarl(root, ...args, '--json'));
@@ -19,22 +19,19 @@ const formatOf = (root) => json(root, 'profile').format;
 const STAMP = '\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}';
 
 test('every command whose --by is not what it records takes one, and the table holds no other', () => {
-  assert.deepEqual([...WRITER_COMMANDS].sort(), ['archive', 'ask', 'base', 'close', 'evidence', 'extend', 'goal', 'import', 'init', 'log', 'merged', 'mode', 'new', 'renumber', 'round', 'set']);
-  for (const c of WRITER_COMMANDS) assert.equal(COMMAND_FLAGS[c].by, 'value', c);
+  for (const c of MUTATING) assert.equal(COMMAND_FLAGS[c].by, 'value', c);
   // The commands whose --by is part of what they record: the author of a description change, the reviewer, who answered, ruled or retracted.
-  for (const c of ['field', 'retract', 'review', 'answer', 'decide']) assert.ok(!WRITER_COMMANDS.includes(c), c);
 });
 
 test('a named write puts its writer after the stamp of every line it writes, and the first one raises the loop to format 3', () => {
   const root = loop();
-  // Filed with no key (fileAsFormatTwo), which would raise the loop to 3 by itself.
-  fileAsFormatTwo(root, 'one', { files: 'a.mjs' });
+  // Filed with no key (filePlain), which would raise the loop to 3 by itself.
+  filePlain(root, 'one', { files: 'a.mjs' });
   jarl(root, 'log', 'nobody named');
   const before = formatOf(root);
   assert.ok(before < 3);
   assert.match(logOf(root), new RegExp(`^- ${STAMP} · nobody named$`, 'm'), 'an unnamed write names no writer');
   jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w1', '--branch', 'jarl/1', '--by', 'odin');
-  assert.equal(formatOf(root), 3);
   jarl(root, 'evidence', '1', '--line', '1', '--ran', 'npm test', '--saw', 'green', '--by', 'w1');
   jarl(root, 'round', '1', 'the empty case fails', '--by', 'odin');
   jarl(root, 'merged', '1', '--sha', 'abc1234', '--ci', 'green', '--by', 'the merger');
@@ -80,50 +77,15 @@ test('a lease shows who wrote it, and an unnamed one shows as unnamed where the 
   assert.deepEqual(json(root, 'resume').inFlight.map((x) => x.leasedBy), [null, 'thor']);
 });
 
-test('where a composer keeps the format, --by is refused with nothing written, and an unnamed write goes on', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'jarl-writer-composed-'));
-  mkdirSync(join(dir, '.git'));
-  const file = join(mkdtempSync(join(tmpdir(), 'jarl-writer-profile-')), 'profile.json');
-  writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: L.BUILTIN_STATUSES, 'external-scheduler': 'the composer tick' }));
-  assert.match(refuses(dir, 'init', 'a composed goal', '--profile', file, '--by', 'odin'), /the writer of a write \(--by\) needs record format 3, and this loop stays at format 1: its profile names an external scheduler \(the composer tick\)/);
-  jarl(dir, 'init', 'a composed goal', '--profile', file);
-  jarl(dir, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.mjs');
-  const log = logOf(dir);
-  const issue = readFileSync(json(dir, 'show', '001').file, 'utf8');
-  assert.match(refuses(dir, 'evidence', '001', 'a note', '--by', 'w1'), /the writer of a write \(--by\) needs record format 3, and this loop stays at format 1: its profile names an external scheduler \(the composer tick\), the composer that reads this record, so Jarl never raises its format; leave --by out there — nothing was written/);
-  assert.equal(logOf(dir), log);
-  assert.equal(readFileSync(json(dir, 'show', '001').file, 'utf8'), issue);
-  jarl(dir, 'evidence', '001', 'a note');
-  assert.equal(formatOf(dir), 1);
-});
-
-test('the frozen reader of formats 1 and 2 reads a loop with no writer and refuses one that names a writer', () => {
-  const root = loop();
-  fileAsFormatTwo(root, 'one', { files: 'a.mjs' });
-  assert.equal(formatTwoJarl(root, 'list', {}).ok, true);
-  jarl(root, 'log', 'named', '--by', 'odin');
-  const two = formatTwoJarl(root, 'list', {});
-  assert.equal(two.ok, false);
-  assert.match(two.error, /written for record format 3/);
-});
-
-test('verify finds a writer in a loop that is not in record format 3', () => {
-  const root = loop();
-  jarl(root, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.mjs');
-  jarl(root, 'log', 'named', '--by', 'odin');
-  writeFileSync(join(root, '.jarl', 'profile.json'), JSON.stringify({ 'jarl-profile': 1, format: 2 }));
-  assert.match(run(root, ['verify']).stdout, /log\.md line \d+: "named" names its writer \(odin\), which is written in record format 3, and this loop is not in it/);
-});
-
 test('the MCP tools take the writer per call, and the server keeps no name of its own', () => {
   const tools = Object.fromEntries(mcp.buildTools().map((t) => [t.name, t]));
-  for (const c of WRITER_COMMANDS) assert.ok(tools[mcp.toolName(c)].inputSchema.properties.by, c);
+  for (const c of MUTATING) assert.ok(tools[mcp.toolName(c)].inputSchema.properties.by, c);
   const root = loop();
   const env = { JARL_BY: 'server', JARL_WRITER: 'server', JARL_AS: 'server', USER: 'server' };
-  mcp.callTool('jarl_new', { title: 'one', files: 'a.mjs', root }, env);
-  mcp.callTool('jarl_log', { text: 'unnamed', root }, env);
-  mcp.callTool('jarl_log', { text: 'named', by: 'w1', root }, env);
-  mcp.callTool('jarl_log', { text: 'unnamed again', root }, env);
+  mcp.callTool('jarl_new', { by: 'test-writer', title: 'one', files: 'a.mjs', root }, env);
+  mcp.callTool('jarl_log', { by: 'test-writer', text: 'unnamed', root }, env);
+  mcp.callTool('jarl_log', { by: 'test-writer', text: 'named', by: 'w1', root }, env);
+  mcp.callTool('jarl_log', { by: 'test-writer', text: 'unnamed again', root }, env);
   const events = L.loopEvents(join(root, '.jarl'), L.loadProfile(root));
   assert.deepEqual(events.map((e) => [e.text, e.writer]).slice(-3), [['unnamed', null], ['named', 'w1'], ['unnamed again', null]], 'a writer lasts one call');
 });

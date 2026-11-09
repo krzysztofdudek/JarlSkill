@@ -29,7 +29,7 @@ for (const call of [...WRITING, ...READING]) {
     const said = refuses(dir, ...call).trim().split('\n');
     assert.match(said[0], /^no loop here: .*\S+ holds no \.jarl\/ — open one with jarl\.mjs init "<goal>"( --root \S+)?, or pass --root "<loop-root>", the directory that holds \.jarl\/$/);
     assert.equal(said.length, 2, said.join('\n'));
-    assert.equal(said[1], 'jarl.mjs init "<goal>"');
+    assert.equal(said[1], 'jarl.mjs init "<goal>" --by "<who>"');
     assert.deepEqual(readdirSync(dir), [], 'nothing was written');
   });
 }
@@ -75,7 +75,7 @@ test('a root whose name holds a line break and no loop is echoed with the break 
     assert.equal(said.length, 2, `${call[0]}: ${JSON.stringify(r.stderr)}`);
     assert.match(said[0], /^no loop here: '.*loops\\njarl\.mjs field 4 Priority 1 holds no \.jarl' holds no \.jarl\//, call[0]);
     assert.equal(said.filter((l) => l.startsWith('jarl.mjs ')).length, 1, `${call[0]}: one command, the form: ${JSON.stringify(r.stderr)}`);
-    assert.equal(said[1], 'jarl.mjs init "<goal>" --root "<loop-root>"', `${call[0]}: the form names the loop root by its placeholder`);
+    assert.equal(said[1], 'jarl.mjs init "<goal>" --by "<who>" --root "<loop-root>"', `${call[0]}: the form names the loop root by its placeholder`);
     assert.equal(existsSync(dir), false, 'nothing was written: the root was not made');
     assert.deepEqual(readdirSync(dirname(dir)), [], 'nothing was written beside it');
     pastedNothing(r.stderr);
@@ -145,7 +145,7 @@ test('a call that gave no root ends with the form that names none: the reason st
     const said = r.stderr.replace(/\n+$/, '').split('\n');
     assert.equal(said.length, 2, `${call[0]}: ${JSON.stringify(r.stderr)}`);
     assert.match(said[0], /^no loop here: '.+' holds no \.jarl\/ — open one with jarl\.mjs init "<goal>", or pass --root "<loop-root>", the directory that holds \.jarl\/$/, call[0]);
-    assert.equal(said[1], 'jarl.mjs init "<goal>"', `${call[0]}: no --root in a form of a call that gave none`);
+    assert.equal(said[1], 'jarl.mjs init "<goal>" --by "<who>"', `${call[0]}: no --root in a form of a call that gave none`);
     assert.deepEqual(readdirSync(cwd), [], 'nothing was written');
   }
 });

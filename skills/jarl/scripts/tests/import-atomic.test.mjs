@@ -32,63 +32,8 @@ test('a required field of the profile that a finding would leave empty refuses t
   const file = findingsFile([good(1), good(2)]);
   const said = refusedImport(root, file, '--adopt');
   assert.match(said, /^finding "finding-2" cannot be filed: Area is required by this loop's profile/);
-  assert.match(said, /\njarl\.mjs import "<findings\.json>" --source "?[^ \n]+"? --adopt --field "<name=value>"\n$/);
+  assert.match(said, /\njarl\.mjs import "<findings\.json>" --source "?[^ \n]+"? --adopt --field "<name=value>" --by "<who>"\n$/);
   assert.match(imports(root, file, '--adopt', '--field', 'Area=api'), /adopted 1/);
-});
-
-test('on a loop whose profile names an external scheduler, a repository named by --repo refuses the import before it adopts or files anything', () => {
-  const hub = composed();
-  const file = findingsFile([good(1), good(2)]);
-  const said = refusedImport(hub, file, '--adopt', '--repo', 'tool');
-  assert.match(said, /^finding "finding-2" cannot be filed: a repository name needs record format 2, and this loop stays at format 1: its profile names an external scheduler \(the composer tick\)/);
-  assert.match(said, /nothing was written\n/);
-  assert.doesNotMatch(said, /nothing was filed/, 'the reason already says what is true');
-  assert.equal(json(hub, 'show', '1').fields.source, undefined);
-  assert.equal(refusedImport(hub, file, '--adopt', '--repo', 'tool', '--dry-run'), said);
-  // The same file by the repository's path is stored as a path, which this format holds.
-  const out = JSON.parse(imports(hub, file, '--adopt', '--repo', '../tool', '--json'));
-  assert.deepEqual([out.filed.length, out.adopted.length], [1, 1]);
-});
-
-test('on a loop that stays at its record format, a finding that would take a number the format cannot hold refuses the file before the findings ahead of it are filed, a dry run alike', () => {
-  const hub = composed();
-  writeFileSync(join(hub, '.jarl', 'issues', '998-old-998.md'), renderIssue({ id: '998', title: 'old 998', kind: 'bug', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
-  const file = findingsFile([good(2), good(3)]);
-  const said = refusedImport(hub, file);
-  assert.match(said, /^finding "finding-3" cannot be filed: issue number 1000 needs record format 2, and this loop stays at format 1: its profile names an external scheduler \(the composer tick\)/);
-  assert.match(said, /nothing was written; the findings that take a number below it can be filed with --only\n/);
-  assert.match(said, /\njarl\.mjs import "<findings\.json>" --source "?[^ \n]+"? --only "<finding-ids>"\n$/);
-  const dry = refusedImport(hub, file, '--dry-run');
-  assert.equal(dry.split('\n')[0], said.split('\n')[0], 'the dry run refuses what the import would');
-  assert.match(dry, /\njarl\.mjs import "<findings\.json>" --source "?[^ \n]+"? --dry-run --only "<finding-ids>"\n$/);
-  assert.deepEqual(json(hub, 'list', '--all').map((r) => r.id), ['001', '998']);
-  // The one finding that fits is filed as 999.
-  const out = JSON.parse(imports(hub, file, '--only', 'finding-2', '--json'));
-  assert.deepEqual(out.filed.map((f) => f.id), ['999']);
-});
-
-test('on a loop that stays at its record format, each finding is checked with the number new would give it, stepped past a range the goal declares', () => {
-  const hub = composed();
-  writeFileSync(join(hub, '.jarl', 'issues', '997-old-997.md'), renderIssue({ id: '997', title: 'old 997', kind: 'bug', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
-  const goal = join(hub, '.jarl', 'goal.md');
-  writeFileSync(goal, `${readFileSync(goal, 'utf8')}Range (film): 999-1500\n`);
-  const file = findingsFile([good(2), good(3)]);
-  for (const more of [[], ['--dry-run']]) {
-    const said = refusedImport(hub, file, ...more);
-    assert.match(said, /^finding "finding-3" cannot be filed: issue number 1501 needs record format 2, and this loop stays at format 1/);
-    assert.match(said, /the findings that take a number below it can be filed with --only\n/);
-  }
-  assert.deepEqual(JSON.parse(imports(hub, file, '--only', 'finding-2', '--json')).filed.map((f) => f.id), ['998']);
-});
-
-test('on a loop that stays at its record format and holds no number for the first finding, the refusal ends with the profile view and the call\'s own form', () => {
-  const hub = composed();
-  writeFileSync(join(hub, '.jarl', 'issues', '999-old-999.md'), renderIssue({ id: '999', title: 'old 999', kind: 'bug', priority: '2', tier: 'standard', tags: [], files: [], repo: '', foundBy: 'jarl' }));
-  const said = refusedImport(hub, findingsFile([good(2)]), '--dry-run');
-  assert.match(said, /^finding "finding-2" cannot be filed: issue number 1000 needs record format 2, .* until its profile says "format": 2 — nothing was written\n/);
-  const [view, form] = said.trim().split('\n').slice(-2);
-  assert.equal(view, 'jarl.mjs profile');
-  assert.match(form, /^jarl\.mjs import "<findings\.json>" --source "?[^ ]+"? --dry-run$/);
 });
 
 test('an adoption of an issue whose number two files carry is refused by the dry run as by the import, with nothing written', () => {

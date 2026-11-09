@@ -1,10 +1,7 @@
 // The record contract: record.mjs is the one surface another tool may vendor, so its exports are held here exactly —
 // every name, whether it is a value or a function, and each function's parameters as written (a parameter with a
-// default is optional, marked ?). Adding, removing, renaming or re-shaping an export fails this test. The way through
-// is a new contract version: bump RECORD_API in record.mjs, add it to RECORD_APIS, write its table below beside the
-// others, and freeze the new table's fingerprint in FROZEN. Every version RECORD_APIS names keeps its exports with their
-// parameters, so a caller written against it keeps working. A published version's table is never edited in place — its
-// fingerprint would no longer match. The same version goes on the family's contracts page.
+// default is optional, marked ?). Adding, removing, renaming or re-shaping an export fails this test. There is one
+// contract, the current one: a change to it changes its table and its fingerprint together.
 import './tmp-cleanup.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,10 +15,10 @@ import { FINDINGS } from './findings.mjs';
 const R = await import('../record.mjs');
 const CLI = await import('../jarl.mjs');
 
+const CONTRACT = 'jarl-record/4';
 const CONTRACTS = {
-  'jarl-record/1': {
+  [CONTRACT]: {
     RECORD_API: 'value',
-    // the loop: where it is, opening it, reading it
     resolveRoot: '(root, from)',
     jarlDir: '(root)',
     hasLiveLoop: '(root)',
@@ -30,12 +27,10 @@ const CONTRACTS = {
     findIssue: '(root, id)',
     decisions: '(root, opts?)',
     loadAsks: '(root)',
-    // an issue as text
     parseIssue: '(text, file)',
     renderIssue: '(spec)',
     mergedOf: '(issue)',
     evidenceRows: '(issue)',
-    // the profile
     PROFILE_VERSION: 'value',
     STATUS_FLAGS: 'value',
     DEFAULT_PROFILE: 'value',
@@ -43,151 +38,34 @@ const CONTRACTS = {
     readProfileFile: '(file)',
     loadProfile: '(root)',
     describeProfile: '(profile)',
-    // one writer at a time
     withLock: '(root, fn)',
     writeAtomic: '(path, text)',
-    // operations on the record
     newIssue: '(root, title, opts?)',
     setStatus: '(root, ids, status, why, opts?)',
     setField: '(root, ids, field, value, opts?)',
     setBody: '(root, id, opts?)',
-    setTags: '(root, ids, ops)',
-    setPriority: '(root, ids, priority)',
-    setFiles: '(root, id, files)',
+    setTags: '(root, ids, ops, opts?)',
+    setPriority: '(root, ids, priority, opts?)',
+    setFiles: '(root, id, files, opts?)',
     setRepo: '(root, id, path, opts?)',
     setAfter: '(root, id, ids, opts?)',
-    setSource: '(root, id, refs)',
+    setSource: '(root, id, refs, opts?)',
     addEvidence: '(root, ids, text, opts?)',
     review: '(root, ids, verdict, findings, opts?)',
     recordMerged: '(root, ids, opts?)',
-    addRound: '(root, id, what)',
+    addRound: '(root, id, what, opts?)',
     decide: '(root, slug, ruling, opts?)',
     ask: '(root, question, opts?)',
-    answer: '(root, id, text)',
-    appendLog: '(root, event)',
-    // the views' data
-    statusData: '(root, opts?)',
-    resumeData: '(root, opts?)',
-  },
-  'jarl-record/2': {
-    RECORD_API: 'value',
-    // the contracts this module keeps, and the record formats it reads, with the lines each format holds
-    RECORD_APIS: 'value',
-    RECORD_FORMATS: 'value',
-    FORMAT_LINES: 'value',
-    recordFormat: '(root)',
-    // the loop: where it is, opening it, reading it
-    resolveRoot: '(root, from)',
-    jarlDir: '(root)',
-    hasLiveLoop: '(root)',
-    initLoop: '(root, goal, opts?)',
-    loadIssues: '(root)',
-    findIssue: '(root, id)',
-    decisions: '(root, opts?)',
-    loadAsks: '(root)',
-    // an issue as text
-    parseIssue: '(text, file)',
-    renderIssue: '(spec)',
-    mergedOf: '(issue)',
-    evidenceRows: '(issue)',
-    // the profile
-    PROFILE_VERSION: 'value',
-    STATUS_FLAGS: 'value',
-    DEFAULT_PROFILE: 'value',
-    validateProfile: '(json, where)',
-    readProfileFile: '(file)',
-    loadProfile: '(root)',
-    describeProfile: '(profile)',
-    // one writer at a time
-    withLock: '(root, fn)',
-    writeAtomic: '(path, text)',
-    // operations on the record
-    newIssue: '(root, title, opts?)',
-    setStatus: '(root, ids, status, why, opts?)',
-    setField: '(root, ids, field, value, opts?)',
-    setBody: '(root, id, opts?)',
-    setTags: '(root, ids, ops)',
-    setPriority: '(root, ids, priority)',
-    setFiles: '(root, id, files)',
-    setRepo: '(root, id, path, opts?)',
-    setAfter: '(root, id, ids, opts?)',
-    setSource: '(root, id, refs)',
-    addEvidence: '(root, ids, text, opts?)',
-    review: '(root, ids, verdict, findings, opts?)',
-    recordMerged: '(root, ids, opts?)',
-    addRound: '(root, id, what)',
-    decide: '(root, slug, ruling, opts?)',
-    ask: '(root, question, opts?)',
-    answer: '(root, id, text)',
-    appendLog: '(root, event)',
-    // the views' data
-    statusData: '(root, opts?)',
-    resumeData: '(root, opts?)',
-  },
-  'jarl-record/3': {
-    RECORD_API: 'value',
-    // the contracts this module keeps, and the record formats it reads, with the lines each format holds
-    RECORD_APIS: 'value',
-    RECORD_FORMATS: 'value',
-    FORMAT_LINES: 'value',
-    recordFormat: '(root)',
-    // the loop: where it is, opening it, reading it
-    resolveRoot: '(root, from)',
-    jarlDir: '(root)',
-    hasLiveLoop: '(root)',
-    initLoop: '(root, goal, opts?)',
-    loadIssues: '(root)',
-    findIssue: '(root, id)',
-    decisions: '(root, opts?)',
-    loadAsks: '(root)',
-    // an issue as text
-    parseIssue: '(text, file)',
-    renderIssue: '(spec)',
-    mergedOf: '(issue)',
-    evidenceRows: '(issue)',
-    // the profile
-    PROFILE_VERSION: 'value',
-    STATUS_FLAGS: 'value',
-    DEFAULT_PROFILE: 'value',
-    validateProfile: '(json, where)',
-    readProfileFile: '(file)',
-    loadProfile: '(root)',
-    describeProfile: '(profile)',
-    // one writer at a time
-    withLock: '(root, fn)',
-    writeAtomic: '(path, text)',
-    // operations on the record
-    newIssue: '(root, title, opts?)',
-    setStatus: '(root, ids, status, why, opts?)',
-    setField: '(root, ids, field, value, opts?)',
-    setBody: '(root, id, opts?)',
-    setTags: '(root, ids, ops)',
-    setPriority: '(root, ids, priority)',
-    setFiles: '(root, id, files)',
-    setRepo: '(root, id, path, opts?)',
-    setAfter: '(root, id, ids, opts?)',
-    setSource: '(root, id, refs)',
-    addEvidence: '(root, ids, text, opts?)',
-    review: '(root, ids, verdict, findings, opts?)',
-    recordMerged: '(root, ids, opts?)',
-    addRound: '(root, id, what)',
-    decide: '(root, slug, ruling, opts?)',
-    ask: '(root, question, opts?)',
-    answer: '(root, id, text)',
-    appendLog: '(root, event)',
-    // the views' data, and the brief a role is raised with
+    answer: '(root, id, text, opts?)',
+    appendLog: '(root, event, opts?)',
     statusData: '(root, opts?)',
     resumeData: '(root, opts?)',
     briefData: '(root, id, opts?)',
   },
 };
 
-// Each published table's fingerprint, frozen when the version was published.
-const FROZEN = {
-  'jarl-record/1': '7635917fcee9a8c3cd25c5ed50c8d365523e7c10432542eed269e22a57a7a041',
-  'jarl-record/2': 'ca7442fd9ed1c51380cd5bc8a51ad035d1ffaf39574148f0d2bd87406a2ed88b',
-  'jarl-record/3': '0b41c45a06326322b9ee8e4bcb5f0798ae1fb0f7685f42ab05c827a1991980e2',
-};
+// The table's fingerprint: changing the table means changing this too.
+const FROZEN = { [CONTRACT]: 'f65daf1b8c380e43a2b9cf2caca493039cfccb63b37c24dc2c47036db35ee6d6' };
 
 // A function's parameters as written in its source: `opts = {}` reads as opts?.
 function paramsOf(fn) {
@@ -211,38 +89,14 @@ const sorted = (t) => Object.fromEntries(Object.keys(t).sort().map((k) => [k, t[
 const fingerprint = (t) => createHash('sha256').update(JSON.stringify(sorted(t))).digest('hex');
 
 test('record.mjs declares its contract version, and its exports are exactly that version\'s table', () => {
-  assert.equal(R.RECORD_API, 'jarl-record/3');
+  assert.equal(R.RECORD_API, CONTRACT);
   assert.ok(CONTRACTS[R.RECORD_API], `no table for ${R.RECORD_API} — write one in this test`);
   assert.deepEqual(signatureOf(R), sorted(CONTRACTS[R.RECORD_API]), `record.mjs does not match ${R.RECORD_API}: a changed export needs a new contract version`);
 });
 
-test('every contract record.mjs keeps is named in RECORD_APIS, and each one\'s exports are still there with the same parameters, so a caller of any of them keeps working', () => {
-  assert.ok(Object.isFrozen(R.RECORD_APIS));
-  assert.deepEqual([...R.RECORD_APIS], ['jarl-record/1', 'jarl-record/2', 'jarl-record/3']);
-  assert.equal(R.RECORD_APIS[R.RECORD_APIS.length - 1], R.RECORD_API, 'the newest one is RECORD_API');
-  const now = signatureOf(R);
-  for (const version of R.RECORD_APIS) {
-    assert.ok(CONTRACTS[version], `no table for ${version}`);
-    for (const [name, shape] of Object.entries(CONTRACTS[version])) assert.equal(now[name], shape, `${version}: ${name}`);
-  }
-  // The values the newest contract adds: the record formats this library reads and the lines of each raised format.
-  assert.ok(Object.isFrozen(R.RECORD_FORMATS));
-  assert.deepEqual([...R.RECORD_FORMATS], [1, 2, 3]);
-  assert.ok(Object.isFrozen(R.FORMAT_LINES) && Object.keys(R.FORMAT_LINES).length > 0);
-});
-
-test('recordFormat says the format of a loop, the formats this library reads, whether a write may raise it and the lines that are off in it', () => {
-  const root = mkdtempSync(join(tmpdir(), 'jarl-record-format-'));
-  try {
-    R.initLoop(root, 'the goal');
-    assert.deepEqual(R.recordFormat(root), { format: 1, reads: [1, 2, 3], raises: true, off: [] });
-    const composed = mkdtempSync(join(tmpdir(), 'jarl-record-format-composed-'));
-    const file = join(composed, 'profile.json');
-    writeFileSync(file, JSON.stringify({ 'jarl-profile': R.PROFILE_VERSION, name: 'c', statuses: { open: ['dispatchable'], doing: ['holds-claim'], done: ['settles-dependents', 'terminal', 'closes-record'] }, 'external-scheduler': 'the composer' }));
-    R.initLoop(composed, 'the composed goal', { profile: file });
-    assert.deepEqual(R.recordFormat(composed), { format: 1, reads: [1, 2, 3], raises: false, off: Object.keys(R.FORMAT_LINES) });
-    rmSync(composed, { recursive: true, force: true });
-  } finally { rmSync(root, { recursive: true, force: true }); }
+test('record.mjs keeps one contract and no table of an earlier one', () => {
+  assert.equal(R.RECORD_APIS, undefined);
+  assert.deepEqual(Object.keys(CONTRACTS), [CONTRACT]);
 });
 
 test('a published contract table is frozen: its fingerprint never changes', () => {
@@ -360,7 +214,7 @@ test('the profile through record.mjs: a declared field is written by setField, n
     assert.throws(() => R.setField(root, '1', 'Area', 'z'), /Area must be one of/);
     assert.throws(() => R.setStatus(root, '1', 'area', 'b'), /is a field this loop's profile declares, not a status/);
     assert.throws(() => R.setField(root, '1', 'doing', 'x'), /not a field this loop's profile declares/);
-    assert.equal(R.setStatus(root, '1', 'doing').status, 'doing');
+    assert.equal(R.setStatus(root, '1', 'doing', undefined, { worker: 'w1' }).status, 'doing');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -372,9 +226,9 @@ test('set says who asked: the command line and the MCP tools pass caller cli, a 
     R.initLoop(root, 'g', { profile: file });
     R.newIssue(root, 't', { acceptance: '[read] it works' });
     const moves = () => readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').filter((l) => l.includes('001 → doing')).length;
-    assert.throws(() => CLI.dispatch(root, 'set', ['1', 'doing'], {}), /set by the record only/, 'the command line asks as cli');
+    assert.throws(() => CLI.dispatch(root, 'set', ['1', 'doing'], { by: 'jarl' }), /set by the record only/, 'the command line asks as cli');
     assert.equal(moves(), 0, 'a refused move leaves no log line');
-    R.setStatus(root, '1', 'doing');
+    R.setStatus(root, '1', 'doing', undefined, { worker: 'w1' });
     assert.equal(moves(), 1, 'a library call asks as record, and its move is in the log');
     R.setStatus(root, '1', 'open');
     assert.throws(() => R.setStatus(root, '1', 'doing', undefined, { caller: 'cli' }), /set by the record only/, 'a library call may ask as cli');

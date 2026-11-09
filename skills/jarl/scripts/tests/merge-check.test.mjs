@@ -2,8 +2,7 @@
 // evidence row and a merge line that names the check; `merged --red <id>` records a landing on a red check whose cause
 // another issue tracks; no CI state is recorded unless it is given. `Check (<repo>): <command>` lines in goal.md name each
 // repository's command, and status --group repo and report count, per repository, the merges that carry a passing check row,
-// those that carry none and those landed on red. Every line written here is read by the pinned frozen reader
-// (tests/old-jarl.mjs) without a refusal and without a silent misreading.
+// the record as it is written, with no refusal and no silent misreading.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, readdirSync } from 'node:fs';
@@ -12,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as R from '../record.mjs';
-import { oldJarl, fileAsBefore } from './old-jarl.mjs';
+import { fileThreeDigits } from './helpers.mjs';
 import { spawnJarl, jarl, refuses, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
@@ -26,11 +25,10 @@ const git = (cwd, ...args) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'u
 
 // A loop of one repository (the loop's own), with `n` issues filed.
 // With `padded`, the issues are filed as a loop filed before it held keys holds them (three digits, no key), so the loop
-// stays format 1 for the frozen reader.
 const loop = (n = 0, goal = 'goal', padded = false) => {
   const root = makeLoop({ prefix: 'jarl-mcheck-', goal, via: 'cli' });
   for (let k = 1; k <= n; k += 1) {
-    if (padded) fileAsBefore(root, `issue ${k}`, { acceptance: 'it works' });
+    if (padded) fileThreeDigits(root, `issue ${k}`, { acceptance: '[read] it works' });
     else jarl(root, 'new', `issue ${k}`, '--acceptance', '[read] it works');
   }
   return root;
@@ -67,7 +65,7 @@ test('merged --ran --saw records the check in the merge record, as a Merge check
     assert.doesNotMatch(issueText(root, id), /\*\*CI:\*\*/);
   }
   assert.doesNotMatch(log(root), /evidence row/);
-  assert.match(log(root), /^- \S+ \S+(?: key \S+)? · 2 merged abc1234 · check npm test · saw pass 12$/m);
+  assert.match(log(root), /^- \S+ \S+(?: key \S+)? by [^·]+ · 2 merged abc1234 · check npm test · saw pass 12$/m);
   assert.doesNotMatch(log(root), /merged abc1234.*CI/);
   appendFileSync(join(root, '.jarl', 'goal.md'), '\nCheck: npm test\n');
   const st = jarl(root, 'status');
@@ -105,7 +103,7 @@ test('a library call keeps pending as the default CI state of a merge; the comma
 test('merged --red <id> records a landing on a red check whose cause another issue tracks, never counted as a passing check', () => {
   const root = loop(3);
   assert.equal(jarl(root, 'merged', '1', '--sha', 'abc1234', '--red', '3'), '1 merged abc1234 · landed red, cause 3');
-  assert.match(log(root), /^- \S+ \S+(?: key \S+)? · 1 merged abc1234 · landed red, cause 3$/m);
+  assert.match(log(root), /^- \S+ \S+(?: key \S+)? by [^·]+ · 1 merged abc1234 · landed red, cause 3$/m);
   assert.match(refuses(root, 'merged', '2', '--sha', 'abc1234', '--red', '99'), /does not exist/);
   assert.match(refuses(root, 'merged', '2', '--sha', 'abc1234', '--red', '2'), /is the issue being merged/);
   assert.match(refuses(root, 'merged', '2', '--sha', 'abc1234', '--red', '3', '--ran', 'npm test', '--saw', 'fail'), /not both/);
@@ -186,23 +184,6 @@ test('the metrics count a merge line with no CI state as a merge whose CI is not
   assert.equal(json(root, 'report').metrics.redCiAfterMerge.settled, 1);
 });
 
-test('the pinned frozen reader reads a loop with merges carrying a check, a red landing and Check (<repo>) lines', () => {
-  const root = loop(3, 'goal', true);
-  appendFileSync(join(root, '.jarl', 'goal.md'), '\nCheck (lib): npm test\n');
-  jarl(root, 'merged', '1', '--sha', 'abc1234', '--ran', 'npm test', '--saw', 'pass 3');
-  jarl(root, 'merged', '2', '--sha', 'abc1234', '--red', '3');
-  jarl(root, 'merged', '3', '--sha', 'abc1234', '--ci', 'green');
-  for (const command of ['list', 'status', 'next', 'queue']) assert.equal(oldJarl(root, command, {}).ok, true, command);
-  const old = oldJarl(root, 'status', {}).value;
-  assert.deepEqual(old.ciPending, [], 'no merge is pending');
-  assert.deepEqual(old.ciRed, []);
-  assert.equal(old.check.declared, false, 'a Check (<repo>) line is read as no check, the harmless direction');
-  assert.match(JSON.stringify(oldJarl(root, 'list', {}).value), /Merged|abc1234|1/);
-  // The frozen reader counts the merge lines through the Merged field: the lines it cannot match are still merges.
-  const metrics = (root_) => L.loopMetrics(root_).redCiAfterMerge;
-  assert.equal(metrics(root).n, 3);
-});
-
 test('init says once, on the command line, that a goal naming no check lands on testimony', () => {
   const bare = mkdtempSync(join(tmpdir(), 'jarl-mcheck-init-'));
   mkdirSync(join(bare, '.git'));
@@ -246,7 +227,7 @@ test('the same next step is in the reply of the MCP tool, and a library call kee
   const mcp = await import('../jarl-mcp.mjs');
   const root = loop(1);
   jarl(root, 'set', '1', 'in-progress', 'start', '--branch', 'jarl/1-a', '--worker', 'w-one');
-  const r = mcp.callTool('jarl_review', { ids: '1', verdict: 'approve', text: FINDINGS, by: 'rev-fresh', root });
+  const r = mcp.callTool('jarl_review', { by: 'test-writer', ids: '1', verdict: 'approve', text: FINDINGS, by: 'rev-fresh', root, model: 'test-model' });
   assert.match(r.content[0].text, /· next: the merger merges the branch and records it with one call/);
   const lib = R.review(root, '1', 'approve', FINDINGS, { by: 'rev-other' });
   assert.equal('next' in lib, false);

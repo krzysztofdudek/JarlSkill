@@ -197,7 +197,6 @@ function eventParser(profile) {
   const moved = movesInto(profile.statuses);
   const claims = (st) => profile.is(st, 'holds-claim');
   return (id, text, from) => {
-    if (text === CONVERTED_LINE) return { type: 'converted' };
     if (text.startsWith(`filed ${id} `)) return { type: 'filed' };
     if (!text.startsWith(`${id} `) && text !== id) return { type: 'other' };
     const mv = moved.exec(text);
@@ -317,7 +316,7 @@ export function loopEvents(dir, profile, skipped, keys) {
     const id = written === null ? null : (key !== null && keyed.has(key) ? keyed.get(key) : writtenId(written, forms));
     // The status a move comes from is the one the same issue's lines left: by its key where the line names one.
     const thread = key ?? id;
-    const parsed = id === null ? { type: 'other' } : parse(written, text, lastStatus.get(thread) ?? null);
+    const parsed = id === null ? (text === CONVERTED_LINE ? { type: 'converted' } : { type: 'other' }) : parse(written, text, lastStatus.get(thread) ?? null);
     // A tip counts only with the tip mark: a line of its text without it is a note, whoever wrote it.
     const unmarked = parsed.type === 'tip' && mark === null;
     // A line that carries state about an issue names the issue's key: one that does not is of an older shape, and is no state.

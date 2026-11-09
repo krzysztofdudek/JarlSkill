@@ -1,5 +1,5 @@
 // A multi-line text given to a command is kept whole: in the issue, the question or the ruling, never cut to its
-// first line, and the log (one line per event) never holds a raw newline. The pinned frozen reader still reads such a loop.
+// first line, and the log (one line per event) never holds a raw newline.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync } from 'node:fs';
@@ -7,7 +7,6 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { oldJarl, fileAsBefore } from './old-jarl.mjs';
 import { jarl, loop as makeLoop } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
@@ -64,29 +63,9 @@ test('three lines through every command that writes text: whole in the issue, th
   jarl(root, 'log', three('log'));
   jarl(root, 'set', id, 'deferred', three('reason'));
   const log = read(root, 'log.md');
-  for (const l of log.split('\n').filter(Boolean)) assert.match(l, /^(# Log|- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)? · .*)$/, `a log line is one line: ${JSON.stringify(l)}`);
+  for (const l of log.split('\n').filter(Boolean)) assert.match(l, /^(# Log|- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)? by [^·]+ · .*)$/, `a log line is one line: ${JSON.stringify(l)}`);
   assert.match(log, /review changes · by reviewer-one \(fresh\) · Important: review line one \(\+2 more lines/);
   assert.ok(log.includes('log line three'), 'a log text with no other home keeps every line');
   assert.ok(log.includes('round line three'), 'a round keeps every line');
   assert.ok(log.includes('question line one'));
-});
-
-test('a verdict line with its pointer, and a multi-line question, read right under the pinned frozen reader', async () => {
-  const root = loop();
-  // Filed as a loop filed before it held keys holds it, with three digits and no key, so the loop stays format 1 for the
-  // frozen reader.
-  const id = fileAsBefore(root, 'old reader', { acceptance: 'it works' });
-  jarl(root, 'set', id, 'in-progress', '--worker', 'w-one', '--branch', 'jarl/1-x');
-  jarl(root, 'review', id, 'changes', '--by', 'reviewer-one', `Important: ${three('review')}`);
-  // Questions are filed by the library as well, so the loop stays format 1 for the frozen reader.
-  const R = await import('../record.mjs');
-  R.ask(root, three('question'), { kind: 'stuck' });
-  R.ask(root, 'next question');
-  assert.equal(oldJarl(root, 'list', {}).ok, true);
-  const status = oldJarl(root, 'status', {});
-  assert.equal(status.ok, true, status.error);
-  assert.equal(status.value.counts?.questions ?? status.value.questions, 2, 'the old reader counts both questions, each once');
-  assert.equal(status.value.inFlight, 1, 'the old reader still sees the issue in flight under its Reviews section');
-  assert.equal(oldJarl(root, 'next', {}).ok, true);
-  assert.equal(oldJarl(root, 'queue', {}).ok, true);
 });

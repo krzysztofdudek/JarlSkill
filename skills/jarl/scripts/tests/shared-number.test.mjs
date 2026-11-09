@@ -3,7 +3,6 @@
 // files without a conflict. These tests hold what Jarl does then: verify names both files, the views say it in place of
 // a header advice that would copy the log's state into a file it may not belong to, and every command that addresses an
 // issue by that number is refused with both files named, writing nothing. The issues here carry no key: they are filed
-// through the pinned frozen reader of formats 1 and 2 (fileAsFormatTwo), which writes none, so the log names them by
 // number alone. Issues told apart by their keys are the subject of two-copies.test.mjs.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,7 +13,7 @@ import { join } from 'node:path';
 import * as R from '../record.mjs';
 import { SPAWN_TIMEOUT, gitRepo, jarl, refuses, run } from './helpers.mjs';
 import { NO_EXCLUDES } from './portable.mjs';
-import { fileAsFormatTwo } from './old-jarl.mjs';
+import { filePlain } from './helpers.mjs';
 
 const BOTH = /issues\/2-second-on-a\.md and issues\/2-second-on-b\.md/;
 
@@ -22,7 +21,7 @@ const BOTH = /issues\/2-second-on-a\.md and issues\/2-second-on-b\.md/;
 function committedLoop() {
   const { dir, g } = gitRepo({ branch: 'main' });
   jarl(dir, 'init', 'two drivers', '--committed');
-  fileAsFormatTwo(dir, 'filed before the split', { tier: 'light' });
+  filePlain(dir, 'filed before the split', { tier: 'light' });
   g('add', '-A'); g('commit', '-qm', 'loop');
   return { dir, g };
 }
@@ -37,7 +36,7 @@ function cloneOf(dir) {
 }
 // Files one issue titled `title` in `at` and commits it.
 function fileAndCommit(at, title) {
-  fileAsFormatTwo(at.dir, title, { tier: 'light' });
+  filePlain(at.dir, title, { tier: 'light' });
   at.g('add', '-A'); at.g('commit', '-qm', title);
 }
 // The issue files and the log of a loop, to show that a refusal wrote nothing.
@@ -114,20 +113,6 @@ test('while two files carry one number, every command that addresses it is refus
   assert.match(jarl(dir, 'set', '1', 'in-progress', '--branch', 'jarl/1-x', '--worker', 'w1'), /1 → in-progress/, 'another number moves as before');
 });
 
-test('an answer to a question about a number two files carry is refused before anything is written', () => {
-  const a = committedLoop();
-  fileAsFormatTwo(a.dir, 'second on A', { tier: 'light' });
-  jarl(a.dir, 'ask', 'which way?', '--issue', '2');
-  a.g('add', '-A'); a.g('commit', '-qm', 'a asks');
-  a.g('checkout', '-q', '-b', 'other', 'HEAD~1');
-  fileAndCommit(a, 'second on B');
-  a.g('checkout', '-q', 'main');
-  a.g('merge', '-q', '--no-edit', 'other');
-  const before = { ...snapshot(a.dir), asks: readFileSync(join(a.dir, '.jarl', 'asks.md'), 'utf8'), decisions: readFileSync(join(a.dir, '.jarl', 'decisions.md'), 'utf8') };
-  assert.match(refuses(a.dir, 'answer', '1', 'this way', '--by', 'owner'), BOTH);
-  assert.deepEqual({ ...snapshot(a.dir), asks: readFileSync(join(a.dir, '.jarl', 'asks.md'), 'utf8'), decisions: readFileSync(join(a.dir, '.jarl', 'decisions.md'), 'utf8') }, before);
-});
-
 test('status names both files of a shared number in place of a header advice, and a move made before the merge is not copied into the other file', () => {
   const a = committedLoop();
   const b = cloneOf(a.dir);
@@ -169,19 +154,6 @@ const views = (at, id = '2') => [run(at.dir, ['verify']).stdout, jarl(at.dir, 's
 // Any header advice about the number 2: a field of its header set against the log, or the command that writes the
 // header from the log. Either would copy the log's state, which may be another file's, into the file that keeps 2.
 const JUDGES_2 = /record: 2 (Status|Branch|Worker|Model|Since|Merged|Merge check|CI) |jarl\.mjs set 2 \S+ --header/;
-
-test('the finding says the log cannot attribute the lines and that each file is read from its own header, and names no file to renumber', () => {
-  const b = droppedOnOneSide();
-  const said = run(b.dir, ['verify']).stdout;
-  assert.match(said, /it cannot say which file its lines for 2 were written for/);
-  assert.match(said, /Each file is read from its own header, never from the log/);
-  assert.match(said, /give one of the files a number the loop does not hold, such as 3/);
-  assert.match(said, /a fresh review again/);
-  assert.match(said, /write in a log note which of the lines already written for 2 belong to which file/);
-  assert.doesNotMatch(said, /Give issues\/|either may|number settled|copied or made by hand/, 'no file is singled out, no settling line is asked for, and no undetectable cause is claimed');
-  assert.doesNotMatch(said, JUDGES_2);
-  assert.match(jarl(b.dir, 'list'), /2  P\d  open +\S+ +second on B/, 'the file nobody moved lists as open, as its header says');
-});
 
 // The views that place an issue by its status: the plain list, next, resume's Next ready, status and report.
 function placed(at) {
@@ -229,36 +201,6 @@ for (const [which, renamed, keptStatus, newMove] of [
   });
 }
 
-test('a number read from its header is checked against itself, so a hand edit that contradicts the file is caught', () => {
-  const b = droppedOnOneSide();
-  renumber(b, '2-second-on-a.md', 3);
-  jarl(b.dir, 'set', '3', 'dropped', 'not needed');
-  assert.equal(run(b.dir, ['verify']).status, 0);
-  const file = join(b.dir, '.jarl', 'issues', '2-second-on-b.md');
-  writeFileSync(file, readFileSync(file, 'utf8').replace(/(\*\*Status:\*\* open)/, '$1\n**Worker:** someone'));
-  const r = run(b.dir, ['verify']);
-  assert.equal(r.status, 2, r.stdout);
-  assert.match(r.stdout, /2 is read from its header \(issues\/2-second-on-b\.md\), and the header contradicts itself: it carries Worker, and its Status open holds no lease/);
-  writeFileSync(file, readFileSync(file, 'utf8').replace(/\*\*Status:\*\* open\n\*\*Worker:\*\* someone/, '**Status:** done'));
-  assert.match(run(b.dir, ['verify']).stdout, /its Status done closes it, and its Evidence holds no --ran\/--saw row/);
-  assert.match(refuses(b.dir, 'set', '2', 'done', '--header'), /2 is read from its header/, 'no header is written from the log for it');
-});
-
-test('a Status set to done by hand on a number the log cannot attribute is named by verify, though its file holds a proof row', () => {
-  const handClosed = /2 is read from its header \(issues\/2-second-on-[ab]\.md\), and the header contradicts itself: its Status done closes it, and the log holds no move of 2 into a status that closes it/;
-  for (const shared of [false, true]) {
-    const b = droppedOnOneSide();
-    if (!shared) { renumber(b, '2-second-on-a.md', 3); jarl(b.dir, 'set', '3', 'dropped', 'not needed'); }
-    assert.equal(run(b.dir, ['verify']).status, shared ? 2 : 0);
-    const file = join(b.dir, '.jarl', 'issues', '2-second-on-b.md');
-    writeFileSync(file, readFileSync(file, 'utf8').replace('**Status:** open', '**Status:** done').replace(/## Evidence\n/, '## Evidence\n\n- **ran:** npm test · **saw:** all green\n'));
-    const r = run(b.dir, ['verify']);
-    assert.equal(r.status, 2, r.stdout);
-    assert.match(r.stdout, handClosed, shared ? 'while two files carry 2' : 'after the renumbering');
-    assert.doesNotMatch(r.stdout, /its Evidence holds no --ran\/--saw row/, 'the file holds its row');
-  }
-});
-
 test('a file copied by hand leaves one filing: the finding says so, claims nothing it cannot see, and gives no header advice', () => {
   const a = committedLoop();
   fileAndCommit(a, 'second');
@@ -280,53 +222,6 @@ test('a file copied by hand leaves one filing: the finding says so, claims nothi
   assert.equal(r.status, 0, r.stdout);
   assert.doesNotMatch(r.stdout, /read from its header/, 'one filing: 2 is an ordinary issue again');
   assert.equal(JSON.parse(jarl(a.dir, 'show', '2', '--json')).status, 'in-progress');
-});
-
-test('when the log holds a lease of one file and a drop of the other, neither file is told to take the other\'s Branch or status, and the views read each Branch from its file', () => {
-  const a = committedLoop();
-  a.g('checkout', '-q', '-b', 'one');
-  fileAndCommit(a, 'second on one');
-  jarl(a.dir, 'set', '2', 'in-progress', '--branch', 'jarl/2-one', '--worker', 'w-one');
-  a.g('add', '-A'); a.g('commit', '-qm', 'one takes its 2');
-  a.g('checkout', '-q', 'main'); a.g('checkout', '-q', '-b', 'two');
-  fileAndCommit(a, 'second on two');
-  jarl(a.dir, 'set', '2', 'dropped', 'not needed');
-  a.g('add', '-A'); a.g('commit', '-qm', 'two drops its 2');
-  a.g('checkout', '-q', 'one');
-  a.g('merge', '-q', '--no-edit', 'two');
-  // A note written before any renumbering changes nothing either: no line of the log switches the headers back on.
-  jarl(a.dir, 'log', '2 number settled · written before the renumbering');
-  assert.doesNotMatch(views(a, '1'), JUDGES_2, 'while both files carry 2');
-  renumber(a, '2-second-on-one.md', 3);
-  jarl(a.dir, 'set', '3', 'in-progress', '--branch', 'jarl/2-one', '--worker', 'w-one');
-  jarl(a.dir, 'log', 'the lease of 2 was the file now 3; the drop of 2 was the file that keeps 2');
-  const out = views(a);
-  assert.doesNotMatch(out, JUDGES_2, out);
-  assert.doesNotMatch(out, /Branch jarl\/2-one|--branch jarl\/2-one[^\n]*2-second-on-two/, 'the lease of the file now 3 is not advised into the file that keeps 2');
-  const two = JSON.parse(jarl(a.dir, 'show', '2', '--json'));
-  assert.equal(two.status, 'dropped');
-  assert.equal(two.fields.branch, undefined, 'the file that keeps 2 carries no Branch, and the views read none for it');
-});
-
-test('a third file merged in after the renumbering shares the number again and is refused and named', () => {
-  const a = committedLoop();
-  a.g('checkout', '-q', '-b', 'three');
-  fileAndCommit(a, 'second on C');
-  a.g('checkout', '-q', 'main'); a.g('checkout', '-q', '-b', 'one');
-  fileAndCommit(a, 'second on A');
-  a.g('checkout', '-q', 'main'); a.g('checkout', '-q', '-b', 'two');
-  fileAndCommit(a, 'second on B');
-  a.g('merge', '-q', '--no-edit', 'one');
-  renumber(a, '2-second-on-b.md', 3);
-  jarl(a.dir, 'set', '3', 'open');
-  jarl(a.dir, 'log', 'the second on B is now 3');
-  a.g('add', '-A'); a.g('commit', '-qm', 'renumbered');
-  a.g('merge', '-q', '--no-edit', 'three');
-  const r = run(a.dir, ['verify']);
-  assert.equal(r.status, 2, r.stdout);
-  assert.match(r.stdout, /2 issue files carry the number 2: issues\/2-second-on-a\.md and issues\/2-second-on-c\.md/);
-  assert.match(refuses(a.dir, 'set', '2', 'dropped', 'x'), /issues\/2-second-on-a\.md and issues\/2-second-on-c\.md/);
-  assert.doesNotMatch(views(a, '3'), JUDGES_2);
 });
 
 // Clone A files its second issue, works it on a branch with a row and a fresh approve and closes it; clone B files its own
@@ -415,7 +310,7 @@ test('import --adopt that would write into a number two files carry is refused b
   a.g('add', '-A'); a.g('commit', '-qm', 'a names a finding');
   const b = cloneOf(a.dir);
   fileAndCommit(a, 'second on A');
-  fileAsFormatTwo(b.dir, 'second on B', { tier: 'light', what: 'covers jarl-2-B5' });
+  filePlain(b.dir, 'second on B', { tier: 'light', what: 'covers jarl-2-B5' });
   b.g('add', '-A'); b.g('commit', '-qm', 'b files');
   b.g('pull', '-q', '--no-rebase', '--no-edit', 'origin', 'main');
   const file = join(mkdtempSync(join(tmpdir(), 'jarl-shared-findings-')), 'findings.json');

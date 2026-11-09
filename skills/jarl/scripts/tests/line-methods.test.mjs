@@ -207,7 +207,7 @@ test('a [read] line needs a live approve, a waiver or a profile with no approve 
   assert.equal(jarl(waived, 'set', '1', 'done', 'on the waiver'), '1 → done');
   const profile = join(mkdtempSync(join(tmpdir(), 'jarl-methods-profile-')), 'profile.json');
   const { dir, g } = gitRepo({ prefix: 'jarl-methods-noapprove-', branch: 'main' });
-  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, format: 1, name: 'landed', statuses: L.BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true, approve: 'none' } }));
+  writeFileSync(profile, JSON.stringify({ 'jarl-profile': 1, name: 'landed', statuses: L.BUILTIN_STATUSES, 'done-gate': { 'requires-merged': true, approve: 'none' } }));
   jarl(dir, 'init', 'work', '--profile', profile);
   jarl(dir, 'new', 'the work', '--acceptance', '[read] the docs describe the new default');
   jarl(dir, 'set', '1', 'in-progress', 'go', '--worker', 'w1');

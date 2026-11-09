@@ -215,7 +215,7 @@ function bigLoop(count) {
     writeFileSync(join(dir, `${id}-issue-${id}.md`), `# ${id} · issue ${id}\n\n**Status:** ${status}\n**Kind:** bug\n**Priority:** 2\n**Tier:** standard\n**Tags:** \n**Files:** tool/src/f${id}.mjs\n**Repo:** ../tool\n${lease}${merged}**Found by:** jarl\n**Where:**\n\n## What\n\n\n## Why\n\n\n## Acceptance\n- works\n\n## Evidence\n\n`);
   }
   const lines = [];
-  for (let n = 0; n < count * 7; n += 1) lines.push(`- 2026-09-27 06:00 · ${String((n % count) + 1).padStart(3, '0')} evidence · note ${n}`);
+  for (let n = 0; n < count * 7; n += 1) lines.push(`- 2026-09-27 06:00 key 20260101T0000-tstk by a-writer · ${String((n % count) + 1).padStart(3, '0')} evidence · note ${n}`);
   writeFileSync(join(hub, '.jarl', 'log.md'), `# Log\n\n${lines.join('\n')}\n`);
   sh(tool, 'for n in 5 010 015; do git branch jarl/$n-x; done');
   return { hub, tool, inFlight };

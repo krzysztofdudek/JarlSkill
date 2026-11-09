@@ -1,7 +1,5 @@
 // The record keeps the model of every worker and reviewer: the lease and the verdict lines, the tiers and the
 // loop's model lines, the notes (command line only, only in a loop with model lines), and the read-only views that
-// derive from them: `models`, the marks on `next` and `resume`. Every line written here is read by the pinned frozen reader
-// (tests/old-jarl.mjs) without a refusal and without a silent misreading, so the record format is not raised.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, existsSync, cpSync, renameSync } from 'node:fs';
@@ -10,13 +8,12 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as R from '../record.mjs';
-import { OLD_JARL_FILE, fileAsBefore, formatTwoJarl, formatTwoJarlIsPinned, oldJarlIsPinned, oldJarl } from './old-jarl.mjs';
+import { fileThreeDigits } from './helpers.mjs';
 import { spawnJarl, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../jarl.mjs', import.meta.url));
 const L = await import('../jarl-lib.mjs');
 const J = await import('../jarl.mjs');
-const OLD = await import(pathToFileURL(OLD_JARL_FILE).href);
 
 const BIG = 'big-model@high';
 const MID = 'mid-model';
@@ -80,7 +77,7 @@ test('--model goes with in-progress only, needs a value and cannot hold the line
 
 test('a --worker or --branch value that holds the line separator is refused, so no name can be read as a model', () => {
   const root = loop();
-  const id = fileAsBefore(root, 'a thing', { acceptance: 'it works' });
+  const id = fileThreeDigits(root, 'a thing', { acceptance: '[read] it works' });
   const before = log(root);
   for (const bad of ['w-c · model evil', 'w-c ·  model evil', '· model evil', 'w-c · model evil ·']) {
     assert.throws(() => R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: bad }), /--worker is one name/, `worker ${bad}`);
@@ -90,8 +87,6 @@ test('a --worker or --branch value that holds the line separator is refused, so 
   assert.equal(L.findIssue(root, id).fields.status, 'open');
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-c·model·ok' });
   assert.doesNotMatch(log(root), / · model /, 'a name with the dot inside it, without spaces, is no separator');
-  const read = oldJarl(root, 'list', {});
-  assert.equal(read.ok, true, 'the frozen reader reads the log as it stands');
 });
 
 test('review --model [--relayed] writes the model and the relay mark after the kind, in the log line and in the Reviews entry', () => {
@@ -112,15 +107,6 @@ test('review --model [--relayed] writes the model and the relay mark after the k
   assert.throws(() => R.review(root, id, 'approve', 'a fourth look, nothing found', { by: 'rev-f', model: '  ' }), /--model needs a value/);
 });
 
-test('record.mjs takes model and relayed as optional keys, and jarl-record/1 is still a contract it keeps', () => {
-  assert.ok(R.RECORD_APIS.includes('jarl-record/1'));
-  const root = loop();
-  const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works' });
-  const lease = R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one' });
-  assert.equal(lease.model, undefined, 'without the key, nothing changes');
-  assert.match(log(root), /001 → in-progress · branch jarl\/001-a · worker w-one$/m);
-});
-
 test('the command line and the tables carry --model and --relayed', () => {
   assert.equal(J.COMMAND_FLAGS.set.model, 'value');
   assert.equal(J.COMMAND_FLAGS.review.model, 'value');
@@ -135,38 +121,6 @@ test('the command line and the tables carry --model and --relayed', () => {
   assert.match(log(root), /001 review approve · by rev-c \(fresh\) · model big-model@high · relayed · /);
 });
 
-// ---- the frozen reader ------------------------------------------------------------------------------
-
-test('the frozen reader reads the lease line with the model before the worker, the verdict line with model and relayed, and Tier light, without the format being raised', () => {
-  assert.ok(oldJarlIsPinned());
-  const root = loop();
-  const id = fileAsBefore(root, 'a thing', { acceptance: 'it works' });
-  assert.equal(cli(root, 'field', id, 'Tier', 'light').status, 0);
-  R.setStatus(root, id, 'in-progress', 'go', { branch: 'jarl/001-a', worker: 'w-five', model: 'claude-sonnet-5-5@high' });
-  // The frozen reader finds the worker of the lease, whatever the model before it says.
-  assert.equal(OLD.findIssue(root, id).fields.worker, 'w-five');
-  assert.throws(() => OLD.cmdReview(root, id, 'approve', 'Minor: nothing to add here', { by: 'w-five' }), /self-approve/, 'the self-approve is refused');
-  assert.equal(oldJarl(root, 'evidence', {}, [id, null, { ran: 'npm test', saw: 'pass' }]).ok, true);
-  R.review(root, id, 'approve', 'read the diff, found nothing', { by: 'rev-c', model: 'claude-opus-5-5', relayed: true });
-  const gate = OLD.gateState(root, id);
-  assert.equal(gate.approved, true);
-  assert.equal(gate.live.kind, 'fresh', 'the verdict is fresh');
-  assert.equal(gate.live.by, 'rev-c');
-  OLD.cmdSet(root, id, 'done', 'merged', {});
-  assert.equal(OLD.findIssue(root, id).status, 'done', 'done passes');
-  for (const command of ['list', 'status', 'next', 'queue']) assert.equal(oldJarl(root, command, {}).ok, true, command);
-  assert.equal(existsSync(join(root, '.jarl', 'profile.json')), false, 'no marker: nothing here is misread in silence, so the format stays');
-  assert.equal(R.loadProfile(root).format, 1);
-});
-
-test('the other order would have been misread: the model after the worker makes the frozen reader accept the worker as its own reviewer (why the order matters)', () => {
-  const root = loop();
-  const id = fileAsBefore(root, 'a thing', { acceptance: 'it works' });
-  appendFileSync(join(root, '.jarl', 'log.md'), `- 2026-10-18 10:00 · ${id} → in-progress · go · branch jarl/001-a · worker w-six · model m\n`);
-  const text = issueText(root, id).replace('**Status:** open', '**Status:** in-progress');
-  writeFileSync(L.findIssue(root, id).file, text);
-  OLD.cmdReview(root, id, 'approve', 'Minor: nothing to add here', { by: 'w-six' });
-});
 
 // ---- tiers and the loop's model lines ---------------------------------------------------------------
 
@@ -216,7 +170,7 @@ test('Model (<tier>) lines are read like Check lines: plain, list item, bold; th
 
 // ---- the notes: the command line only, only in a loop with model lines ---------------------------------
 
-function notes(root, cmd, rest, flags) { return J.dispatch(root, cmd, rest, flags).warn.join('\n'); }
+function notes(root, cmd, rest, flags) { return J.dispatch(root, cmd, rest, { by: 'test-writer', ...(cmd === 'set' && flags.worker !== undefined && flags.model === undefined ? { model: 'test-model' } : {}), ...flags }).warn.join('\n'); }
 
 test('notes on a lease and on a verdict without --model, and on an approve of the same model or a lower rank, only in a loop with model lines', () => {
   const root = loop({ lines: true });
@@ -390,9 +344,9 @@ test('the takeover block quotes the log with no worktree path of the machine tha
   const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works', tier: 'standard' });
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
   const log = join(root, '.jarl', 'log.md');
-  appendFileSync(log, `- 2026-10-18 10:00 · ${id} → in-progress · go · branch jarl/001-a · model m · worker w-six · worktree /home/other/Worktrees/Repo/001-a\n`);
-  appendFileSync(log, `- 2026-10-18 10:01 · ${id} → in-progress · handover · branch jarl/001-a · worker w-seven · worktree C:\\Users\\other\\Worktrees\\Repo\\001-a\n`);
-  appendFileSync(log, `- 2026-10-18 10:02 · ${id} → in-progress · the worktree was moved · branch jarl/001-a · worker w-eight\n`);
+  appendFileSync(log, `- 2026-10-18 10:00 key 20260101T0000-tstk by a-writer · ${id} → in-progress · go · branch jarl/001-a · model m · worker w-six · worktree /home/other/Worktrees/Repo/001-a\n`);
+  appendFileSync(log, `- 2026-10-18 10:01 key 20260101T0000-tstk by a-writer · ${id} → in-progress · handover · branch jarl/001-a · worker w-seven · worktree C:\\Users\\other\\Worktrees\\Repo\\001-a\n`);
+  appendFileSync(log, `- 2026-10-18 10:02 key 20260101T0000-tstk by a-writer · ${id} → in-progress · the worktree was moved · branch jarl/001-a · worker w-eight\n`);
   R.addRound(root, id, 'red one');
   R.addRound(root, id, 'red two');
   const r = R.addRound(root, id, 'red three');
@@ -405,11 +359,10 @@ test('the takeover block quotes the log with no worktree path of the machine tha
 });
 
 // An in-progress issue of a kind, in a loop whose goal carries the given lines.
-// Filed with three digits and no key (fileAsBefore), as the frozen reader of format 1 reads it.
 function leased(goalLines, kind) {
   const root = loop();
   if (goalLines) appendFileSync(join(root, '.jarl', 'goal.md'), `\n${goalLines}\n`);
-  const id = fileAsBefore(root, `a ${kind} thing`, { acceptance: 'it works', tier: 'standard', kind });
+  const id = fileThreeDigits(root, `a ${kind} thing`, { acceptance: '[read] it works', tier: 'standard', kind });
   R.setStatus(root, id, 'in-progress', '', { branch: `jarl/${id}-a`, worker: 'w-one', model: MID });
   return { root, id };
 }
@@ -580,8 +533,7 @@ test('a limit lowered to one mid-loop takes over at the next round and at every 
   assert.deepEqual(seen, [[false, 1, 3], [false, 2, 3], [true, 3, 1], [true, 1, 1], [true, 1, 1]]);
 });
 
-test('each round carries its standing in its line, text that opens like a standing or a count is not read as one, and the pinned frozen reader counts the rounds', () => {
-  assert.ok(oldJarlIsPinned());
+test('each round carries its standing in its line, text that opens like a standing or a count is not read as one', () => {
   const { root, id } = leased('Takeover (docs): 2', 'docs');
   R.addRound(root, id, 'takeover 2 of 2 · typed by hand');
   assert.match(log(root), /· 001 round 1 \(count 1 of 2\) · takeover 2 of 2 · typed by hand$/m);
@@ -593,75 +545,12 @@ test('each round carries its standing in its line, text that opens like a standi
   assert.match(log(root), /· 001 round 3 \(count 1 of 2\) · findings - · findings 7 · typed by hand$/m);
   const rounds = L.loopEvents(join(root, '.jarl'), L.loadProfile(root)).filter((e) => e.type === 'round');
   assert.deepEqual(rounds.map((e) => e.standing), [{ takeover: false, count: 1, limit: 2 }, { takeover: true, count: 2, limit: 2 }, { takeover: false, count: 1, limit: 2 }]);
-  assert.equal(OLD.roundsOf(root, id), 3);
-  for (const command of ['list', 'status', 'next', 'queue']) assert.equal(oldJarl(root, command, {}).ok, true, command);
-  OLD.cmdRound(root, id, 'red four');
-  assert.deepEqual([R.addRound(root, id, 'red five')].map((r) => [r.round, r.takeover, r.since]), [[5, false, 1]], 'a round the frozen reader wrote from the third on is the takeover it printed');
+  assert.equal(L.roundsOf(root, id), 3);
+  L.cmdRound(root, id, 'red four');
+  assert.deepEqual([R.addRound(root, id, 'red five')].map((r) => [r.round, r.takeover, r.since]), [[5, false, 1]]);
 });
 
-// An issue whose rounds the pinned frozen reader wrote, `count` of them, in a loop whose goal carries the given lines.
-function roundsByFrozenReader(goalLines, count, text = (k) => `red ${k}`) {
-  const { root, id } = leased(goalLines, 'docs');
-  for (let k = 1; k <= count; k += 1) OLD.cmdRound(root, id, text(k));
-  return { root, id };
-}
 
-test('rounds written with no standing count as the takeover their writer printed, at every round from the third, so the first round after one starts a new count', () => {
-  assert.ok(oldJarlIsPinned());
-  const three = roundsByFrozenReader(null, 3);
-  assert.deepEqual([4, 5, 6].map((k) => R.addRound(three.root, three.id, `red ${k}`)).map((r) => [r.round, r.takeover, r.since]), [[4, false, 1], [5, false, 2], [6, true, 3]]);
-  const six = roundsByFrozenReader(null, 6);
-  const seventh = cli(six.root, 'round', six.id, 'red 7');
-  assert.match(seventh.stdout, /round 7: 1 of 3 before a takeover/);
-  const two = roundsByFrozenReader(null, 2);
-  assert.equal(R.addRound(two.root, two.id, 'red 3').takeover, true, 'two rounds with no standing, then the third reaches three');
-  const lowered = roundsByFrozenReader('Takeover (docs): 2', 4);
-  assert.deepEqual([5, 6].map((k) => R.addRound(lowered.root, lowered.id, `red ${k}`)).map((r) => [r.takeover, r.since, r.limit]), [[false, 1, 2], [true, 2, 2]], 'the rounds with no standing took over at the third and the fourth, as their writer printed; the goal\'s limit applies from the first round with a standing');
-  const typed = roundsByFrozenReader(null, 1, () => 'takeover · typed by hand');
-  assert.deepEqual([R.addRound(typed.root, typed.id, 'red 2')].map((r) => [r.takeover, r.since]), [[false, 2]], 'text that opens like a mark in a round with no standing is no takeover');
-  const marked = readFileSync(join(two.root, '.jarl', 'log.md'), 'utf8');
-  assert.match(marked, /· 001 round 3 \(takeover 3 of 3\) · red 3$/m);
-});
-
-// Each pinned frozen reader, as the round command of that reader runs it: the round it wrote and whether it printed a takeover.
-const FROZEN_READERS = [['6.1.0', oldJarl], ['6.2.0', formatTwoJarl]];
-const frozenRound = (reader, root, id, text) => {
-  const r = reader(root, 'round', {}, [id, text]);
-  assert.ok(r.ok, r.error);
-  return r.value;
-};
-
-test('with a limit other than three, the count after a round a frozen reader wrote follows the takeover that reader printed', () => {
-  assert.ok(oldJarlIsPinned() && formatTwoJarlIsPinned());
-  for (const [version, reader] of FROZEN_READERS) {
-    const { root, id } = leased('Takeover (docs): 2', 'docs');
-    assert.deepEqual([R.addRound(root, id, 'red 1'), R.addRound(root, id, 'red 2')].map((r) => r.takeover), [false, true], version);
-    const printed = frozenRound(reader, root, id, 'red 3');
-    assert.deepEqual([printed.round, printed.takeover], [3, true], `${version} prints a takeover at round 3 whatever the goal says`);
-    assert.deepEqual([R.addRound(root, id, 'red 4'), R.addRound(root, id, 'red 5')].map((r) => [r.round, r.takeover, r.since]), [[4, false, 1], [5, true, 2]], `${version}: the count starts again after the takeover it printed`);
-    const five = leased('Takeover (docs): 5', 'docs');
-    assert.equal(frozenRound(reader, five.root, five.id, 'red 1').takeover, false, version);
-    assert.equal(frozenRound(reader, five.root, five.id, 'red 2').takeover, false, version);
-    assert.deepEqual([3, 4].map((k) => R.addRound(five.root, five.id, `red ${k}`)).map((r) => [r.takeover, r.since]), [[false, 3], [false, 4]], `${version}: rounds it printed no takeover on keep counting`);
-    assert.equal(frozenRound(reader, five.root, five.id, 'red 5').takeover, true, version);
-    assert.deepEqual([R.addRound(five.root, five.id, 'red 6')].map((r) => [r.takeover, r.since]), [[false, 1]], version);
-  }
-});
-
-test('a round a frozen reader wrote whose text opens like a standing is a round with no standing, and its words never count', () => {
-  assert.ok(oldJarlIsPinned() && formatTwoJarlIsPinned());
-  for (const [version, reader] of FROZEN_READERS) {
-    const { root, id } = leased(null, 'docs');
-    frozenRound(reader, root, id, 'takeover 1 of 1 · typed by hand');
-    frozenRound(reader, root, id, 'count 1 of 3 · findings 9 · typed by hand');
-    const rounds = L.loopEvents(join(root, '.jarl'), L.loadProfile(root)).filter((e) => e.type === 'round');
-    assert.deepEqual(rounds.map((e) => e.standing ?? null), [null, null], version);
-    const third = R.addRound(root, id, 'red 3');
-    assert.deepEqual([third.takeover, third.since], [true, 3], `${version}: neither line reset the count`);
-    assert.match(log(root), /· 001 round 3 \(takeover 3 of 3\) · red 3$/m, version);
-    assert.equal(frozenRound(reader, root, id, 'red 4').round, 4, `${version} counts a round with a standing as a round`);
-  }
-});
 
 test('a replaced takeover value comes from the line in force', () => {
   const { root } = leased('Takeover (docs): 5\nTakeover (docs): 2', 'docs');
@@ -687,15 +576,6 @@ test('verify lists a takeover line that is not a count of rounds', () => {
   assert.notEqual(out.status, 0);
   assert.match(out.stdout + out.stderr, /Takeover \(docs\): often[^\n]*whole number of rounds/);
   assert.match(out.stdout + out.stderr, /Takeover: 0[^\n]*whole number of rounds/);
-});
-
-test('a takeover line in the goal is read by the pinned frozen reader without a refusal and leaves the issues it lists as they are', () => {
-  assert.ok(oldJarlIsPinned());
-  const { root, id } = leased('Takeover (docs): 2\nTakeover: 4', 'docs');
-  R.addRound(root, id, 'red one');
-  for (const command of ['list', 'status', 'next', 'queue']) assert.equal(oldJarl(root, command, {}).ok, true, command);
-  assert.equal(OLD.findIssue(root, id).status, 'in-progress');
-  assert.equal(OLD.cmdList(root, {}).length, 1);
 });
 
 test('a round records its count of findings and the takeover block lists them', () => {
@@ -785,23 +665,22 @@ test('a count of findings is read from the flag only, never from the words of a 
 
 // ---- free text is never a field ------------------------------------------------------------------------------
 
-// Filed with three digits and no key (fileAsBefore), as the frozen reader of format 1 reads it.
 function reviewedUnit(root, findings, extra = {}) {
-  const id = fileAsBefore(root, 'a thing', { acceptance: 'it works' });
+  const id = fileThreeDigits(root, 'a thing', { acceptance: '[read] it works' });
   R.setStatus(root, id, 'in-progress', extra.reason ?? '', { branch: `jarl/${id}-x`, worker: 'w-one', ...(extra.model ? { model: extra.model } : {}) });
   R.addEvidence(root, id, undefined, { line: 1, ran: 'npm test', saw: 'pass' });
   R.review(root, id, 'approve', findings, { by: 'rev-one' });
   return id;
 }
 
-test('findings that open like a model field are not read as one: no reviewer model appears, and the frozen reader still reads the verdict', () => {
+test('findings that open like a model field are not read as one: no reviewer model appears', () => {
   const root = loop();
   const id = reviewedUnit(root, 'model fake-1 · looks fine here and nothing found');
   assert.match(log(root), /001 review approve · by rev-one \(fresh\) · findings: model fake-1 · looks fine/);
   R.recordMerged(root, id, { sha: 'abc1234' }); R.setStatus(root, id, 'done', 'merged', {});
   const m = L.cmdModels(root, {});
   assert.deepEqual(m.reviewers.map((r) => r.model), [null]);
-  const gate = OLD.gateState(root, id);
+  const gate = L.gateState(root, id);
   assert.equal(gate.live.kind, 'fresh');
 });
 
@@ -829,9 +708,9 @@ test('a lease reason that holds " · model " is neutralised on write and never r
   const id2 = reviewedUnit(bare, 'read the whole diff, found nothing', { reason: 'start · model fake-4 · more' });
   R.recordMerged(bare, id2, { sha: 'abc1234' }); R.setStatus(bare, id2, 'done', 'merged', {});
   assert.deepEqual(L.cmdModels(bare, {}).workers.map((r) => r.model), [null]);
-  const open = fileAsBefore(bare, 'another', { acceptance: 'it works' });
+  const open = fileThreeDigits(bare, 'another', { acceptance: '[read] it works' });
   R.setStatus(bare, open, 'in-progress', 'start · model fake-5 · more', { branch: 'jarl/9-x', worker: 'w-two', model: MID });
-  assert.throws(() => OLD.cmdReview(bare, open, 'approve', 'Minor: nothing to add here', { by: 'w-two' }), /self-approve/);
+  assert.throws(() => L.cmdReview(bare, open, 'approve', 'Minor: nothing to add here', { by: 'w-two' }), /self-approve/);
 });
 
 // ---- the views: models ----------------------------------------------------------------------------------

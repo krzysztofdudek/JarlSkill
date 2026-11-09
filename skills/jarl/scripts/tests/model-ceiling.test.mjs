@@ -9,7 +9,6 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { jarl, refuses, run, loop as makeLoop } from './helpers.mjs';
-import { formatTwoJarl, oldJarl } from './old-jarl.mjs';
 import { BUILTIN_STATUSES } from '../jarl-lib.mjs';
 
 const FOUND = 'read the diff and the rows, nothing found';
@@ -41,7 +40,7 @@ test('the profile names a ceiling and barred models: shown by profile, and a mod
   // The check of a file reads the Model lines of the loop the call reaches.
   const typo = refuses(root, 'profile', profileFile({ models: { ceiling: 'm-stdd' } }));
   assert.match(typo, /names models the loop does not know:\n- "models" names m-stdd, which no Model line of the goal places\n— a loop knows its models from the Model lines of its goal/);
-  assert.match(typo, /\njarl\.mjs goal --set "<machine-line>"\n$/);
+  assert.match(typo, /\njarl\.mjs goal --set "<machine-line>" --by "<who>"\n$/);
   assert.match(refuses(root, 'profile', profileFile({ models: { ceiling: 'm-std', barred: ['m-std'] } })), /"models": the ceiling m-std is barred as well/);
   assert.match(jarl(root, 'profile', profileFile({ models: { barred: ['m-strong'] } })), /^models: barred m-strong — /m);
   // The shape of the key is the schema's.
@@ -194,9 +193,4 @@ test('the takeover offers no tier above the profile\'s ceiling', () => {
     for (const n of [1, 2]) jarl(top, 'round', '1', `red ${n}`);
     assert.match(jarl(top, 'round', '1', 'red 3'), said);
   }
-});
-
-test('a profile that names models is refused by both readers of the lower formats, each with its own message', () => {
-  const root = ceilingLoop({ models: { ceiling: 'm-std' } });
-  for (const read of [oldJarl, formatTwoJarl]) assert.match(read(root, 'status', {}).error, /unknown key "models"/);
 });

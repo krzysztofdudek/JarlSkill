@@ -169,9 +169,9 @@ test('smoke: initialize, tools/list, status and a writing command on a temporary
     const list = await s.request('tools/list', {});
     assert.equal(list.result.tools.length, TOOLS.length);
 
-    const opened = await s.call('jarl_init', { goal: 'make the export command handle every fixture', root });
+    const opened = await s.call('jarl_init', { by: 'test-writer', goal: 'make the export command handle every fixture', root });
     assert.equal(opened.isError, false, opened.content[0].text);
-    const filed = await s.call('jarl_new', { title: '--odd title', kind: 'bug', prio: '1', acceptance: ['[read] one', '[read] --two'], root, json: true });
+    const filed = await s.call('jarl_new', { by: 'test-writer', title: '--odd title', kind: 'bug', prio: '1', acceptance: ['[read] one', '[read] --two'], root, json: true });
     assert.equal(filed.isError, false, filed.content[0].text);
     assert.equal(JSON.parse(filed.content[0].text).id, '1');
     const issue = readFileSync(join(root, '.jarl', 'issues', readdirSync(join(root, '.jarl', 'issues'))[0]), 'utf8');
@@ -187,16 +187,16 @@ test('smoke: initialize, tools/list, status and a writing command on a temporary
     assert.equal(JSON.parse(statusJson.content[0].text).open, 1);
 
     // A refusal is the CLI's exit 1: isError, with the text it would print, and nothing written.
-    const refused = await s.call('jarl_set', { ids: '1', status: 'done', root });
+    const refused = await s.call('jarl_set', { by: 'test-writer', ids: '1', status: 'done', root });
     assert.equal(refused.isError, true);
     assert.match(refused.content[0].text, /no approving review/);
     assert.match((await s.call('jarl_show', { id: '1', root })).content[0].text, /\*\*Status:\*\* open/);
 
     // The CLI's stderr notes come back as a second block.
-    await s.call('jarl_evidence', { ids: '1', ran: 'npm test', saw: 'ok', line: '1', root });
-    await s.call('jarl_review', { ids: '1', verdict: 'approve', text: FINDINGS, by: 'rev', root });
-    await s.call('jarl_merged', { ids: '1', sha: 'abc1234', ci: 'pending', root });
-    const done = await s.call('jarl_set', { ids: '1', status: 'done', text: 'finished', root });
+    await s.call('jarl_evidence', { by: 'test-writer', ids: '1', ran: 'npm test', saw: 'ok', line: '1', root });
+    await s.call('jarl_review', { ids: '1', verdict: 'approve', text: FINDINGS, by: 'rev', root, model: 'test-model' });
+    await s.call('jarl_merged', { by: 'test-writer', ids: '1', sha: 'abc1234', ci: 'pending', root });
+    const done = await s.call('jarl_set', { by: 'test-writer', ids: '1', status: 'done', text: 'finished', root });
     assert.equal(done.isError, false, done.content[0].text);
     assert.match(done.content[0].text, /1 → done/);
     assert.match(done.content[1]?.text || '', /^note: 1 /, 'a merge whose CI is pending: the note the CLI prints on stderr');
@@ -217,9 +217,9 @@ test('smoke: JARL_ROOT in the server config names the loop when a call gives no 
   const s = startServer({ JARL_ROOT: root }, tmpdir());
   try {
     await s.request('initialize', {});
-    assert.equal((await s.call('jarl_init', { goal: 'g' })).isError, false);
+    assert.equal((await s.call('jarl_init', { by: 'test-writer', goal: 'g' })).isError, false);
     assert.ok(existsSync(join(root, '.jarl', 'goal.md')));
-    assert.match((await s.call('jarl_log', { text: 'from the server' })).content[0].text, /logged/);
+    assert.match((await s.call('jarl_log', { by: 'test-writer', text: 'from the server' })).content[0].text, /logged/);
     assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /from the server/);
   } finally { await s.stop(); }
 });
@@ -227,8 +227,8 @@ test('smoke: JARL_ROOT in the server config names the loop when a call gives no 
 test('a check that fails is the CLI exit 2: isError, with the items', () => {
   const root = mkdtempSync(join(tmpdir(), 'jarl-mcp-check-'));
   sh(root, 'git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo 1 > a.mjs && git add -A && git commit -qm base');
-  mcp.callTool('jarl_init', { goal: 'g', root });
-  mcp.callTool('jarl_new', { title: 't', files: 'a.mjs', root });
+  mcp.callTool('jarl_init', { by: 'test-writer', goal: 'g', root });
+  mcp.callTool('jarl_new', { by: 'test-writer', title: 't', files: 'a.mjs', root });
   sh(root, 'git checkout -q -b jarl/1-t && echo 2 > b.mjs && git add -A && git commit -qm change && git checkout -q feature');
   const r = mcp.callTool('jarl_scope', { id: '1', branch: 'jarl/1-t', root });
   assert.equal(r.isError, true);
@@ -261,9 +261,9 @@ test('concurrent writes: calls sent at once to one server, and to two servers on
   const b = startServer({ JARL_ROOT: root });
   try {
     await Promise.all([a.request('initialize', {}), b.request('initialize', {})]);
-    assert.equal((await a.call('jarl_init', { goal: 'g' })).isError, false);
+    assert.equal((await a.call('jarl_init', { by: 'test-writer', goal: 'g' })).isError, false);
     const calls = [];
-    for (let i = 0; i < 8; i += 1) { calls.push(a.call('jarl_new', { title: `a ${i}`, json: true })); calls.push(b.call('jarl_new', { title: `b ${i}`, json: true })); }
+    for (let i = 0; i < 8; i += 1) { calls.push(a.call('jarl_new', { by: 'test-writer', title: `a ${i}`, json: true })); calls.push(b.call('jarl_new', { by: 'test-writer', title: `b ${i}`, json: true })); }
     const results = await Promise.all(calls);
     for (const r of results) assert.equal(r.isError, false, r.content[0].text);
     const ids = results.map((r) => JSON.parse(r.content[0].text).id);
@@ -293,7 +293,7 @@ test('the skill names every field the tools take in references/commands.md, and 
 function loopDir(prefix) {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   mkdirSync(join(dir, '.git'));
-  mcp.callTool('jarl_init', { goal: 'g', root: dir });
+  mcp.callTool('jarl_init', { by: 'test-writer', goal: 'g', root: dir });
   return dir;
 }
 const issuesIn = (dir) => readdirSync(join(dir, '.jarl', 'issues')).length;
@@ -308,7 +308,7 @@ function refusedAsInvalid(fn, re) {
 for (const [label, root] of [['a number', 123], ['an empty string', ''], ['whitespace', '   '], ['a relative path', 'some/loop'], ['null', null]]) {
   test(`root given as ${label} is refused as invalid params, and nothing is written anywhere`, () => {
     const cwdLoop = loopDir('jarl-mcp-badroot-');
-    refusedAsInvalid(() => mcp.callTool('jarl_new', { title: 't', root }, {}, cwdLoop), /"root" must be the absolute path/);
+    refusedAsInvalid(() => mcp.callTool('jarl_new', { by: 'test-writer', title: 't', root }, {}, cwdLoop), /"root" must be the absolute path/);
     assert.equal(issuesIn(cwdLoop), 0, 'the loop the server runs in got nothing');
     assert.deepEqual(mcp.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'jarl_status', arguments: { root } } }).error?.code, -32602);
   });
@@ -316,7 +316,7 @@ for (const [label, root] of [['a number', 123], ['an empty string', ''], ['white
 
 test('import and sources take only absolute findings paths', () => {
   const root = loopDir('jarl-mcp-paths-');
-  refusedAsInvalid(() => mcp.callTool('jarl_import', { file: 'findings.json', root }), /"file" must be an absolute path/);
+  refusedAsInvalid(() => mcp.callTool('jarl_import', { by: 'test-writer', file: 'findings.json', root }), /"file" must be an absolute path/);
   refusedAsInvalid(() => mcp.callTool('jarl_sources', { files: ['/abs/f.json', 'rel/f.json'], root }), /"files" must be an absolute path/);
   const r = mcp.callTool('jarl_sources', { files: [join(root, 'missing.json')], root });
   assert.equal(r.isError, true, 'an absolute path goes through to the CLI, which answers for itself');
@@ -325,12 +325,12 @@ test('import and sources take only absolute findings paths', () => {
 
 test('a missing required field is refused as invalid params, as the schema declares it', () => {
   const root = loopDir('jarl-mcp-required-');
-  refusedAsInvalid(() => mcp.callTool('jarl_new', { root }), /"title" is required/);
-  refusedAsInvalid(() => mcp.callTool('jarl_set', { ids: '1', root }), /"status" is required/);
-  refusedAsInvalid(() => mcp.callTool('jarl_review', { ids: '1', verdict: 'approve', root }), /"text" is required/);
+  refusedAsInvalid(() => mcp.callTool('jarl_new', { by: 'test-writer', root }), /"title" is required/);
+  refusedAsInvalid(() => mcp.callTool('jarl_set', { by: 'test-writer', ids: '1', root }), /"status" is required/);
+  refusedAsInvalid(() => mcp.callTool('jarl_review', { by: 'test-writer', ids: '1', verdict: 'approve', root, model: 'test-model' }), /"text" is required/);
   for (const t of TOOLS) for (const f of t.inputSchema.required || []) assert.ok(t.inputSchema.properties[f], `${t.name}: required ${f} is a field`);
   // A field's placeholder is the one of its command: tick's line is a number, split's a number and the issue it goes to.
-  refusedAsInvalid(() => mcp.callTool('jarl_tick', { id: '1', root }), /"line" is required[\s\S]*\njarl_tick \{"id":"<id>","line":"<line-number>"/);
+  refusedAsInvalid(() => mcp.callTool('jarl_tick', { by: 'test-writer', id: '1', root }), /"line" is required[\s\S]*\njarl_tick \{"id":"<id>","line":"<line-number>"/);
   assert.equal(mcp.formValue('tick', 'line'), '<line-number>');
   assert.equal(mcp.formValue('split', 'line'), '<line=id>');
   assert.equal(mcp.formValue('evidence', 'line'), '<line-number>');
@@ -340,7 +340,7 @@ test('a missing required field is refused as invalid params, as the schema decla
 
 test('with no root, every answer ends by naming the loop it reached and where that came from', () => {
   const a = loopDir('jarl-mcp-env-note-');
-  const viaEnv = mcp.callTool('jarl_new', { title: 'from env' }, { JARL_ROOT: a }, tmpdir());
+  const viaEnv = mcp.callTool('jarl_new', { by: 'test-writer', title: 'from env' }, { JARL_ROOT: a }, tmpdir());
   assert.equal(viaEnv.isError, false);
   assert.match(viaEnv.content.at(-1).text, new RegExp(`^loop: ${a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(no root given — from JARL_ROOT\\)`));
   assert.equal(issuesIn(a), 1);
@@ -370,10 +370,10 @@ test('with json: true, the answer is exactly one text block holding the JSON, wh
   assert.equal(named._meta, undefined);
 
   // A command that notes something on stderr (set's evidence note) still comes back as one block, the note in _meta.
-  mcp.callTool('jarl_new', { title: 't', acceptance: ['[read] x'], root: a });
-  mcp.callTool('jarl_merged', { ids: '1', sha: 'abc1234', ci: 'pending', root: a });
-  mcp.callTool('jarl_review', { ids: '1', verdict: 'approve', text: FINDINGS, by: 'rev', root: a });
-  const withNote = mcp.callTool('jarl_set', { ids: '1', status: 'done', text: 'finished', root: a, json: true });
+  mcp.callTool('jarl_new', { by: 'test-writer', title: 't', acceptance: ['[read] x'], root: a });
+  mcp.callTool('jarl_merged', { by: 'test-writer', ids: '1', sha: 'abc1234', ci: 'pending', root: a });
+  mcp.callTool('jarl_review', { by: 'test-writer', ids: '1', verdict: 'approve', text: FINDINGS, by: 'rev', root: a, model: 'test-model' });
+  const withNote = mcp.callTool('jarl_set', { by: 'test-writer', ids: '1', status: 'done', text: 'finished', root: a, json: true });
   assert.equal(withNote.isError, false, withNote.content[0].text);
   assert.equal(withNote.content.length, 1);
   assert.match(withNote._meta['jarl/warn'], /^note: 1 /);
@@ -387,8 +387,8 @@ test('with json: true, the answer is exactly one text block holding the JSON, wh
   // check's exit 2 (a failed check) with json: true: still one block, isError true, the JSON with its items.
   const c = mkdtempSync(join(tmpdir(), 'jarl-mcp-json-check-'));
   sh(c, 'git init -q -b feature && git config user.email t@t && git config user.name t && git config core.excludesFile /dev/null && echo 1 > a.mjs && git add -A && git commit -qm base');
-  mcp.callTool('jarl_init', { goal: 'g', root: c });
-  mcp.callTool('jarl_new', { title: 't', files: 'a.mjs', root: c });
+  mcp.callTool('jarl_init', { by: 'test-writer', goal: 'g', root: c });
+  mcp.callTool('jarl_new', { by: 'test-writer', title: 't', files: 'a.mjs', root: c });
   sh(c, 'git checkout -q -b jarl/1-t && echo 2 > b.mjs && git add -A && git commit -qm change && git checkout -q feature');
   const failedCheck = mcp.callTool('jarl_scope', { id: '1', branch: 'jarl/1-t', root: c, json: true });
   assert.equal(failedCheck.isError, true);
@@ -429,21 +429,21 @@ test('every tool refuses a field it does not take, names the fields it takes, an
     assert.equal(e.code, -32602, `${t.name}: ${e.message}`);
     assert.match(e.message, /unknown field "bogus" — it takes /, t.name);
   }
-  refusedAsInvalid(() => mcp.callTool('jarl_new', { title: 'a', whyy: 'a reason that must not be lost', root }), /unknown field "whyy" — it takes .*\bwhy\b/);
-  refusedAsInvalid(() => mcp.callTool('jarl_new', { title: 'a', Why: 'a reason', root }), /unknown field "Why"/);
-  refusedAsInvalid(() => mcp.callTool('jarl_field', { ids: '1', name: 'Why', valu: 'x', root }), /unknown field "valu"/);
+  refusedAsInvalid(() => mcp.callTool('jarl_new', { by: 'test-writer', title: 'a', whyy: 'a reason that must not be lost', root }), /unknown field "whyy" — it takes .*\bwhy\b/);
+  refusedAsInvalid(() => mcp.callTool('jarl_new', { by: 'test-writer', title: 'a', Why: 'a reason', root }), /unknown field "Why"/);
+  refusedAsInvalid(() => mcp.callTool('jarl_field', { by: 'test-writer', ids: '1', name: 'Why', valu: 'x', root }), /unknown field "valu"/);
   assert.equal(issuesIn(root), 0, 'no refused filing left an issue behind');
 });
 
 test('a filing refused for an after that names no issue takes no number: the next filing gets the next free one', () => {
   const root = loopDir('jarl-mcp-after-');
-  const refused = mcp.callTool('jarl_new', { title: 'waits on a later issue', after: '2', root });
+  const refused = mcp.callTool('jarl_new', { by: 'test-writer', title: 'waits on a later issue', after: '2', root });
   assert.equal(refused.isError, true);
   assert.match(refused.content[0].text, /no such issue: 2/);
   assert.equal(issuesIn(root), 0, 'the refusal wrote no issue');
-  const first = mcp.callTool('jarl_new', { title: 'first', json: true, root });
+  const first = mcp.callTool('jarl_new', { by: 'test-writer', title: 'first', json: true, root });
   assert.equal(JSON.parse(first.content[0].text).id, '1', 'the refused filing took no number');
-  const second = mcp.callTool('jarl_new', { title: 'second', after: '1', json: true, root });
+  const second = mcp.callTool('jarl_new', { by: 'test-writer', title: 'second', after: '1', json: true, root });
   assert.equal(JSON.parse(second.content[0].text).id, '2');
   assert.equal(issuesIn(root), 2);
 });
@@ -478,7 +478,7 @@ test('a tool field whose name does not give its meaning carries an example that 
 
 test('a value of the wrong type is refused with a message naming the field and the type it takes', () => {
   const root = loopDir('jarl-mcp-type-');
-  mcp.callTool('jarl_new', { title: 'one', root });
+  mcp.callTool('jarl_new', { by: 'test-writer', title: 'one', root });
   const WRONG = [
     ['jarl_evidence', { ids: '1', ran: { command: 'npm test' }, saw: 'ok' }, /"ran" must be a string or a list of strings/],
     ['jarl_evidence', { ids: '1', ran: ['npm test'], saw: [true] }, /"saw" must be a string or a list of strings/],
@@ -494,10 +494,10 @@ test('a value of the wrong type is refused with a message naming the field and t
 
 test('jarl_field with add adds to the section the call names, and without it replaces that section', () => {
   const root = loopDir('jarl-mcp-append-');
-  mcp.callTool('jarl_new', { title: 'one', acceptance: ['[read] first line'], root });
+  mcp.callTool('jarl_new', { by: 'test-writer', title: 'one', acceptance: ['[read] first line'], root });
   const acceptanceOf = () => JSON.parse(mcp.callTool('jarl_show', { id: '1', json: true, root }).content[0].text).sections.acceptance.trim();
-  mcp.callTool('jarl_field', { ids: '1', name: 'Acceptance', value: '[read] second line', add: true, root });
+  mcp.callTool('jarl_field', { by: 'test-writer', ids: '1', name: 'Acceptance', value: '[read] second line', add: true, root });
   assert.equal(acceptanceOf(), '- [read] first line\n- [read] second line');
-  mcp.callTool('jarl_field', { ids: '1', name: 'Acceptance', value: '[read] third line', root });
+  mcp.callTool('jarl_field', { by: 'test-writer', ids: '1', name: 'Acceptance', value: '[read] third line', root });
   assert.equal(acceptanceOf(), '[read] third line', 'left out, add is false and the section is replaced');
 });
