@@ -320,6 +320,23 @@ test('the owner\'s word in the singular with a quotation mark after it is refuse
   assert.match(jarl(root, 'retract', '1', 'note-1', '--by', 'jarl', honest[0]), /retracted/);
 });
 
+test('a part whose old text ends in the owner\'s word is changed like any other, and a new text that holds the marker is still refused', () => {
+  const root = loop({ via: 'cli' });
+  const ending = 'Published first, on the owner\'s word.';
+  jarl(root, 'new', ending, '--what', ending, '--acceptance', `[read] ${ending}`);
+  jarl(root, 'new', 'second', '--acceptance', `[read] ${ending}`);
+  jarl(root, 'field', '1', 'Title', 'thing');
+  jarl(root, 'field', '1', 'What', 'it changed');
+  jarl(root, 'field', '1', 'Acceptance', '[read] it works');
+  jarl(root, 'field', '2', 'Acceptance', '[read] it works', '--add');
+  const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
+  assert.match(log, /1 body · title · was "Published first, on the owner's word\."/);
+  assert.match(log, /1 body · what · was "Published first, on the owner's word\."/);
+  assert.match(log, /1 body · acceptance · was "\[read\] Published first, on the owner's word\."/);
+  assert.match(refuses(root, 'field', '1', 'What', 'The owner\'s word: "yes, ship it"'), REFUSED);
+  assert.match(refuses(root, 'field', '1', 'Title', 'the owner\'s word "yes"'), REFUSED);
+});
+
 test('the library keeps the author of a ruling as the one name the owner has, and refuses a name that holds his', () => {
   const root = loop();
   L.appendDecision(root, 'rule-a', 'Keep a.', { by: ' The OWNER ' });

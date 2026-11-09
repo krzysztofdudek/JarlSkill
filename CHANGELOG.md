@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - On Windows, the form a refused call prints carries an empty `--root=` as given, instead of naming the loop root by its placeholder.
 - On Windows, the `git` commands Jarl prints for a kept worktree and for a merge that moved past its review are quoted for PowerShell and cmd, and a record file that came back with CRLF keeps its line endings when Jarl writes to it.
+- Changing an issue's title, description or acceptance no longer fails when the old text ends with the words "owner's word" and a full stop.
 
 ## [6.3.0] - 2026-11-09
 
