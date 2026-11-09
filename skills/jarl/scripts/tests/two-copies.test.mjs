@@ -122,7 +122,7 @@ for (const [shape, make] of [
     assert.match(readFileSync(join(b.dir, '.jarl', 'issues', '3-second-on-b.md'), 'utf8'), /^# 3 · second on B\n/);
     const logAfter = readFileSync(join(b.dir, '.jarl', 'log.md'), 'utf8');
     assert.ok(logAfter.startsWith(logBefore), 'no line of the log is rewritten');
-    assert.match(logAfter.slice(logBefore.length), new RegExp(`^- \\S+ \\S+ key ${keyB} by coordinator B · 3 renumbered from 2 · issues/3-second-on-b\\.md\\n$`));
+    assert.match(logAfter.slice(logBefore.length), new RegExp(`^- \\S+ \\S+ key ${keyB} by coordinator B · 3 renumbered from 2 · issues/3-second-on-b\\.md\\r?\\n$`), 'the new line ends as the log\'s lines do');
     // After it: each issue is read from its own lines, under its own number.
     const two = json(b.dir, 'show', '2');
     const three = json(b.dir, 'show', '3');
