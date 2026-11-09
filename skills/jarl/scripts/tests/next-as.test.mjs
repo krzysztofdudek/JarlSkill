@@ -50,7 +50,7 @@ test('next --as jarl lists each issue in play with the step it points to and the
   assert.match(text, /^On the jarl \(6\)$/m);
   assert.match(text, /^- 5 approved: approved, not merged; merge it \(worker w5\) — jarl\.mjs merged 5 --sha "<sha>" --ran "<command>" --saw "<what-it-printed>" --by jarl · holds up 10, 11, 12$/m);
   assert.match(text, /^- 1 ready one: ready to start, raise a worker — jarl\.mjs set 1 in-progress --branch "<branch>" --worker "<name>" --model "<model-id>" --by jarl · holds up 7, 12$/m);
-  assert.match(text, /^- 2 with a worker: with worker w2 since .*, no proof yet; the worker records it — jarl\.mjs evidence 2 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by w2$/m);
+  assert.match(text, /^- 2 with a worker: with worker w2 since .*: no row is owed for read lines; raise a fresh examiner when it reports — jarl\.mjs brief 2 --role reviewer/m);
   assert.match(text, /^- 3 proof no verdict: proof recorded, no verdict; raise a fresh reviewer for 3; if you cannot raise agents, ask the owner to start a fresh session \(worker w3\) — jarl\.mjs review 3 "<verdict>" --by "<reviewer>" --model "<model-id>" "<text>", or jarl\.mjs ask 'start a fresh session to review issue 3' --by jarl$/m);
   assert.match(text, /^- 4 changes asked: changes asked by its reviewer; send it back to a worker \(worker w4\) — jarl\.mjs round 4 "<text>" --by jarl$/m);
   assert.match(text, /^- 6 merged: merged; close it \(worker w6\) — jarl\.mjs set 6 done "<text>" --by jarl$/m);
@@ -58,7 +58,7 @@ test('next --as jarl lists each issue in play with the step it points to and the
   // A round sends the changes back to the worker until it records a new row; then the proof waits for a reviewer again.
   jarl(root, 'round', '4', 'the empty list');
   assert.equal(json(root, 'next', '--as', 'jarl', '--all').rows.find((r) => r.id === '4').what, 'worker');
-  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 4 changes asked: with worker w4 since .*, sent back by a round, no new proof yet; the worker records it — jarl\.mjs evidence 4 /m);
+  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 4 changes asked: with worker w4 since .*, sent back by a round: no row is owed for read lines; raise a fresh examiner when it reports — jarl\.mjs brief 4 --role reviewer/m);
   jarl(root, 'evidence', '4', '--line', '1', '--ran', 'npm test', '--saw', 'green again');
   const review = json(root, 'next', '--as', 'jarl', '--all').rows.find((r) => r.what === 'review');
   assert.deepEqual(review.ids, ['3', '4'], 'the two proofs of code with no verdict are one line');
@@ -164,7 +164,7 @@ test('resume and status say an issue a round sent back is back with its worker, 
   assert.match(resume, /^- 4 changes asked[^\n]*\n  → sent back by a round, no new proof yet — it is back with the worker, who records new rows$/m);
   assert.doesNotMatch(resume, /^- 4 [^\n]*\n  → [^\n]*waits for a reviewer/m, 'the line does not say it waits for a reviewer');
   assert.match(jarl(root, 'status'), /^in flight 4 · sent back by a round, no new proof yet — it is back with the worker, who records new rows$/m);
-  assert.match(inFlight(jarl(root, 'next', '--as', 'jarl', '--all'), '4'), /sent back by a round, no new proof yet; the worker records it/, 'the list says the same');
+  assert.match(inFlight(jarl(root, 'next', '--as', 'jarl', '--all'), '4'), /sent back by a round: no row is owed for read lines/, 'the list says what a read line owes');
   assert.equal(json(root, 'status').inFlightRows.find((r) => r.id === '4').next, 'sent back by a round, no new proof yet — it is back with the worker, who records new rows');
   assert.equal(json(root, 'resume').inFlight.find((r) => r.id === '4').mark, 'rows-no-verdict', 'the mark names the rows and no verdict since the round');
   jarl(root, 'evidence', '4', '--line', '1', '--ran', 'npm test', '--saw', 'green again');

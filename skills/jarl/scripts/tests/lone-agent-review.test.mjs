@@ -149,3 +149,13 @@ test('a line for several proofs names each issue with its title and its worker',
   assert.deepEqual(row.issues, [{ id: '1', title: 'first change', doer: 'me' }, { id: '2', title: 'second change', doer: 'you' }]);
   assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- 1, 2: proof recorded, no verdict; raise one fresh reviewer per unit: 1 · 2; if you cannot raise agents, ask the owner to start a fresh session \(1 first change, worker me; 2 second change, worker you\) — /m);
 });
+
+test('a lone agent that asks for its own name sees that its review is due, and how to get one', () => {
+  const root = loneLoop();
+  const said = jarl(root, 'next', '--as', 'me');
+  assert.match(said, /raise one fresh reviewer per unit|raise a fresh reviewer/, said);
+  assert.match(said, /start a fresh session to review issues?/, said);
+  assert.match(said, /^On me /m, said);
+  jarl(root, 'goal', '--set', 'Coordinators: odin');
+  assert.doesNotMatch(jarl(root, 'next', '--as', 'me'), /fresh reviewer/, 'under a coordinator the work is the coordinator\'s to route');
+});

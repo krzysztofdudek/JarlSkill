@@ -275,7 +275,12 @@ export function gateOf(loop, id) {
   // on the branch, seen by the tip the verdict was given on differing from the tip now. While it stands, no approve clears the
   // issue: an approve after it counts only once it was given on a later commit, whatever reviewer gives it. A pause and a
   // resume spend no changes verdict, so its reach is read from the window a pause does not open.
-  const changesSpent = lastChanges === null || lastChanges.n <= firm.cut;
+  // An issue closed before the line a conversion ends with closed under an earlier gate, which took an approve after a
+  // changes verdict: that approve stands, so the record says who cleared it.
+  const convertedAt = loop.events?.findLast((e) => e.type === 'converted')?.n ?? -1;
+  const lastMove = events.findLast((e) => e.type === 'move');
+  const closedBeforeConversion = issue !== null && lastMove !== undefined && lastMove.n < convertedAt && profile.is(lastMove.to, 'closes-record');
+  const changesSpent = closedBeforeConversion || lastChanges === null || lastChanges.n <= firm.cut;
   const committedSince = (r) => r.tip !== undefined && lastChanges.tip !== undefined && r.tip !== lastChanges.tip;
   const standingChanges = lastChanges && !changesSpent && !(lastChanges.tip !== undefined && now() !== null && lastChanges.tip !== now()) ? lastChanges : null;
   // Under a reviewer rule that judges the model of an approve, the owner's live waiver is the one that clears the issue,

@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -282,7 +282,7 @@ test('a merger\'s brief on a committed loop over five repositories, with rules o
   assert.match(text, /A long rule for the merger/, 'the rule reaches it');
   assert.match(text, /The loop is committed/);
   assert.equal(text.split('\n').filter((l) => /^Repository tool\d/.test(l)).length, 5);
-  assert.ok(own <= 800, `merger ${own} words, with room to spare under 900`);
+  assert.ok(own <= 825, `merger ${own} words, with room to spare under 900`);
 });
 
 test('a [check] line with no declared check to land on says what done asks for: rows, not the landing', () => {
@@ -396,4 +396,56 @@ test('a director\'s stuck is under one holder in resume and next --as: resume li
   const text = jarl(root, 'resume');
   assert.match(text, /## Questions to the owner \(1\)\n- a-\d+ \(stuck\) · a question of the owner/);
   assert.match(text, /## Questions to the director \(1\)\n- a-\d+ \(stuck\) issue 1 · on jarl · the guard must go, may I\?/);
+});
+
+// A lease whose lines are all read lines owes no row: the worker's "[read] lines take no row" holds in every text around it.
+function readOnlyLease() {
+  const root = loop();
+  jarl(root, 'new', 'the docs', '--why', 'needed', '--acceptance', '[read] the docs say so', '--files', 'a.md');
+  jarl(root, 'set', '1', 'in-progress', 'go', '--worker', 'w-1', '--model', 'm-x');
+  return root;
+}
+test('a lease of read lines alone owes no row: next --as asks no proof of its worker and names the examiner\'s brief', () => {
+  const said = jarl(readOnlyLease(), 'next', '--as', 'jarl');
+  assert.doesNotMatch(said, /no proof yet|the worker records it/, said);
+  assert.match(said, /no row is owed/, said);
+  assert.match(said, /brief 1 --role reviewer/, said);
+});
+test('the examiner\'s brief of read lines alone does not call a missing row a finding', () => {
+  const root = readOnlyLease();
+  const text = jarl(root, 'brief', '1', '--role', 'reviewer');
+  assert.doesNotMatch(text, /missing rows are an Important finding|holds no proof row/, text);
+  // A test line still owes one.
+  jarl(root, 'field', '1', 'Acceptance', '[test] a test proves it', '--add');
+  assert.match(jarl(root, 'brief', '1', '--role', 'reviewer'), /missing row[s]? (?:are|is) an Important finding/);
+});
+
+// The merger's checkout: a branch is checked out in one worktree at most, so the brief names where the target is.
+test('the merger\'s brief names the checkout that holds the target branch, since git refuses a second worktree of it', () => {
+  const { dir, g } = gitRepo({ prefix: 'jarl-brief-merger-co-', branch: 'feature' });
+  jarl(dir, 'init', 'goal');
+  jarl(dir, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.md');
+  const text = jarl(dir, 'brief', '--role', 'merger');
+  const top = realpathSync(dir);
+  assert.ok(text.includes(`Merge in ${top}: it holds feature`), text);
+  assert.doesNotMatch(text, /in your own worktree: git/);
+  assert.match(text, /a second worktree of a checked-out branch is refused/);
+  assert.equal(g('rev-parse', '--abbrev-ref', 'HEAD').trim(), 'feature');
+});
+test('the merger of a slice is told to cut a worktree for an integration branch no checkout holds', () => {
+  const { dir, g } = gitRepo({ prefix: 'jarl-brief-merger-int-', branch: 'feature' });
+  jarl(dir, 'init', 'goal');
+  jarl(dir, 'new', 'one', '--acceptance', '[read] it works', '--tags', 'slice:odin');
+  jarl(dir, 'goal', '--set', 'Coordinators: odin');
+  jarl(dir, 'goal', '--set', 'Merger (odin): mimir');
+  g('branch', 'jarl/slice-odin');
+  const text = jarl(dir, 'brief', '--role', 'merger', '--slice', 'odin');
+  const o = json(dir, 'brief', '--role', 'merger', '--slice', 'odin');
+  assert.match(text, new RegExp('worktree add "<path>" ' + o.target.replace(/[/.]/g, '\\$&')));
+});
+test('the merger\'s brief says what is pushed and what the lock files need after a merge-resolve', () => {
+  const text = jarl(loop(), 'brief', '--role', 'merger');
+  assert.match(text, /Push nothing unless a goal line or a ruling grants the branch/);
+  assert.match(text, /A worker's branch is never pushed/);
+  assert.match(text, /yg log merge-resolve[^\n]*\bgit add\b[^\n]*commit --amend --no-edit/);
 });

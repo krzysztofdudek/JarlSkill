@@ -3,7 +3,7 @@
 
 import { PROMISE_KIND, WAIT_KIND, fieldText, jarlLine, need, shellWord, slugify } from './base.mjs';
 import { cmpId, idKey, idsCited } from './ids.mjs';
-import { mergedOf } from './issues.mjs';
+import { acceptanceLines, mergedOf } from './issues.mjs';
 import { carriesCode, gateOf, holderKey, inFlightMark, leaseConflictOf, sameHolder, sentBack, statusWith, worksInPlace } from './gate.mjs';
 import { coordinatorOf, integrationBranch, sameSlice, sliceOf } from './slices.mjs';
 import { git } from './git.mjs';
@@ -19,7 +19,7 @@ import { ownerLineStates } from './owner-lines.mjs';
 import { ruleLines, rulesFor } from './rules.mjs';
 import { jarlDir, today } from './where.mjs';
 import { ago, leaseLiveness, livenessOf, takeoverDue, thresholdText } from './rounds.mjs';
-import { LINE_FORM, workerRowsMissing } from './lines.mjs';
+import { LINE_FORM, readLine, workerRowsMissing } from './lines.mjs';
 import { sameLease } from './leases.mjs';
 
 // The holders: the owner, the jarl, a named coordinator or a named outside person. A ready issue, a lease, a proof with no
@@ -126,7 +126,12 @@ function issueRows(ctx) {
       continue;
     }
     if (mark === 'no-rows' || backAfterRound) {
-      out.push({ ...base, what: 'worker', says: `${withWorker}${since}, ${backAfterRound ? 'sent back by a round, no new proof yet' : 'no proof yet'}; the worker records it`, command: evidence(i.id, fieldText(i.fields.worker) || '<who>') });
+      // A read line takes no row: with no row owed there is no proof to ask for, and the next move is the examiner's.
+      if (!acceptanceLines(i).every((l) => ['read', 'owner'].includes(readLine(l).method))) {
+        out.push({ ...base, what: 'worker', says: `${withWorker}${since}, ${backAfterRound ? 'sent back by a round, no new proof yet' : 'no proof yet'}; the worker records it`, command: evidence(i.id, fieldText(i.fields.worker) || '<who>') });
+      } else {
+        out.push({ ...base, what: 'worker', says: `${withWorker}${since}${backAfterRound ? ', sent back by a round' : ''}: no row is owed for read lines; raise a fresh examiner when it reports`, command: jarlLine('brief', i.id, '--role', 'reviewer') });
+      }
       continue;
     }
     // A close the done gate would refuse for an owner line not ticked is not offered: that line's own row stands instead.
@@ -666,7 +671,10 @@ export function readerOf(loop, holder, mine) {
 export function cmdNextAs(root, flags = {}) {
   const holder = holderOf(flags.as);
   const { loop, rows, waiting } = ballRows(root, flags);
-  const mine = rows.filter((r) => sameHolder(r.holder, holder));
+  // A loop with no coordinator: an agent asking for its own name holds its work, its review due included, as the jarl does.
+  const doesTheWork = (r) => loop.goalLines.coordinators.length === 0 && r.holder === JARL_HOLDER && holder !== JARL_HOLDER && holder !== OWNER_HOLDER && (sameHolder(r.doer ?? '', holder) || (r.issues || []).some((i) => sameHolder(i.doer ?? '', holder)));
+  const held = rows.filter((r) => sameHolder(r.holder, holder));
+  const mine = held.length ? held : rows.filter(doesTheWork);
   const rules = rulesFor(root, loop, readerOf(loop, holder, mine), today());
   const all = flags.all === true;
   const shown = all ? mine : mine.slice(0, BALL_SHOWN);
@@ -676,7 +684,7 @@ export function cmdNextAs(root, flags = {}) {
   const ownSlice = loop.issues.some((i) => sameSlice(sliceOf(i), holder));
   const note = !coordinator || ownSlice ? null : sliced ? `no issue carries slice:${holder}, so nothing of a slice is on ${holder}: the issues in no slice are the jarl's (${jarlLine('next', '--as', 'jarl')}), and ${jarlLine('field', '<ids>', 'Tags', '--add', `slice:${holder}`)} gives ${holder} its slice` : `with no slice in the loop, what a coordinator holds is the jarl's: ${jarlLine('next', '--as', 'jarl')}`;
   // A person is named as the record writes the name, whatever case the asker typed.
-  const spelled = mine.length ? mine[0].holder : waits.length ? waits[0].on : holder;
+  const spelled = held.length ? held[0].holder : waits.length ? waits[0].on : holder;
   return {
     as: spelled, rows: shown, total: mine.length, more: mine.length - shown.length, rules,
     waiting: all ? waits : [], waitingTotal: waits.length,

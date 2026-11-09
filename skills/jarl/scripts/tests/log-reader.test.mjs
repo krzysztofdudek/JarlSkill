@@ -258,3 +258,16 @@ test('the log command writes no converted line: only a conversion ends with one'
   const root = loop();
   assert.throws(() => R.appendLog(root, 'converted'), /only a conversion writes it/);
 });
+
+test('an issue closed before a converted line is counted by the approve it closed on, even after a changes verdict no round spent', () => {
+  const root = loop();
+  const id = R.newIssue(root, 'closed by an earlier gate', { tier: 'light', acceptance: '[read] it works' }).id;
+  R.review(root, id, 'changes', 'Important: the first reading', { by: 'rev-1' });
+  R.review(root, id, 'approve', 'looks fine now', { by: 'rev-2' });
+  appendFileSync(logFile(root), lineOf(root, id, '→ done · closed', 'unrecorded'));
+  const read = () => L.reviewSplit(L.readLoop(L.jarlDir(root)));
+  assert.equal(read().unrecorded, 1, 'a loop that was not converted reads the standing changes as it stands');
+  appendFileSync(logFile(root), '- 2030-01-01 00:01 by the-converter · converted\n');
+  assert.equal(read().fresh, 1);
+  assert.equal(read().unrecorded, 0);
+});
