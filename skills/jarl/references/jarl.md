@@ -102,15 +102,15 @@ To the owner: one sentence of state at boot, plain words, no internal names; "ho
 | an examiner dies | proof with no verdict past the threshold | raise another; two verdicts corrupt nothing |
 | a merge goes red | the merger's check | the merger's brief has the three cases |
 | the merger dies | the checkout holds a merge no `merged` line names | look at git and the record, re-run the check, then record it or reset to the merge's parent; never infer the check from git |
-| you compact | your next turn | `resume --as <who>` or `brief --slice <name>` |
-| two clones worked apart | `verify` | `renumber <id> --key <key> --by <who>`, a handover naming the lease to keep |
+| you compact | your next turn | `resume --as <who>`; a coordinator `brief --slice <name>`, then `resume --slice <name> --as <name>` |
+| two clones worked apart | `verify` | `renumber <id> --key <key> --by <who>`, the git commands it prints for a conflicted record file, a handover naming the lease to keep |
 | the directing session dies | nothing inside Jarl | a host runs `resume` when `next --as jarl` holds a move and nothing has written for a set time; Jarl raises nobody |
 
 A merger's report is the only signal that it left the main checkout: nobody runs git there or raises a second merger before it arrives. Only worker leases are recorded, so what a dead merger left is read from git and the record.
 
 ## Coordinators: slices of the backlog
 
-Add a slice when you hold more than you can read reports for. The goal's `Coordinators:` line names them, and each one's slice is the issues tagged `slice:<name>`, cut by area so files and most After chains stay inside it; an issue in no slice is the jarl's. A coordinator runs this reference over its slice, except that it never talks to the owner, and starts from `next --as <name>`, `status --slice <name>` and `brief --slice <name>`.
+Add a slice when you hold more than you can read reports for. The goal's `Coordinators:` line names them, and each one's slice is the issues tagged `slice:<name>`, cut by area so files and most After chains stay inside it; an issue in no slice is the jarl's. A coordinator runs this reference over its slice, except that it never talks to the owner, and starts from `brief --slice <name>`, then `resume --slice <name> --as <name>`: its slice is its whole business, and what `resume` without `--slice` or the record files show of another slice is the jarl's.
 
 **A level waits on the agents it raised, and returns only when the ball is on someone it did not raise.**
 

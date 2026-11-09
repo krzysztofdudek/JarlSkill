@@ -45,7 +45,7 @@ test('verify names the git commands that take one side of a record file a merge 
   assert.equal(said.status, 2, said.stdout);
   assert.match(said.stdout, new RegExp(`git -C \\S+ checkout --ours -- ${ISSUE.replace(/\./g, '\\.')}`));
   assert.match(said.stdout, new RegExp(`git -C \\S+ checkout --theirs -- ${ISSUE.replace(/\./g, '\\.')}`));
-  assert.match(said.stdout, /git add/);
+  assert.match(said.stdout, new RegExp(`git -C \\S+ add -- ${ISSUE.replace(/\./g, '\\.')}`));
   assert.doesNotMatch(said.stdout, /remove the markers|put a backslash/);
   // The commands it names are the way out: taken as printed, the file holds no marker and the finding is gone.
   b.g('-C', b.dir, 'checkout', '--theirs', '--', ISSUE);
@@ -60,8 +60,8 @@ test('a merge committed with the markers in it: verify names the two sides of th
   const sha = b.g('rev-parse', 'HEAD').trim();
   const said = run(b.dir, ['verify']);
   assert.equal(said.status, 2, said.stdout);
-  assert.match(said.stdout, new RegExp(`git -C \\S+ checkout ${sha}\\^1 -- ${ISSUE.replace(/\./g, '\\.')}`));
-  assert.match(said.stdout, new RegExp(`git -C \\S+ checkout ${sha}\\^2 -- ${ISSUE.replace(/\./g, '\\.')}`));
+  assert.match(said.stdout, new RegExp(`git -C \\S+ checkout '?${sha}\\^1'? -- ${ISSUE.replace(/\./g, '\\.')}`));
+  assert.match(said.stdout, new RegExp(`git -C \\S+ checkout '?${sha}\\^2'? -- ${ISSUE.replace(/\./g, '\\.')}`));
   b.g('checkout', `${sha}^2`, '--', ISSUE);
   assert.doesNotMatch(run(b.dir, ['verify']).stdout, /a git conflict marker/);
 });
@@ -85,7 +85,9 @@ test('a double lease left after a merge is named by verify with the form that ke
   b.g('add', '-A'); b.g('commit', '-qm', 'merge, keeping the first clone\'s file');
   const said = run(b.dir, ['verify']);
   assert.equal(said.status, 2, said.stdout);
-  assert.match(said.stdout, /issue 1: leased twice with no move out between: by coordinator A \(worker wa, jarl\/1-on-a\)[^\n]*by coordinator B \(worker wb, jarl\/1-on-b\)/);
+  assert.match(said.stdout, /issue 1: leased twice with no move out between: by coordinator [AB] \(worker w[ab], jarl\/1-on-[ab]\)/);
+  assert.match(said.stdout, /\(worker wa, jarl\/1-on-a\)/);
+  assert.match(said.stdout, /\(worker wb, jarl\/1-on-b\)/);
   assert.match(said.stdout, /jarl\.mjs set 1 in-progress --handover --branch "<branch>" --worker "<name>" --model "<model-id>" "<why-the-worker-changed>"/);
   jarl(b.dir, 'set', '1', 'in-progress', '--handover', '--branch', 'jarl/1-on-a', '--worker', 'wa', '--model', 'm', 'keeping the first', '--by', 'jarl');
   const after = run(b.dir, ['verify']);
@@ -139,7 +141,7 @@ test('the refusal of a reason on set --header prints a form with no reason in it
   const said = refuses(root, 'set', '1', 'open', 'a reason', '--header');
   assert.match(said, /--header rewrites the header from the log and takes no reason/);
   assert.doesNotMatch(said, /<why>|<text>/);
-  assert.match(said, /jarl\.mjs set "<ids>" "<status-in-the-log>" --header/);
+  assert.match(said, /jarl\.mjs set "<ids>" "<status-in-the-log>" --by "<who>" --header/);
 });
 
 test('a slice\'s integration branch landed after its issues went done leaves their gate holding', () => {

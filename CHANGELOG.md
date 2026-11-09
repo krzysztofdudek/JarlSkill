@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `verify` prints the git commands that take one side of a record file a merge left conflicted, and names an issue two copies of a loop both leased, with the form that keeps one. An examiner on too weak a model is told how to say so instead of giving a verdict, a coordinator is told to start from its slice's brief, `brief` takes a range of issues, and an issue landed through a slice's own branch keeps its gate.
 - The brief a coordinator is raised with lists the open questions of its slice, says how far each issue in flight has come, and marks which issues are promises or waits, so a coordinator taking over a slice sees what the one before it left open.
 - A worker, a reviewer or a merger is raised with one complete brief the tool prints, every command filled in, and reads nothing else for its role. What each agent is told to do next now shows a takeover that is due, sends a stuck worker's question to whoever directs its work, and lists the work nearest to landing first.
 

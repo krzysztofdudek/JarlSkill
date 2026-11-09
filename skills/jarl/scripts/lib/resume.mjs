@@ -159,7 +159,7 @@ export function renderResume(o, profile = DEFAULT_PROFILE, note = null, asked = 
     `# Resume${o.goal ? ` · ${o.goal}` : ''}`,
     `opened ${o.opened || '?'} · last activity ${o.lastActivity || '?'}${o.archived ? ` · ${o.archived} archived loop(s)` : ''}${profile.declared ? ` · profile ${profile.name}` : ''}`,
     countsLine(st, profile),
-    ...(o.slice !== undefined ? [`scoped to the slice of ${o.slice}, the issues tagged slice:${o.slice}: in flight, waiting, the questions, held and next ready are its own; the rulings, the merge queue, the tips and the log are the loop's`] : []),
+    ...(o.slice !== undefined ? [`scoped to the slice of ${o.slice}, the issues tagged slice:${o.slice}: in flight, waiting, the questions, held and next ready are its own; the rulings, the merge queue, the tips and the log are the loop's: what they show of another slice is the jarl's, not yours`] : []),
     ...(note ? [note] : []),
     '',
   ];

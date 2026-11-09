@@ -15,7 +15,7 @@ import { attachmentOf, journalById, rowLinesText } from './log.mjs';
 import { acceptanceLineCount, acceptanceLines, alignRows, bodyText, evidenceNotes, evidenceParts, evidenceTable, loadIssues, mergedOf, noteLogText, noteText, parseIssue, placeEvidence, removeFields, reviewEntries, setSection, sharedMark, struckNote } from './issues.mjs';
 import { fileKeysOf, repoNames, reposWhere, tipLinesOf, whereLines, whereOf } from './repositories.mjs';
 import { approveKind, carriesCode, inFlightMark, roundSinceLease, sentBack, unmergedCode, unmergedText, gateOf, gateState, reviewSplit, waiverVoid, worksInPlace } from './gate.mjs';
-import { coordinatorOf, sameSlice, sliceNamed, sliceOf, slicesOf } from './slices.mjs';
+import { coordinatorOf, sameSlice, sliceMerger, sliceNamed, sliceOf, slicesOf } from './slices.mjs';
 import { disagreementText, headerReadNotes, recordDisagreements } from './disagreements.mjs';
 import { readLoop, scopedLoop } from './loop.mjs';
 import { checkState, checkWaiting, checkWaitingText, closedNoCheck } from './metrics.mjs';
@@ -798,7 +798,10 @@ export function closedGateFlags(loop) {
         }
       }
       const doneAt = Math.max(-1, ...events.filter((e) => e.type === 'move' && profile.is(e.to, 'closes-record')).map((e) => e.n));
-      if (merges.some((m) => m.n > doneAt)) flag('a merge was recorded after it went done', reopen);
+      // A slice with a merger of its own lands its issues on its integration branch, then that branch on the feature branch:
+      // the later merge is the landing of work already closed on its merge, and asks nothing of the gate.
+      const landsThroughSlice = sliceMerger(loop.goalLines, issue) && merges.some((m) => m.n < doneAt);
+      if (!landsThroughSlice && merges.some((m) => m.n > doneAt)) flag('a merge was recorded after it went done', reopen);
       const unmerged = unmergedCode(issue, g);
       if (unmerged) flag(unmerged.why === 'none' ? 'a code issue done with no merge recorded' : `a code issue done, and ${unmergedText(unmerged)}`, reopen);
     }

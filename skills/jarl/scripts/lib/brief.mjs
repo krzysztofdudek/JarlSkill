@@ -20,7 +20,7 @@ import { findingOfLog, modelLinesIn } from './models.mjs';
 import { loopRules, ruleLines, rulesFor } from './rules.mjs';
 import { IN_FLIGHT_MARKS, issueView } from './evidence.mjs';
 import { baseOf, isGitRepo, issueRepos, refsIn, repoLabel, worktreeState, worktreesOf } from './repositories.mjs';
-import { cmpId } from './ids.mjs';
+import { cmpId, expandIds } from './ids.mjs';
 import { sameLease } from './leases.mjs';
 
 // The tool the commands of a brief run: its own absolute path, under the runtime running it now.
@@ -227,8 +227,7 @@ function findingsOf(loop, issue, events, notes) {
 // The issues a brief is for, as one lease: the ids named, and, when one is leased, every issue of its lease. Two leases, or
 // a lease beside work no lease holds, are refused: a brief is for one agent.
 function leaseIssues(loop, rawIds) {
-  const raw = String(rawIds).split(',').map((s) => s.trim()).filter(Boolean);
-  const named = raw.map((rawId) => {
+  const named = expandIds(rawIds).map((rawId) => {
     const issue = issueNamed(loop.issues, rawId);
     need(issue, `no such issue: ${rawId} — the issues: ${jarlLine('list', '--all')}`, () => ({ arg: 0, value: hole('<id>') }));
     return issue;
@@ -342,7 +341,8 @@ function reviewerCommands(ctx, issues, lease) {
   const diffs = lease.branch ? lease.repos.map((r) => ({ what: `the diff in ${r.label}`, command: printCommand(['git', '-C', r.repo, 'diff', `${r.base}...${lease.branch}`], { globals: [] }) })) : [];
   const each = issues.map((i) => ({ forIssue: i.id, what: `a re-run of a line of ${i.id}`, command: tool('evidence', i.id, '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>'), '--by', hole('<reviewer>')) }));
   return [...diffs, ...each,
-    { what: 'the verdict, as the last step (with `--outside "<finding-outside-the-issue>"` for each finding outside the issue, filed as a new issue, never a reason for changes)', command: verdict }];
+    { what: 'the verdict, as the last step (with `--outside "<finding-outside-the-issue>"` for each finding outside the issue, filed as a new issue, never a reason for changes)', command: verdict },
+    { what: 'a model below that tier, instead of a verdict', command: tool('ask', hole('<text>'), '--kind', 'escalation', '--issue', issues[0].id, '--by', hole('<reviewer>')) }];
 }
 
 function issueData(root, loop, issue, role) {
@@ -462,6 +462,7 @@ function sliceBrief(root, loop, name) {
   const stageOf = (i) => { if (!loop.profile.is(i.status, 'holds-claim')) return {}; const mark = inFlightMark(loop, i); return mark === 'no-rows' ? {} : { stage: IN_FLIGHT_MARKS[mark] }; };
   return {
     role: 'coordinator', slice, declared, roles: ['coordinator'], moments: [...COORDINATOR_MOMENTS].sort(),
+    firstMoves: [jarlLine('resume', '--slice', slice, '--as', slice), jarlLine('next', '--as', slice)],
     issues: inPlay.map((i) => ({ id: i.id, title: i.title, status: i.status, worker: fieldText(i.fields.worker) || null, ...(i.tree && i.tree.parent ? { parent: i.tree.parent.id } : {}), ...(loop.profile.keptKind(i.kind) ? { kept: loop.profile.keptKind(i.kind) } : {}), ...stageOf(i) })),
     questions: questions.map((a) => ({ id: a.id, kind: a.kind || 'stuck', issue: a.issue ?? null, question: a.question })),
     rules, reference: REFERENCES.coordinator,
@@ -547,7 +548,7 @@ function renderReviewer(o, out) {
   for (const p of o.parents) section(out, `Why ${p.id} exists`, `${p.id} is part of ${p.parent.id} (${p.parent.title}): ${p.parent.why}`);
   for (const issue of o.issues) out.push(issue.text, '');
   section(out, 'Where to look', [
-    `Depth: ${depth.says}. Run at tier ${depth.tier} or above${depth.secondFamily ? `, on ${depth.secondFamily} where you can` : ''}.`,
+    `Depth: ${depth.says}. Run at tier ${depth.tier} or above${depth.secondFamily ? `, on ${depth.secondFamily} where you can` : ''}. On a model below that tier give no verdict: say so with the question below, and stop.`,
     lease.inPlace ? 'No branch: the work is in the files the issue declares.' : `Branch ${lease.branch ?? 'none'}.`,
     ...lease.repos.map((r) => `Repository ${r.label} (${r.repo}), base ${r.base}${lease.branch ? `, worktree ${r.worktree ?? 'none here'}` : ''}.`),
     `Loop root: ${o.root}. Tool: ${RUNTIME} ${o.script}. Read-only: never \`git checkout\` in the main checkout; reproduce with \`git show\` or \`git archive\` into a scratch directory.`,
@@ -650,6 +651,7 @@ export function renderBrief(o) {
   if (o.role === 'coordinator') {
     out.push(`The coordinator's brief for the slice ${o.slice} (slice:${o.slice}), assembled from the record; it writes nothing.`);
     out.push(...o.notes.map((n) => `note: ${n}`), '');
+    out.push('## Your first moves', '1. This brief.', ...o.firstMoves.map((c, k) => `${k + 2}. ${c}`), `Your business is the slice ${o.slice} alone: \`resume\` without --slice and the record files show the whole loop, and what they show of another slice is not yours to report or to act on.`, '');
     out.push(`## The issues of the slice in play (${o.issues.length})`);
     out.push(...(o.issues.length ? o.issues.map((i) => `- ${i.id} ${i.status}${i.kept ? ` · ${i.kept}` : ''}${i.worker ? ` · ${i.worker}` : ''} · ${i.title}${i.parent ? ` · sub-issue of ${i.parent}` : ''}${i.stage ? ` · ${i.stage}` : ''}`) : ['- (none)']));
     if (o.questions.length) out.push('', `## Open questions of the slice (${o.questions.length})`, ...o.questions.map((q) => `- a-${q.id} (${q.kind})${q.issue ? ` · issue ${q.issue}` : ''} · ${q.question}`));

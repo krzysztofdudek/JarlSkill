@@ -1,6 +1,6 @@
 // The done gate: the window of the log it reads, what clears it and what stands in its way.
 
-import { fieldText } from './base.mjs';
+import { fieldText, jarlLine } from './base.mjs';
 import { jarlDir } from './where.mjs';
 import { idKey } from './ids.mjs';
 import { BOT_PREFIX, clearsOf, clearsWords, reviewerRule } from './profile.mjs';
@@ -509,6 +509,11 @@ export function leaseConflictOf(loop, issue) {
   const events = (loop.eventsById.get(issue.id) || []).filter((e) => (e.key ?? null) === null || e.key === (issue.fields.key || null));
   return leaseConflict(loop.profile, events);
 }
+
+// A lease conflict in words, and the form that keeps one of the two leases: read by next --as and by verify.
+const leaseWords = (e) => `${e.writer}${e.lease?.worker ? ` (worker ${e.lease.worker}${e.lease.branch ? `, ${e.lease.branch}` : ''})` : ''} at ${e.at}`;
+export const leaseConflictText = (c) => `leased twice with no move out between: by ${leaseWords(c.first)} and by ${leaseWords(c.second)}, in two copies of the loop that each leased it before either saw the other; settle which lease stands`;
+export const leaseConflictForm = (profile, id) => jarlLine('set', id, statusWith(profile, 'holds-claim'), '--handover', '--branch', '<branch>', '--worker', '<name>', '--model', '<model-id>', '<why-the-worker-changed>');
 
 // The worker and the branch a lease line names, or null when it names neither.
 function leaseHolder(e) {
