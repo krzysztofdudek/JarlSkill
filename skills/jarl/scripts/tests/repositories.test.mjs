@@ -808,3 +808,20 @@ test('a --repo given as a link into a repository is told from a directory outsid
   assert.equal(r.status, 0, r.stderr);
   assert.doesNotMatch(r.stderr, /not a git repository/);
 });
+
+test('a directory named .git that holds no repository is no repository: git is not started to find that out', { skip: process.platform === 'win32' && 'a stand-in named git needs a shebang, and Windows runs none' }, () => {
+  const top = mkdtempSync(join(tmpdir(), 'jarl-empty-git-'));
+  if (spawnSync('git', ['rev-parse', '--git-dir'], { cwd: top, encoding: 'utf8', timeout: SPAWN_TIMEOUT }).status === 0) return;   // a working tree above the temporary directory would rightly be asked
+  const bin = join(top, 'bin');
+  mkdirSync(bin);
+  const log = join(top, 'git-calls');
+  writeFileSync(join(bin, 'git'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\nPATH='${process.env.PATH}'\nexec git "$@"\n`, { mode: 0o755 });
+  const root = join(top, 'checkout');
+  mkdirSync(join(root, '.git'), { recursive: true });
+  jarl(root, 'init', 'a goal');
+  jarl(root, 'new', 'one', '--acceptance', '[read] it works');
+  writeFileSync(log, '');
+  const r = spawnSync(process.execPath, [SCRIPT, 'brief', '1', '--role', 'reviewer', '--root', root], { encoding: 'utf8', timeout: SPAWN_TIMEOUT, env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(readFileSync(log, 'utf8').split('\n').filter((l) => l === 'rev-parse --git-dir'), []);
+});
