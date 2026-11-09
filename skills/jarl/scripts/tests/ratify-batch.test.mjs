@@ -216,7 +216,7 @@ test('a graph without a working yg writes nothing and says why', () => {
   assert.deepEqual(yg.calls().map((c) => c.args), [['--version']]);
 });
 
-test('the whole close with a graph: batch, answers, close — and the loop closes with an item still unanswered', () => {
+test('the whole close with a graph: batch, answers, close — an item still unanswered holds it, and --force closes over it', () => {
   const yg = stub();
   const root = loop({ graph: true });
   const env = { JARL_YG: yg.bin };
@@ -225,7 +225,8 @@ test('the whole close with a graph: batch, answers, close — and the loop close
   const text = jarl(root, env, 'close', '--batch');
   assert.match(text, /^to ratify \(2\)[\s\S]*a-1 · area handler · 40 files · wide[\s\S]*a-2 · area job · 4 files · narrow[\s\S]*nothing closed/);
   jarl(root, env, 'answer', 'a-1', 'yes');
-  const closed = json(root, env, 'close');
+  assert.match(runJarl(root, ['close'], { env }).stderr, /^1 question\(s\) still open: a-2 — /);
+  const closed = json(root, env, 'close', '--force');
   assert.equal(closed.closed, true);
   assert.deepEqual(closed.batch.items.map((i) => i.ruling), ['narrow']);
   assert.ok(!existsSync(join(root, '.jarl')));

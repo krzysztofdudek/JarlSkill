@@ -706,7 +706,10 @@ export function cmdClose(root, flags = {}) {
   const deferred = loadIssues(root).filter((i) => i.status === 'deferred').map((i) => i.id);
   const permanent = existsSync(join(jarlDir(root), '.permanent'));
   need(permanent || flags.force || deferred.length === 0, `${deferred.length} issue(s) deferred: ${deferred.join(', ')} — close removes .jarl/ with them, and deferred work waits, it is not gone. Keep it: ${jarlLine('archive', '<slug>')} puts the loop under .jarl/archive/ with its deferred issues. Or remove it with them, on the owner's word (close --force)`, () => (['jarl.mjs', 'archive', '<slug>', ...(typeof flags.by === 'string' ? ['--by', flags.by] : [])]));
-  // The ratification batch is assembled here and never holds the close: in a permanent loop its items stay open for
+  // A question nobody has answered leaves with the directory, and nothing else holds it: only a loop that keeps its record closes over one.
+  const unanswered = loadAsks(root).filter((a) => a.state === 'open').map((a) => `a-${a.id}`);
+  need(permanent || flags.force || unanswered.length === 0, `${unanswered.length} question(s) still open: ${unanswered.join(', ')} — close removes .jarl/ and every question with it, and nothing else holds an unanswered question; have each answered, or close --force removes them with it`, () => ['jarl.mjs', 'answer', hole('<question>'), hole('<text>'), '--by', hole('<the-owner-himself>')]);
+  // The ratification batch this close files is assembled here and never holds it: in a permanent loop its items stay open for
   // the owner's word; in a loop on a branch the rulings no one ratified leave with the directory, rulings of that loop.
   // In the committed mode the archive is committed content: leaving it would put .jarl/archive/ on the branch that merges to
   // main, so close refuses while it holds anything, unless --force removes the whole directory.
