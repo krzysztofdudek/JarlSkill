@@ -428,7 +428,7 @@ test('the merger\'s brief names the checkout that holds the target branch, since
   jarl(dir, 'init', 'goal');
   jarl(dir, 'new', 'one', '--acceptance', '[read] it works', '--files', 'a.md');
   const text = jarl(dir, 'brief', '--role', 'merger');
-  const top = realpathSync.native(dir).replaceAll('\\', '/');   // git prints a Windows path with slashes, and the short name of the runner's temporary directory in full
+  const top = realpathSync.native(dir);   // git prints the short name of the runner's temporary directory in full
   assert.ok(text.includes(`Merge in ${top}: it holds feature`), text);
   assert.doesNotMatch(text, /in your own worktree: git/);
   assert.match(text, /a second worktree of a checked-out branch is refused/);

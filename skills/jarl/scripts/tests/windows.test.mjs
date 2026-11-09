@@ -66,6 +66,13 @@ test('a test reads every command a Windows run prints in one spelling: past a pl
   assert.ok(COMMAND_ARGS.field, 'the command table is read');
 });
 
+test('a path git printed is named as the platform names it: slashes become backslashes on Windows, and a backslash elsewhere is a letter of the name', async () => {
+  const { nativePath } = await import('../lib/where.mjs');
+  assert.equal(nativePath('C:/Users/runneradmin/Temp/wt', 'win32'), 'C:\\Users\\runneradmin\\Temp\\wt');
+  assert.equal(nativePath('//server/share/wt', 'win32'), '\\\\server\\share\\wt');
+  assert.equal(nativePath('/tmp/a\\b/wt', 'linux'), '/tmp/a\\b/wt');
+});
+
 test('the words of a printed command, in the spelling the platform printed them', async () => {
   const { wordsOfPrinted } = await import('./helpers.mjs');
   assert.deepEqual(wordsOfPrinted('node "D:\\a b\\jarl.mjs" merge-driver flags', 'win32'), ['node', 'D:\\a b\\jarl.mjs', 'merge-driver', 'flags']);
