@@ -294,7 +294,7 @@ test('a promise is on whoever its Found by names until it is kept and closed, an
   // Each one is on its maker's list, with the command that moves it.
   const mine = json(root, 'next', '--as', 'jarl', '--all');
   assert.deepEqual(mine.rows.map((r) => [r.id, r.what]), [['2', 'promise'], ['1', 'ready']], 'the bench holds 5 up, so it comes first');
-  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 2 run the bench again after the fix: promised by the jarl; keep it, then record what was done — jarl\.mjs evidence 2 --ran "<command>" --saw "<what-it-printed>" --by jarl · holds up 5$/m);
+  assert.match(jarl(root, 'next', '--as', 'jarl'), /^- 2 run the bench again after the fix: promised by the jarl; keep it, then record what was done — jarl\.mjs evidence 2 --ran "<command>" --saw "<what-it-printed>" --line "<line-number>" --by jarl · holds up 5$/m);
   assert.match(jarl(root, 'next', '--as', 'jarl', '--all'), /^- 5 after the bench: waits on the jarl via 2$/m);
   assert.match(jarl(root, 'next', '--as', 'owner'), /^On the owner \(1\)\n- 3 read the draft by Friday: promised by the owner; keep it, then record what was done — jarl\.mjs evidence 3 /);
   assert.match(jarl(root, 'next', '--as', 'ada'), /^On Ada \(1\)\n- 4 send the summary to the jarl: promised by Ada; keep it, then record what was done — /);
@@ -331,7 +331,7 @@ test('a wait is on its named outside person, with when to check, and what comes 
   const dana = jarl(root, 'next', '--as', 'dana smith', '--all');
   assert.equal(dana, [
     'On Dana Smith (1)',
-    "- 1 the licence key from the vendor: waits on Dana Smith, check when 2026-11-10; when it comes, record it — jarl.mjs evidence 1 --ran \"<command>\" --saw \"<what-it-printed>\" --by \"<who>\" · holds up 2",
+    "- 1 the licence key from the vendor: waits on Dana Smith, check when 2026-11-10; when it comes, record it — jarl.mjs evidence 1 --ran \"<command>\" --saw \"<what-it-printed>\" --line \"<line-number>\" --by \"<who>\" · holds up 2",
     '',
     'Waiting on Dana Smith (1)',
     '- 2 install with the key: waits on Dana Smith via 1',

@@ -103,7 +103,7 @@ commands:
                                                  --tags, --repo and --only repeat, or take a comma list
   sources [<findings.json>...] [--source <report-dir>] per report: its findings, the issues filed from them and their
                                                  status; with a findings file, the findings nobody filed too
-  evidence <ids> "<text>" | --ran "<command>" --saw "<what-it-printed>" --line <line-number> --by who | <id> --file <path> --slot <name> --by who
+  evidence <ids> "<text>" --by who | --ran "<command>" --saw "<what-it-printed>" --line <line-number> --by who | <id> --file <path> --slot <name> --by who
                                                  append a free-text note (under ### Notes), or one checkable row per --ran/--saw
                                                  pair (repeatable; under ### Proof, after the last row);
                                                  --line names the acceptance lines each row of the call proves, 1 for
@@ -186,7 +186,7 @@ commands:
                                                  owner (see tick). A live approve (with no changes verdict standing, as a
                                                  changes stands until a round or a new commit) and, on an issue whose
                                                  lease records a Branch, a merge recorded (merged) are asked for too
-  merged <ids> --sha <sha> [--ran "<command>" --saw "<what-it-printed>" | --red <id>] [--ci pending|green|red|none] [--repo <name-or-path>] [--keep] --by who | <ids> --ci <ci-state>
+  merged <ids> --sha <sha> [--ran "<command>" --saw "<what-it-printed>" | --red <id>] [--ci pending|green|red|none] [--repo <name-or-path>] [--keep] --by who | <ids> --ci <ci-state> --by who
                                                  the merge as fields: Merged (sha, and where with --repo) and CI
                                                  (only when given; pending: a pushed commit whose CI will report;
                                                  none: no CI to wait for), and a log line. --ran/--saw record the
@@ -475,7 +475,7 @@ commands:
                                                  no usage or budget from the host; next, the takeover and the notes of the
                                                  fresh-review rule keep under it, and profile refuses a model no Model
                                                  line of the goal places
-  extend section "<name>" | extend field "<name>" [--values "<items>"] [--default "<value>"] [--required] --by who
+  extend section "<name>" --by who | extend field "<name>" [--values "<items>"] [--default "<value>"] [--required] --by who
                                                  add one section or one field to the profile of a live loop (a loop
                                                  with none gets one, with the built-in statuses), checked as profile
                                                  <profile.json> checks a file, with a log line; the issues already filed

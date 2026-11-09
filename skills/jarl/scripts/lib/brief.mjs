@@ -432,7 +432,7 @@ function mergerBrief(root, loop, slice, ctx) {
     { what: 'a green merge', command: tool('merged', hole('<ids>'), '--sha', hole('<sha>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), ...repoFlag) },
     { what: 'a red, the work\'s fault', command: tool('round', hole('<id>'), hole('<text>')) },
     { what: 'a red from outside the branch', command: tool('new', hole('<what-is-red>'), '--tier', hole('<tier>')) },
-    { what: 'a landing on red', command: tool('merged', hole('<ids>'), '--sha', hole('<sha>'), '--red', hole('<id>')) },
+    { what: 'a landing on red', command: tool('merged', hole('<ids>'), '--sha', hole('<sha>'), '--red', hole('<another-issue>')) },
     { what: 'closing each issue', command: tool('set', hole('<id>'), 'done', hole('<text>')) },
     { what: 'the in-place commit, its sha printed', command: tool('evidence', hole('<id>'), '--ran', hole('<command>'), '--saw', hole('<what-it-printed>'), '--line', hole('<line-number>')) },
     { what: 'its changelog entries', command: tool('changelog', hole('<ids>')) },
