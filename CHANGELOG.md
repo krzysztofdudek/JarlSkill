@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [6.3.0] - 2026-11-09
+
+Jarl 6.3.0 lets coordinators each run their own part of a loop, makes every write name who made it, and raises each worker, examiner and merger with one complete brief the tool prints. It reads only one record format, so a loop kept by 6.2.0 is converted once before it is used again.
+
+### Before you upgrade
+
+- Jarl 6.3.0 reads one record format, the one whose `goal.md` holds the line `Format: 4`. A loop kept by 6.2.0 or an older Jarl is refused on every command, with a message that names `references/converting-from-6-2.md` in the skill. There is no conversion command: once nobody else is writing the loop, an agent converts it by following that file. Nothing the loop held is lost; lines Jarl could not place carry the writer `unrecorded`, and rows that named no line stay as history.
+- A tool built on Jarl's record library takes `jarl-record/4`, the library's one contract, and reads only that format. If you copy the library into your own tool, copy the `scripts/lib/` folder too: it sits next to `record.mjs` and `jarl-lib.mjs`, and the library does not work without it.
+
 ### Added
 
 - An issue that names several repositories is done only when its branch has landed in each repository where it has work; the merge queue keeps the ones that have not. The page of numbers shows the lines by method and the count per stage.
@@ -62,8 +71,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- Jarl reads one record format, the one that holds the line `Format: 4` in `goal.md`. A loop kept by the released version is refused on every command, with a message that names `references/converting-from-6-2.md` in the skill. An agent converts the loop once by following that file: there is no conversion command, and nothing is lost that the loop held; lines Jarl could not place carry the writer `unrecorded` and rows that named no line stay as history.
-- Only the current format is supported. A loop that another tool runs on the record library keeps working through that library's one contract, but what the tool could do with older records is gone, and a project that vendors the record library now takes `jarl-record/4`.
 - A raised worker, examiner or merger reads only the brief the tool prints. The skill itself is short and read by whoever directs the loop; the rarely needed material moved to the command reference, read on demand. `--help` now prints one line per command, and `<command> --help` one command's usage; `jarl_help` still prints all of it.
 - Every acceptance line now starts with how it will be proved: `[test]`, `[check]`, `[compare]`, `[read]` or `[owner]`. A line without one is refused when you write it. A task cannot be started until it has at least one line.
 - A task closes when each line has what its method asks. A test needs a proof row from the worker and one from someone else. A read line needs an approve and no row.
@@ -74,7 +81,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A task worked on its own branch can be closed only after its merge is recorded. Before, Jarl closed it without one and then flagged it as closed wrongly. A task without a branch closes as before.
 - A new loop cannot use the words Person and Check when for fields of its own, or promise and wait for kinds of its own, because Jarl now uses them itself. A loop that already uses them keeps working as before. Jarl's own promises and waits are off there, as they are in any loop whose profile lists its own kinds.
 - A task another worker already holds, or one that would touch a file or resource another worker holds, is now refused when you start it, naming who holds it, instead of quietly replacing that worker. Adding such a file or resource to a task that is already started is refused the same way. To give a held task to someone else, say it is a handover and why.
-- If you copy Jarl's record library into your own tool, copy the `scripts/lib/` folder too. It now sits next to `record.mjs` and `jarl-lib.mjs`, and the library does not work without it.
 - When a new issue is filed without a kind or a priority, Jarl says which one it took and names the option that sets it, as it already does for the tier.
 - When more than one coordinator has work in play, a task can only be started once it says which files or shared resources it touches, so work in two parts of the backlog cannot collide unseen. The refusal names the command that adds them.
 - Every change to a task's description now goes through one command, `field`: give a part a value to replace it, or add to it, take items off it or clear it with `--add`, `--remove` or `--clear`, and a section such as the acceptance can be added to as well. The commands that each changed one part, `body`, `tag`, `prio`, `files`, `repo`, `source` and `after`, are gone: using one prints the form of the `field` call that does the same, for you to fill in. A repository's base branch is changed with `base`, and `set` takes statuses only.
@@ -103,12 +109,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - After three failed rounds on a task, Jarl suggests a different model or a changed approach for the next worker, and never a level above the strongest. The suggestion names every model that has worked on the task, and offers no level up for a task whose level the loop does not list. The next suggestion comes after three more rounds, not on every round. A round can record how many findings it left, so a task that is getting better can be told from one that is stuck; a round that recorded none shows as a dash in its place.
 - Pausing a task and picking it up again no longer throws away its test results and its review, as long as nobody changed its code in between. A new change to the code still asks for new results and a new review.
 - Tags, files, issue numbers and the other lists can be given to the tools as a real list, and each item is stored on its own, so filtering by a tag finds the issue. A list typed out as text, in brackets with more than one item or with quotes, is refused with a message that says how to write it, and so is a tag or an issue number that holds a bracket or a quote mark, and any item that starts with a dash. A file name in brackets, such as [id], is kept as a path.
-- When two copies of a shared loop each file an issue and are then merged, both issues can get the same number. Jarl now says so and names both files, refuses to change either one by that number, and shows each one at the status its own file says, so one issue's status is never copied into the other. Neither can be closed or approved under that number, because Jarl cannot tell whose test results and reviews are whose: you file the work again under a new number. It also says how to give one of them a new number by hand.
 - When a repository is kept by its path rather than by its name, Jarl explains why the first time it happens in a loop, and again if the reason changes. It no longer repeats the same explanation on every new issue that names the same repository.
 - Recording a merge now warns when the branch got new commits after its review was approved. The warning names the reviewed commit and the merged one, and gives the commands that show the difference and record a new review. The merge is still recorded.
 - `resume` and `decisions` show an answered question with its answer first, then the question.
 - `models` counts a model written with dots and the same model written with dashes, such as `claude-opus-5.5` and `claude-opus-5-5`, as one model, and its row names both spellings. A review or a task that uses the other spelling gets a note naming the spelling the record holds.
-- A comma in a `tag` command separates tags: `+a,b` adds `a` and `b`, and `-a,b` removes both. Before, the command added one tag named `a,b`.
 - A task that is approved and carries no code is no longer shown as queued for the merge in the status and the resume, where the merge queue never lists it. They now say that no merge waits and that it is ready to be set done.
 - `set` given the name of an issue's own field, such as Priority, Tags, Files, Repo, After or Source, now says it is a field and ends with the `field` call that writes it, as it does for a field the profile declares. Before, it listed the statuses.
 - When a new issue is filed with nobody named as having found it, the note on the empty field now gives the `field` call that sets it. Before, it said the name could only be given when filing.
@@ -122,14 +126,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Importing research findings now checks every finding before it writes anything. If one cannot be filed, the whole file is refused, the finding is named and the loop stays as it was. Before, the findings ahead of it were already filed, or an issue already adopted, and a loop that cannot take a repository name wrote a change and then said nothing was written.
 - A findings file, a profile or a goal saved by an editor that puts a byte order mark at the start, as Windows editors do, is now read like any other. Before, a findings file saved that way was refused as not JSON.
 - An answer to an item waiting for the owner's approval must start with a word that approves or rejects it, such as yes or reject. Any other answer is refused, so it is always clear what the owner decided.
-- A question asking the owner to start a fresh session for a review now holds the review only when it is a plain question, not an item to ratify or an escalation, and a list of numbers written with no space after its commas is read as a list. The line for several tasks waiting for a review now names each task with its title and worker.
-- When two copies of a loop each leased the same task, the command Jarl offers to settle it now works whichever of the two leases you keep, including the one the task's file already shows. A conflict git left in an issue file after a stray opening line is reported at the line where the conflict itself begins.
 - A finished task whose branch was deleted after its merge stays finished when a branch with the same name is made again later. Before, the task could show as missing its test result and its review.
-- A decision can no longer be recorded as resting on a rule that has ended, and the list of rulings in force shown when it is refused leaves ended rules out. Before, such a decision was taken and then shown as resting on a ruling not in force.
-- When a coordinator's part of the backlog is in progress, the tasks that belong to no part count as one more part. Starting work on any task that names neither its files nor its resources is then refused, as it is between two coordinators' parts.
 - A tool built on Jarl's record library can now name who changed a task's tags, priority, files or source, and the log shows that name.
-- Changing a long Where of a task now keeps only its first 120 characters and its length in the log, as a changed section does. Before, the whole old text went into the log.
-- The notes about a conflict marker or a mention of a task in a branch or a merge now name the file when its name holds a space, a letter beyond plain English or a quote. Before, such a note named no file.
 - When `models`, a check of a task's repository, a filing from a second copy of the checkout or a lock refuses and names the loop's folder, it now writes the folder in quotes, so a name with a line break or a shell sign stays on its line and runs nothing when the message is pasted.
 - When a repository has a declared base branch, the cleanup after a merge and a loop that closes tasks only on a landed merge now look at that base, as the note about the merge does. Before, they looked at the branch the main checkout had open, so the cleanup could delete the base branch and a task merged into the base could be refused.
 - The check of a worker's branch, the list of branches and the merge queue now measure the work against a repository's declared base branch too. Before, they used the branch the main checkout had open, so a branch merged only there could look finished.
@@ -249,7 +247,8 @@ Jarl 6.1.0 lets one loop drive work across several repositories, keeps the loop 
 - Three standing helpers the loop raises so the director's own context is spent on the client: a reeve that runs the loop day to day and reports back on four occasions only, a fresh reviewer per branch, and a merger that verifies and merges one branch at a time. Worker branches are named by issue and never leave the machine.
 - Installable as a Claude Code plugin, a GitHub Copilot CLI plugin, a Codex CLI plugin and a Cursor plugin, or as a single file dropped into any agent's skill directory.
 
-[Unreleased]: https://github.com/krzysztofdudek/JarlSkill/compare/v6.2.0...HEAD
+[Unreleased]: https://github.com/krzysztofdudek/JarlSkill/compare/v6.3.0...HEAD
+[6.3.0]: https://github.com/krzysztofdudek/JarlSkill/compare/v6.2.0...v6.3.0
 [6.2.0]: https://github.com/krzysztofdudek/JarlSkill/compare/v6.1.1...v6.2.0
 [6.1.1]: https://github.com/krzysztofdudek/JarlSkill/compare/v6.1.0...v6.1.1
 [6.1.0]: https://github.com/krzysztofdudek/JarlSkill/compare/v0.1.0...v6.1.0
