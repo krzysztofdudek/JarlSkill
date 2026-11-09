@@ -1,10 +1,10 @@
-<p align="center"><img src="assets/social-card.png" alt="Jarl: on a feature branch, the agent files everything it sees as an issue, gives each issue a worker in its own worktree, and closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough, or the owner waives the review." width="720"></p>
+<p align="center"><img src="assets/social-card.png" alt="Jarl: on a feature branch, the agent files everything it sees as an issue, gives each piece of work one worker in its own worktree, and closes nothing without proof of its lines and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough, or the owner waives the review." width="720"></p>
 
 # Jarl
 
 **Your feature branch has more issues than one agent can hold in its head, so it fixes one, forgets two, and loses the third in the diff.** Jarl makes the agent direct a crew instead of working alone.
 
-On a feature branch, the agent files everything it sees as an issue, gives each issue a worker in its own worktree, and closes nothing without recorded evidence and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough, or the owner waives the review.
+On a feature branch, the agent files everything it sees as an issue, gives each piece of work one worker in its own worktree, and closes nothing without proof of its lines and an approval, from a fresh reviewer when the issue carries code, unless the loop's done gate asks no approve and a merge is enough, or the owner waives the review.
 
 ## What you install
 
@@ -22,7 +22,7 @@ Then run `/reload-plugins` or restart Claude Code. Needs Node.js 22 or newer on 
 | The Jarl skill, `/jarl` | your Claude Code plugins | Makes the agent the jarl of the branch: it files, schedules, raises workers, has them reviewed and merged. | When you run `/jarl <goal>`, or a session starts in a checkout that already has `.jarl/`. |
 | The `jarl` MCP server | the plugin | Every command of the tool as an MCP tool (`jarl_resume`, `jarl_status`, `jarl_new` and the rest), the writing ones included. | Started with the session. |
 | `.jarl/` | root of your main checkout; by default ignored by git through its own `.jarl/.gitignore` | The goal, the issues, the rulings, the questions to you and the log of every move. | From the first `/jarl` until the loop closes. |
-| Worker branches and worktrees | your local git | One per issue, or per package of small neighbouring issues. | While the issue is in progress. |
+| Worker branches and worktrees | your local git | One per piece of work: a single issue, or a package of small neighbouring issues. | While the issue is in progress. |
 | Merge commits | your feature branch | The merger merges each approved branch with a commit that names the issue, then runs the check on the result. | After a fresh reviewer approves. |
 | Entries in Yggdrasil's logs | `.yggdrasil/`, only when the repository has a graph and a working `yg` | The rulings about a whole type of code that you ratified at close, written with `yg log add`. | At close, after your yes. |
 
@@ -61,28 +61,41 @@ A plain skill folder: copy the whole [`skills/jarl/`](skills/jarl/) directory, `
 ## What changes on the first day
 
 - Everything anybody sees becomes an issue before anything is touched, so there are no fixes on the side.
-- Issues that touch the same files run one after another; the rest run in parallel, each in its own worktree.
+- Each acceptance line says how it is proved: a test, a command, a comparison, a reader's judgement, or the owner. Exactly that method is carried out.
+- Issues that touch the same files run one after another; the rest run in parallel.
+- Each piece of work gets one worker in its own worktree, and a worker carries one issue or several small neighbouring ones.
 - A worker's report counts as a claim until a fresh reviewer reads the diff and checks that the new test was red before the change and green after.
+- One fresh reviewer takes each piece of work: it invents and runs scenarios the acceptance lines do not name.
 - Once a branch is approved, the merger merges into the feature branch with a commit that names the issue and runs the check on the result.
-- In the record, nothing is closed without recorded evidence and an approve, from a fresh reviewer when the issue carries code, unless the done gate's `clears` setting names who clears an issue instead (fresh, the owner, a named bot, or several reviewers who must approve together); a profile whose done gate asks no approve closes on recorded evidence and a merge in the base, which it must require; a profile can also require attached files before a kind of issue closes. The tool refuses an approve by a self (the issue's worker, anyone who has held its lease, or a worker of another issue on the same branch), and `status` and `report` say who reviewed the done work: fresh, waived by the owner (his ruling that waives the review; it stands as the fresh reviewer's approve), coordinator, self, relayed (a fresh approve someone else recorded in the reviewer's name), bot, retracted when an approve was taken back and none stands, and unrecorded, then how many of every verdict recorded are relayed or a bot's.
+- In the record, nothing is closed without an approve, from a fresh reviewer when the issue carries code.
+- A line proved by a test, a command or a comparison also needs a recorded run of it; a line proved by reading needs none.
+- The tool refuses an approve by a self (the issue's worker, anyone who has held its lease, or a worker of another issue on the same branch).
 - The agent asks you when a protection would weaken, the goal would change, or work reaches outside the session.
 - The next session runs `resume` and picks up from the files, not from memory.
+
+## Who clears an issue
+
+The profile of the loop sets the done gate; every setting is in [the profile reference](skills/jarl/references/profile.md).
+
+- The gate follows the profile: a profile whose done gate asks no approve closes on recorded evidence and a merge in the base, which it must require.
+- Beyond the approve, a profile can also require attached files before a kind of issue closes.
+- A fresh reviewer's approve clears an issue unless the done gate's `clears` setting names who clears an issue instead (fresh, the owner, a named bot, or several reviewers who must approve together). `status` and `report` say who reviewed the done work: fresh, waived by the owner (his ruling that waives the review), coordinator, self, relayed, bot, retracted when an approve was taken back and none stands, and unrecorded, then how many of every verdict recorded are relayed or a bot's.
 
 ## Start
 
 1. On a feature branch, run `/jarl make the export command handle every fixture in tests/fixtures`.
 
-   You see: the jarl writes `.jarl/goal.md`, reads the fixtures and files what it finds as numbered issues, each with a checkable acceptance line.
+   You see: the jarl writes `.jarl/goal.md`, reads the fixtures and files what it finds as numbered issues, each with acceptance lines that say how each is proved.
 
 2. Let it run.
 
-   You see: issues that touch the same parser queued one after another, the others each given a worker in its own worktree, and each approved branch merged into your feature branch with a commit naming the issue.
+   You see: issues that touch the same parser queued one after another, the others given one worker per piece of work, each in its own worktree, and each approved branch merged into your feature branch with a commit naming the issue.
 
 3. When nothing is open, it closes the loop.
 
    You see: the changelog carries every user-visible change, the suite is green on the tip, and `.jarl/` is deleted. Merging to `main` and pushing wait for you.
 
-To keep the loop in git instead, open it with `init "<goal>" --committed` (it travels with the branch) or `--permanent` (the repository keeps it as a record).
+To keep the loop in git instead, open it with `init "<goal>" --committed --by "<who>"` (it travels with the branch) or `init "<goal>" --permanent --by "<who>"` (the repository keeps it as a record).
 
 ## What it does not do
 
@@ -107,11 +120,11 @@ A closed loop has removed `.jarl/` itself. For an open one, delete `.jarl/` and 
 
 ## Questions
 
-**Can the issues live in one repository while the code is in another?** Yes: name the other repository when you file an issue (`new "<title>" --repo <name>`), and the worker, the reviewer and the merger work there on its own feature branch.
+**Can the issues live in one repository while the code is in another?** Yes: name the other repository when you file an issue (`new "<title>" --repo "<name-or-path>" --by "<who>"`), and the worker, the reviewer and the merger work there on its own feature branch.
 
-**Can a research report become issues?** Yes: `import <findings.json>` files one issue per finding, and a second run files nothing twice.
+**Can a research report become issues?** Yes: `import "<findings.json>" --by "<who>"` files one issue per finding, and a second run files nothing twice.
 
-**Where does Jarl look for the loop?** At the root of a checkout, or of the main checkout from a worktree that holds none, and never in a subdirectory. A loop kept in one is reached with `--root` or an exported `JARL_ROOT` on the command line, with a tool call's `root` field or the server's `JARL_ROOT`, or for every call that follows with `use <path>`. `use` alone lists the loops under the checkout, and where its root holds none and loops are below, a call that names none is refused with that list.
+**Where does Jarl look for the loop?** At the root of a checkout, or of the main checkout from a worktree that holds none, and never in a subdirectory. A loop kept in one is reached with `--root` or an exported `JARL_ROOT` on the command line, with a tool call's `root` field or the server's `JARL_ROOT`, or for every call that follows with `use "<path>"`. `use` alone lists the loops under the checkout, and where its root holds none and loops are below, a call that names none is refused with that list.
 
 **Can another tool read the loop?** `skills/jarl/scripts/record.mjs` is the one stable surface to vendor, under the contract `jarl-record/4` ([the record as a library](skills/jarl/references/composers.md#the-record-as-a-library)).
 
