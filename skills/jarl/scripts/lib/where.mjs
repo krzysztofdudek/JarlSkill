@@ -2,7 +2,7 @@
 // and the clock of its lines.
 
 import { existsSync, readdirSync, realpathSync } from 'node:fs';
-import { join, resolve, dirname, basename, isAbsolute, relative, sep } from 'node:path';
+import { join, resolve, dirname, basename, isAbsolute, relative, sep, win32 } from 'node:path';
 import { echoWord, hole, jarlLine, need, printable, refuse, shellWord } from './base.mjs';
 import { git } from './git.mjs';
 
@@ -132,6 +132,8 @@ function stamp() { return new Date(nowMs()).toISOString().replace('T', ' ').slic
 // '/' everywhere: a path given on Windows is stored with '/' (C:\a\b → C:/a/b, which Windows reads the same). Elsewhere a
 // backslash is an ordinary file-name character and is kept.
 export function portablePath(p, platform = process.platform) { return platform === 'win32' ? p.replace(/\\/g, '/') : p; }
+// A path git printed, as the platform names it to a person: git writes C:/a/b on Windows, where the name is C:\\a\\b.
+export function nativePath(p, platform = process.platform) { return platform === 'win32' ? win32.normalize(p) : p; }
 
 // A file path as one key: portable (see portablePath), without a leading ./, a . segment, a doubled slash or a trailing
 // slash, so ./src/a.mjs, src//a.mjs, src/./a.mjs and src/a.mjs are one file. A .. segment is kept as written: what it

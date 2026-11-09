@@ -5,7 +5,7 @@ import { existsSync, statSync } from 'node:fs';
 import { join, resolve, dirname, basename, relative, isAbsolute } from 'node:path';
 import { afterView, echoWord, fieldText, hole, jarlLine, need, noSeparators, splitList } from './base.mjs';
 import { git, gitHere } from './git.mjs';
-import { canonical, jarlDir, normalPath, portablePath } from './where.mjs';
+import { canonical, jarlDir, nativePath, normalPath, portablePath } from './where.mjs';
 import { readText, writeAtomic } from './files.mjs';
 import { branchNameProblem } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
@@ -220,7 +220,7 @@ function worktreesOf(dir) {
   // The value of an attribute: the text after its name and a space, '' for a name alone, undefined when absent.
   const value = (lines, name) => { const l = lines.find((x) => x === name || x.startsWith(`${name} `)); return l === undefined ? undefined : l.slice(name.length + 1); };
   return blocks.map((lines) => ({
-    path: value(lines, 'worktree') || undefined, branch: /^refs\/heads\/(.+)$/s.exec(value(lines, 'branch') ?? '')?.[1] || null, bare: lines.includes('bare'),
+    path: value(lines, 'worktree') ? nativePath(value(lines, 'worktree')) : undefined, branch: /^refs\/heads\/(.+)$/s.exec(value(lines, 'branch') ?? '')?.[1] || null, bare: lines.includes('bare'),
     locked: value(lines, 'locked') !== undefined, reason: value(lines, 'locked') || undefined, prunable: value(lines, 'prunable') !== undefined,
   })).filter((e) => e.path).map((e, k) => {
     if (k !== 0 || e.bare || !existsSync(join(e.path, 'HEAD')) || existsSync(join(e.path, '.git'))) return e;
