@@ -114,7 +114,7 @@ test('set given a field is refused with the field call that writes it, on the co
   for (const blank of ['', ' ']) assert.equal(refuses(a, 'set', '2', 'Note', blank).trim(), "Note is a field, not a status: field writes it\njarl.mjs field \"<ids>\" Note --clear --by \"<who>\"");
   const said = mcp.callTool('jarl_set', { by: 'test-writer', ids: '3', status: 'resources', text: 'gate', root: a });
   assert.ok(said.isError);
-  assert.match(posixForms(said.content[0].text), /^resources is a field, not a status: field writes it\njarl\.mjs field "<ids>" resources "<resource-name>" '--root=[^']+' --by "<who>"$/);
+  assert.match(posixForms(said.content[0].text), /^resources is a field, not a status: field writes it\njarl\.mjs field "<ids>" resources "<resource-name>" --by "<who>" '--root=[^']+'$/);
   assert.equal(logText(a), before);
   assert.equal(field(a, '3', 'resources') || '', '');
   const toolField = mcp.callTool('jarl_field', { by: 'test-writer', ids: '3', name: 'Note', value: 'through field', root: a });
@@ -134,13 +134,13 @@ test('set given a header field of the tool is refused with the field call that w
   const text = issueText(root, '1');
   const forms = { Priority: '"<prio>"', Tier: '"<tier>"', Kind: '"<kind>"', Tags: '"<tag>"', Files: '"<paths>"', Repo: '"<name-or-path>"', After: '"<ids-it-waits-on>"', Source: '"<report-dir#finding-id>"', Where: '"<text>"', Title: '"<title>"' };
   for (const [name, hole] of Object.entries(forms)) {
-    assert.equal(refuses(root, 'set', '1', name, '1').trim(), `${name} is a field, not a status: field writes it\njarl.mjs field "<ids>" ${name} ${hole}`, name);
+    assert.equal(refuses(root, 'set', '1', name, '1').trim(), `${name} is a field, not a status: field writes it\njarl.mjs field "<ids>" ${name} ${hole} --by "<who>"`, name);
   }
   assert.equal(refuses(root, 'set', '1', 'tags', 'x', '--by', 'w').trim(), 'tags is a field, not a status: field writes it\njarl.mjs field "<ids>" tags "<tag>" --by "<who>"');
-  assert.equal(refuses(root, 'set', '1', 'Found by', 'someone').trim(), 'Found by is a field, not a status: field writes it\njarl.mjs field "<ids>" \'Found by\' "<who>"');
+  assert.equal(refuses(root, 'set', '1', 'Found by', 'someone').trim(), 'Found by is a field, not a status: field writes it\njarl.mjs field "<ids>" \'Found by\' "<who>" --by "<who>"');
   const said = mcp.callTool('jarl_set', { by: 'test-writer', ids: '1', status: 'Priority', text: '1', root });
   assert.ok(said.isError);
-  assert.match(posixForms(said.content[0].text), /^Priority is a field, not a status: field writes it\njarl\.mjs field "<ids>" Priority "<prio>" '--root=[^']+'$/);
+  assert.match(posixForms(said.content[0].text), /^Priority is a field, not a status: field writes it\njarl\.mjs field "<ids>" Priority "<prio>" --by "<who>" '--root=[^']+'$/);
   assert.equal(logText(root), before);
   assert.equal(issueText(root, '1'), text);
   assert.throws(() => L.cmdSet(root, '1', 'Files', 'x'), /Files is a field, not a status: field writes it/);

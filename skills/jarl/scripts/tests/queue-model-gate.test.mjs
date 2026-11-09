@@ -4,6 +4,7 @@
 // review, make it ready. Under the default rule the model never holds a branch back.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as R from '../record.mjs';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';

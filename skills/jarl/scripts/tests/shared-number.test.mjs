@@ -1,6 +1,6 @@
-// One number, two issue files. The write lock hands out numbers within one checkout and its worktrees, so two clones of a
-// committed loop, or two branches of one checkout, that each file an issue take the same number, and git merges the two
-// files without a conflict. These tests hold what Jarl does then: verify names both files, the views say it in place of
+// One number, two issue files. The write lock hands out numbers within one checkout, its worktrees and the refs it holds,
+// so two clones of a committed loop that each file an issue take the same number, and git merges the two files without a
+// conflict. These tests hold what Jarl does then: verify names both files, the views say it in place of
 // a header advice that would copy the log's state into a file it may not belong to, and every command that addresses an
 // issue by that number is refused with both files named, writing nothing. The issues here carry no key: they are filed
 // number alone. Issues told apart by their keys are the subject of two-copies.test.mjs.
@@ -34,9 +34,17 @@ function cloneOf(dir) {
   g('config', 'core.excludesFile', NO_EXCLUDES);
   return { dir: c, g };
 }
-// Files one issue titled `title` in `at` and commits it.
+// Takes the key off the issue `id` and off its filed line, as a file made by hand or by a copy holds none.
+function keyless(dir, id) {
+  const issues = join(dir, '.jarl', 'issues');
+  for (const f of readdirSync(issues).filter((n) => n.startsWith(`${id}-`))) writeFileSync(join(issues, f), readFileSync(join(issues, f), 'utf8').replace(/^\*\*Key:\*\* \S+\n/m, ''));
+  const log = join(dir, '.jarl', 'log.md');
+  writeFileSync(log, readFileSync(log, 'utf8').replace(new RegExp(` key \\S+( by [^·]+· filed ${id} )`), '$1'));
+}
+// Files one issue titled `title` in `at`, with no key, and commits it.
 function fileAndCommit(at, title) {
-  filePlain(at.dir, title, { tier: 'light' });
+  const id = filePlain(at.dir, title, { tier: 'light' });
+  keyless(at.dir, id);
   at.g('add', '-A'); at.g('commit', '-qm', title);
 }
 // The issue files and the log of a loop, to show that a refusal wrote nothing.
@@ -65,7 +73,13 @@ function twoBranches() {
   return a.dir;
 }
 
-for (const [shape, make] of [['two clones of a committed loop', twoClones], ['two branches of one checkout', twoBranches]]) {
+test('two branches of one checkout that each file an issue take two numbers: the second reads the first\'s from its ref', () => {
+  const dir = twoBranches();
+  assert.deepEqual(readdirSync(join(dir, '.jarl', 'issues')).filter((f) => /^[23]-/.test(f)).sort(), ['2-second-on-a.md', '3-second-on-b.md']);
+  assert.equal(run(dir, ['verify']).status, 0);
+});
+
+for (const [shape, make] of [['two clones of a committed loop', twoClones]]) {
   test(`${shape} that each file an issue merge into one number held by two files, and verify names both`, () => {
     const dir = make();
     assert.deepEqual(readdirSync(join(dir, '.jarl', 'issues')).filter((f) => f.startsWith('2-')).sort(), ['2-second-on-a.md', '2-second-on-b.md'], 'git merged both files without a conflict');

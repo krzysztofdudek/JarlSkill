@@ -5,6 +5,7 @@
 // waiver. A round, a reopen or a new commit after it spends it, as it spends an approve.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as R from '../record.mjs';
 import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';

@@ -38,7 +38,7 @@ import * as L from './jarl-lib.mjs';
 export const RECORD_API = 'jarl-record/4';
 
 const read = (root, fn) => { L.resetCaches(); L.needRecordFormat(root); return fn(); };
-const write = (root, fn, by) => { L.resetCaches(); L.needRecordFormat(root); return L.withLock(root, () => (by ? L.withWriter(L.editorOf(by), fn) : fn())); };
+const write = (root, fn, by) => { L.resetCaches(); L.needRecordFormat(root); return L.withLock(root, () => (typeof by === 'string' && by ? L.withWriter(L.editorOf(by), fn) : fn())); };
 
 // ---- the loop: where it is, opening it, reading it ----------------------------------------------
 

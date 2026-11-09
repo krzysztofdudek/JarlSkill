@@ -244,7 +244,7 @@ test('status --as and resume --as end with the asker\'s list; their --json carri
   const status = jarl(root, 'status', '--as', 'owner');
   assert.match(status, /\n\n## On the owner \(2\)\n- a-1 [^\n]*\n- a-2 [^\n]*\nand 1 issue\(s\) waiting on the owner: jarl\.mjs next --as owner --all$/);
   const resume = jarl(root, 'resume', '--as', 'jarl');
-  assert.match(resume, /\n\n## On the jarl \(6\)\n- 5 approved: [^\n]*\n(- [^\n]*\n){5}and 4 issue\(s\) waiting on the jarl: jarl\.mjs next --as jarl --all\n\nRules for the jarl \(4\)\n- jarl:coordinator-escalates  --by "<who>"/);
+  assert.match(resume, /\n\n## On the jarl \(6\)\n- 5 approved: [^\n]*\n(- [^\n]*\n){5}and 4 issue\(s\) waiting on the jarl: jarl\.mjs next --as jarl --all\n\nRules for the jarl \(3\)\n- jarl:coordinator-escalates/);
   assert.deepEqual(json(root, 'status', '--as', 'owner').as.rows.map((r) => r.ask), ['1', '2']);
   assert.equal(json(root, 'resume', '--as', 'jarl').as.total, 6);
   assert.equal(json(root, 'resume').as, undefined, 'without --as nothing is added');
@@ -366,7 +366,7 @@ test('a wait names its person and when to check: new refuses one without them, f
   jarl(root, 'field', '1', 'Check when', 'Friday');
   jarl(root, 'field', '1', 'Kind', 'wait');
   assert.deepEqual(json(root, 'next', '--as', 'Dana').rows.map((r) => [r.id, r.what, r.checkWhen]), [['1', 'wait', 'Friday']]);
-  assert.match(refuses(root, 'field', '1', 'Person', '--clear'), /^1 is a wait, held by its Person and checked when its Check when says: Person is never empty on it — give it another kind first \(jarl\.mjs field "<ids>" Kind "<kind>"\)\njarl\.mjs field "<ids>" Kind "<kind>"\n$/);
+  assert.match(refuses(root, 'field', '1', 'Person', '--clear'), /^1 is a wait, held by its Person and checked when its Check when says: Person is never empty on it — give it another kind first \(jarl\.mjs field "<ids>" Kind "<kind>"\)\njarl\.mjs field "<ids>" Kind "<kind>" --by "<who>"\n$/);
   jarl(root, 'field', '1', 'Person', 'Lee');
   assert.equal(json(root, 'next', '--as', 'Lee').total, 1, 'the wait moves with its Person');
   assert.match(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), /1 field Person · Lee · was Dana/);

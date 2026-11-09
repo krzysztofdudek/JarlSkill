@@ -3,7 +3,7 @@
 // reason. A handover is logged in a shape every reader places, and the views stop alarming about the lease it ended.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gitRepo, jarl, refuses, run, spawnJarl, loop } from './helpers.mjs';
@@ -41,9 +41,10 @@ test('the same holder restating its lease, or a move that names no lease, is not
   jarl(root, 'set', '1', 'in-progress', 'A', '--branch', 'jarl/1-one', '--worker', 'wA');
   jarl(root, 'set', '1', 'in-progress', 'again', '--branch', 'jarl/1-one', '--worker', 'wA', '--model', 'some-model');
   assert.equal(spawnJarl(root, ['set', '1', 'in-progress', 'still going', '--by', 'jarl'], { bare: true }).status, 0);
-  // A lease that names no worker yet is filled in, not replaced.
+  // A lease the record holds with no worker, as a conversion can carry one over, is filled in, not replaced.
   jarl(root, 'field', '2', 'files', 'g.txt');
-  jarl(root, 'set', '2', 'in-progress', 'reserved', '--worker', 'w-held');
+  const key = logText(root).match(/ key (\S+) by [^·]+· filed 2 /)[1];
+  appendFileSync(join(root, '.jarl', 'log.md'), `- 2026-11-08 12:00 key ${key} by unrecorded · 2 → in-progress · reserved\n`);
   jarl(root, 'set', '2', 'in-progress', 'raised', '--branch', 'jarl/2-two', '--worker', 'wC');
   assert.equal(JSON.parse(jarl(root, 'show', '2', '--json')).fields.worker, 'wC');
 });
@@ -190,14 +191,14 @@ test('issues leased in one call, or added to the lease that holds their file, sh
 test('a handover with its reason is accepted and logged, and the new lease replaces the old one', () => {
   const { root } = twoOnOneFile();
   jarl(root, 'set', '1', 'in-progress', 'A', '--branch', 'jarl/1-one', '--worker', 'wA', '--model', 'm-one');
-  const out = JSON.parse(jarl(root, 'set', '1', 'in-progress', 'context grew far beyond the others', '--branch', 'jarl/1-one-b', '--worker', 'wB', '--handover', '--json'));
+  const out = JSON.parse(jarl(root, 'set', '1', 'in-progress', 'context grew far beyond the others', '--branch', 'jarl/1-one-b', '--worker', 'wB', '--model', 'm-two', '--handover', '--json'));
   assert.equal(out.handover, true);
   assert.equal(out.worker, 'wB');
-  assert.match(logText(root), /· 1 → in-progress · context grew far beyond the others · handover · branch jarl\/1-one-b · (?:model test-model · )?worker wB\n/);
+  assert.match(logText(root), /· 1 → in-progress · context grew far beyond the others · handover · branch jarl\/1-one-b · model m-two · worker wB\n/);
   const one = JSON.parse(jarl(root, 'show', '1', '--json'));
   assert.equal(one.fields.worker, 'wB');
   assert.equal(one.fields.branch, 'jarl/1-one-b');
-  assert.equal(one.fields.model, undefined, 'the old worker\'s model is not the new one\'s');
+  assert.equal(one.fields.model, 'm-two', 'the old worker\'s model is not the new one\'s');
   assert.equal(run(root, ['verify']).status, 0, 'verify places the line');
 });
 

@@ -126,14 +126,14 @@ test('the commands that wrote one part each are refused with the reason, then on
   const cases = [
     [['prio', '1', '3'], "prio is not a command; the priority is a field\njarl.mjs field \"<ids>\" Priority \"<prio>\" --by \"<who>\""],
     [['tag', '1', '+a', '-b'], "tag is not a command; tags are a field: field adds them with --add and takes them off with --remove, one call each\njarl.mjs field \"<ids>\" Tags \"<tag>\" --add --by \"<who>\""],
-    [['tag', '1', '-b'], "tag is not a command; tags are a field: field adds them with --add and takes them off with --remove, one call each\njarl.mjs field \"<ids>\" Tags \"<tag>\" --remove --by \"<who>\" --by \"<who>\""],
-    [['files', '1', 'a.mjs', 'b.mjs'], "files is not a command; the files are a field\njarl.mjs field \"<ids>\" Files \"<paths>\""],
-    [['source', '1', 'r/x#1'], "source is not a command; the source is a field\njarl.mjs field \"<ids>\" Source \"<report-dir#finding-id>\""],
-    [['after', '1', '2'], "after is not a command; the issues an issue waits on are a field\njarl.mjs field \"<ids>\" After \"<ids-it-waits-on>\""],
-    [['after', '1', '--clear'], "after is not a command; the issues an issue waits on are a field\njarl.mjs field \"<ids>\" After --clear"],
-    [['repo', '1', '--clear'], "repo is not a command; the repository is a field\njarl.mjs field \"<ids>\" Repo --clear"],
-    [['repo', '--base', 'tool', 'main'], "repo is not a command; a repository's base is changed by base\njarl.mjs base \"<name>\" \"<branch>\""],
-    [['body', '1', '--why', 'a reason', '--acceptance', '[read] a line', '--append'], "body is not a command; every part of the description is written by field, one call per part (--why is Why, --acceptance is Acceptance, --append is --add)\njarl.mjs field \"<ids>\" \"<part>\" \"<value>\" --add"],
+    [['tag', '1', '-b'], "tag is not a command; tags are a field: field adds them with --add and takes them off with --remove, one call each\njarl.mjs field \"<ids>\" Tags \"<tag>\" --remove --by \"<who>\""],
+    [['files', '1', 'a.mjs', 'b.mjs'], "files is not a command; the files are a field\njarl.mjs field \"<ids>\" Files \"<paths>\" --by \"<who>\""],
+    [['source', '1', 'r/x#1'], "source is not a command; the source is a field\njarl.mjs field \"<ids>\" Source \"<report-dir#finding-id>\" --by \"<who>\""],
+    [['after', '1', '2'], "after is not a command; the issues an issue waits on are a field\njarl.mjs field \"<ids>\" After \"<ids-it-waits-on>\" --by \"<who>\""],
+    [['after', '1', '--clear'], "after is not a command; the issues an issue waits on are a field\njarl.mjs field \"<ids>\" After --clear --by \"<who>\""],
+    [['repo', '1', '--clear'], "repo is not a command; the repository is a field\njarl.mjs field \"<ids>\" Repo --clear --by \"<who>\""],
+    [['repo', '--base', 'tool', 'main'], "repo is not a command; a repository's base is changed by base\njarl.mjs base \"<name>\" \"<branch>\" --by \"<who>\""],
+    [['body', '1', '--why', 'a reason', '--acceptance', '[read] a line', '--append'], "body is not a command; every part of the description is written by field, one call per part (--why is Why, --acceptance is Acceptance, --append is --add)\njarl.mjs field \"<ids>\" \"<part>\" \"<value>\" --add --by \"<who>\""],
   ];
   for (const [args, line] of cases) {
     const said = refuses(root, ...args);
@@ -143,7 +143,7 @@ test('the commands that wrote one part each are refused with the reason, then on
   assert.equal(issue(root, '1').priority, '2', 'a refused call writes nothing');
   const tool = mcp.handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'jarl_prio', arguments: { root } } });
   // Its form carries the root the tool call gave, so filled it reaches the loop the call named.
-  assert.equal(posixForms(tool.error.message), `Unknown tool: jarl_prio — prio is not a command; the priority is a field\njarl.mjs field "<ids>" Priority "<prio>" --by "<who>" --by "<who>" --by "<who>" ${L.shellWord(`--root=${root}`)}`);
+  assert.equal(posixForms(tool.error.message), `Unknown tool: jarl_prio — prio is not a command; the priority is a field\njarl.mjs field "<ids>" Priority "<prio>" --by "<who>" ${L.shellWord(`--root=${root}`)}`);
 });
 
 test('set takes statuses only: a field given to it is refused with the field call that writes it', () => {
@@ -157,7 +157,7 @@ test('base is the command that changes the base branch of a declared repository'
   const root = makeLoop({ prefix: 'jarl-surface-base-', via: 'cli' });
   // A loop that declares no repository: the step that declares one first, then the call's own form, each with placeholders.
   assert.match(refuses(root, 'base', 'nothing-here', 'main'), /^nothing-here is not declared in this loop; Jarl declares a repository the first time an issue names it \(jarl\.mjs field "<id>" Repo "<name-or-path>"\)\njarl\.mjs field "<id>" Repo "<name-or-path>" --by "<who>"\njarl\.mjs base "<name>" "<branch>" --by "<who>"\n$/);
-  assert.match(refuses(root, 'base', 'nothing-here'), /^base requires its branch: the form below has a placeholder for each value\njarl\.mjs base "<name>" "<branch>"\n$/);
+  assert.match(refuses(root, 'base', 'nothing-here'), /^base requires its branch: the form below has a placeholder for each value\njarl\.mjs base "<name>" "<branch>" --by "<who>"\n$/);
 });
 
 // Every flag of the command table with the one thing it means, and the commands that take it. A flag added to a command,
@@ -465,8 +465,8 @@ test('a tool refuses a field it does not take whose value another field or tool 
   assert.ok(refused('jarl_status', { by: 'repo' }).endsWith(rooted));
   assert.match(refused('jarl_models', { by: 'tag' }), /"by" is not a field of this tool — its value goes in "group"/);
   assert.ok(refused('jarl_resume', { ci: true }).endsWith(`jarl_resume {"gh":true${rooted}`));
-  assert.ok(refused('jarl_set', { ids: '1', status: 'deferred', why: 'later' }).endsWith(`"why" is not a field of this tool — its value goes in "text": jarl_set {"ids":"<ids>","status":"<status>","text":"<text>","by":"<who>"${rooted}`));
-  assert.ok(refused('jarl_set', { ids: '1', status: 'deferred', why: 'later', json: true }).endsWith(`jarl_set {"ids":"<ids>","status":"<status>","text":"<text>","json":true${rooted}`));
+  assert.ok(refused('jarl_set', { ids: '1', status: 'deferred', why: 'later' }).endsWith(`"why" is not a field of this tool — its value goes in "text": jarl_set {"ids":"<ids>","status":"<status>","by":"<who>","text":"<text>"${rooted}`));
+  assert.ok(refused('jarl_set', { ids: '1', status: 'deferred', why: 'later', json: true }).endsWith(`jarl_set {"ids":"<ids>","status":"<status>","by":"<who>","text":"<text>","json":true${rooted}`));
   assert.match(refused('jarl_review', { ids: '1', verdict: 'approve', by: 'rev', findings: 'read it all here', model: 'test-model' }), /"findings" is not a field of this tool — its value goes in "text"/);
   assert.match(refused('jarl_evidence', { ids: '1', retract: '2', by: 'jarl', text: 'the row ran elsewhere' }), /^jarl_evidence: "retract" is not a field of this tool — a row or a note is taken back with jarl_retract, and by names who takes it back: jarl_retract \{"id":"<id>","entry":"<n-or-note-n>","by":"<who>","text":"<why>","root":/);
   // A field no table names is refused with the fields the tool takes.

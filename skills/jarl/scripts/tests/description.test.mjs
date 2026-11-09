@@ -108,7 +108,7 @@ test('a change of Where logs at most the first 120 characters of what it held, w
   assert.equal(lastLine(root), '1 field Where · another place · was a short place · by test-writer', 'a short value is kept whole');
   jarl(root, 'field', '1', 'Where', long);
   jarl(root, 'field', '1', 'Where', '--clear');
-  assert.equal(lastLine(root), `1 field Where · (cleared) · was ${long.slice(0, 120)}… (${long.length} characters)`, 'a cleared one too');
+  assert.equal(lastLine(root), `1 field Where · (cleared) · was ${long.slice(0, 120)}… (${long.length} characters) · by test-writer`, 'a cleared one too');
 });
 
 test('a change of Where logs at most the first 120 characters of the new value too, with its length when it is longer', () => {
@@ -119,10 +119,10 @@ test('a change of Where logs at most the first 120 characters of the new value t
   jarl(root, 'field', '1', 'Where', long, '--by', 'w-one');
   assert.equal(lastLine(root), `1 field Where · ${long.slice(0, 120)}… (${long.length} characters) · was a short place · by w-one`);
   jarl(root, 'field', '1', 'Where', longer);
-  assert.equal(lastLine(root), `1 field Where · ${longer.slice(0, 120)}… (${longer.length} characters) · was ${long.slice(0, 120)}… (${long.length} characters)`, 'both values are bounded');
+  assert.equal(lastLine(root), `1 field Where · ${longer.slice(0, 120)}… (${longer.length} characters) · was ${long.slice(0, 120)}… (${long.length} characters) · by test-writer`, 'both values are bounded');
   const exact = 'x'.repeat(120);
   jarl(root, 'field', '1', 'Where', exact);
-  assert.equal(lastLine(root), `1 field Where · ${exact} · was ${longer.slice(0, 120)}… (${longer.length} characters)`, 'a value of exactly 120 characters is kept whole');
+  assert.equal(lastLine(root), `1 field Where · ${exact} · was ${longer.slice(0, 120)}… (${longer.length} characters) · by test-writer`, 'a value of exactly 120 characters is kept whole');
   assert.equal(lastLine(root).includes(longer.slice(130)), false, 'the rest of a long value is not in the log');
 });
 
@@ -161,13 +161,13 @@ test('field logs each section it replaces by the first line and the length of wh
   const long = `${'x'.repeat(300)}\nsecond line`;
   jarl(root, 'field', '1', 'What', long);
   jarl(root, 'field', '1', 'What', 'short');
-  assert.equal(lastLine(root), `1 body · what · was "${'x'.repeat(120)}…" (${long.length} characters)`, 'the first line is cut, so the line stays short');
+  assert.equal(lastLine(root), `1 body · what · was "${'x'.repeat(120)}…" (${long.length} characters) · by test-writer`, 'the first line is cut, so the line stays short');
   jarl(root, 'field', '1', 'Title', 'a · dotted title');
   jarl(root, 'field', '1', 'Title', 'plain');
-  assert.equal(lastLine(root), '1 body · title · was "a ∙ dotted title"', 'the log\'s separator in a value is written as its stand-in');
+  assert.equal(lastLine(root), '1 body · title · was "a ∙ dotted title" · by test-writer', 'the log\'s separator in a value is written as its stand-in');
   jarl(root, 'field', '1', 'Found by', 'x · y');
   jarl(root, 'field', '1', 'Found by', 'owner');
-  assert.equal(lastLine(root), '1 field Found by · owner · was x ∙ y');
+  assert.equal(lastLine(root), '1 field Found by · owner · was x ∙ y · by test-writer');
   assert.equal(R.findIssue(root, '1').sections.why.trim(), 'third why');
 });
 

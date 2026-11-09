@@ -32,7 +32,7 @@ for (const [what, pair, reason] of [
       const said = refusedImport(root, file, '--field', pair, ...dry);
       assert.match(said, reason);
       assert.doesNotMatch(said, /cannot be filed|finding "/, 'no finding is blamed for the flag');
-      assert.match(said, new RegExp(`\\njarl\\.mjs import "<findings\\.json>" --source "?[^ \\n]+"? --field "<name=value>"${dry.length ? ' --dry-run' : ''}\\n$`));
+      assert.match(said, new RegExp(`\\njarl\\.mjs import "<findings\\.json>" --by "<who>" --source "?[^ \\n]+"? --field "<name=value>"${dry.length ? ' --dry-run' : ''}\\n$`));
     }
     assert.equal(json(root, 'list', '--all').length, 0);
   });

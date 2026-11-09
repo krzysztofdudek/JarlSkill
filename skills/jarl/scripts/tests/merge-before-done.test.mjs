@@ -27,7 +27,7 @@ test('done refuses a code issue with no merge recorded, ending with the form of 
   const before = files(root);
   const said = refuses(root, 'set', '1', 'done', 'all green', '--by', 'jarl');
   assert.match(said, /^1 carries code \(its lease records Branch jarl\/1-fix\) and records no merge — a code issue is merged before it is done/, said);
-  assert.match(said, /\njarl\.mjs merged "<ids>" --sha "<sha>"\n$/, said);
+  assert.match(said, /\njarl\.mjs merged "<ids>" --sha "<sha>" --by "<who>"\n$/, said);
   assert.deepEqual(files(root), before, 'a refused done writes nothing');
   jarl(root, 'merged', '1', '--sha', 'abc1234', '--by', 'jarl');
   jarl(root, 'set', '1', 'done', 'merged and green', '--by', 'jarl');
@@ -87,7 +87,7 @@ test('a code issue reopened after its merge and given a new commit is refused by
   const before = files(root);
   const said = refuses(root, 'set', '1', 'done', 'all green');
   assert.match(said, new RegExp(`^1 carries code \\(its lease records Branch jarl/1-fix\\) and its last merge, ${first} \\([^)]+\\), was recorded before its last start, reopen or red round, which spends a merge as it spends an approve — a code issue is merged before it is done`), said);
-  assert.match(said, /\njarl\.mjs merged "<ids>" --sha "<sha>"\n$/, said);
+  assert.match(said, /\njarl\.mjs merged "<ids>" --sha "<sha>" --by "<who>"\n$/, said);
   assert.deepEqual(files(root), before, 'a refused done writes nothing');
   merge();
   assert.equal(jarl(root, 'set', '1', 'done', 'merged again'), '1 → done');
@@ -164,7 +164,7 @@ test('a loop that closes only on a landed merge refuses a merge from before the 
   proved();
   const said = refuses(root, 'set', '1', 'done', 'all green');
   assert.match(said, /was recorded before its last start, reopen or red round/, said);
-  assert.match(said, /\njarl\.mjs merged "<ids>" --sha "<sha>"\n$/, said);
+  assert.match(said, /\njarl\.mjs merged "<ids>" --sha "<sha>" --by "<who>"\n$/, said);
   merge();
   assert.equal(jarl(root, 'set', '1', 'done', 'merged again'), '1 → done');
 });

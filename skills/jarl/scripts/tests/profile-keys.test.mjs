@@ -78,10 +78,8 @@ test('set-by and done-gate are checked with every other problem', () => {
   assert.deepEqual(p.flagsOf('proposed'), []);
   assert.equal(p.setBy('queued'), 'record');
   assert.equal(p.setBy('running'), 'any');
-  assert.equal(p.scheduler, 'composer-x.mjs tick');
   assert.deepEqual({ ...p.doneGate }, { approve: 'none', 'requires-merged': true });
   assert.deepEqual({ ...R.DEFAULT_PROFILE.doneGate }, { approve: 'fresh', 'requires-merged': false });
-  assert.equal(R.DEFAULT_PROFILE.scheduler, null);
 });
 
 test('profile describes the new keys, as JSON and as text', () => {

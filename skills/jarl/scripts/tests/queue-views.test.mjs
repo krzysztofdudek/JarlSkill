@@ -162,7 +162,7 @@ test('changelog: fragments recorded on the issue print grouped for [Unreleased];
   // A section the changelog does not know is refused with the sections it knows and the form that gives an entry, on field, add and new, and nothing is written.
   const unknown = 'changelog entry "Bogus: text" opens with "Bogus:", which is no section of the changelog; the sections are Added, Changed, Deprecated, Removed, Fixed, Security\njarl.mjs field "<ids>" Changelog "<changelog-entry>" --by "<who>"';
   assert.equal(refuses(root, 'field', '2', 'Changelog', 'Bogus: text').trim(), unknown);
-  assert.equal(refuses(root, 'field', '2', 'Changelog', '--add', 'Bogus: text').trim(), `${unknown.replace('Changelog "<changelog-entry>"', 'Changelog "<changelog-entry>" --add')}`);
+  assert.equal(refuses(root, 'field', '2', 'Changelog', '--add', 'Bogus: text').trim(), `${unknown.replace('Changelog "<changelog-entry>" --by "<who>"', 'Changelog "<changelog-entry>" --by "<who>" --add')}`);
   assert.match(refuses(root, 'new', 'x', '--changelog', 'Notes: text'), /opens with "Notes:", which is no section of the changelog; the sections are Added, Changed, Deprecated, Removed, Fixed, Security/);
   assert.equal(jarl(root, 'changelog', '2'), '### Fixed\n- something else.');
   // A section in any case is a known one, and text with a colon later in it is plain text.

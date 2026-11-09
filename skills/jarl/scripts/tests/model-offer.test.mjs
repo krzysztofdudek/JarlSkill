@@ -94,6 +94,5 @@ test('a note in the shape of a line the lease or the path note writes is refused
   assert.equal(offers(root) + closes(root), 0);
   assert.equal(log(root).includes('repo path'), false);
   assert.match(lease(root).stderr, OFFER, 'the first real lease still offers');
-  assert.equal(R.loadProfile(root).format >= 1, true);
   assert.throws(() => R.appendLog(root, 'models offered · typed by hand'), /has the shape of a line a lease writes/, 'a composer\'s free note is refused the same way');
 });

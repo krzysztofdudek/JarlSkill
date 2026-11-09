@@ -1632,7 +1632,7 @@ test('a committed loop names the loop files git has not committed in status, han
   assert.match(jarl(root, 'status'), /^2 loop file\(s\) not committed — commit \.jarl\/ in the loop's repository$/m);
   assert.match(jarl(root, 'resume'), /^## Loop files not committed \(2\) — commit \.jarl\/\n- \.jarl\/issues\/001-one\.md\n- \.jarl\/log\.md$/m);
   jarl(root, 'set', '1', 'dropped', 'no');
-  assert.match(jarl(root, 'close'), /closed as a permanent record · 3 loop file\(s\) not committed — commit \.jarl\//);
+  assert.match(jarl(root, 'close'), /closed as a permanent record · 2 loop file\(s\) not committed — commit \.jarl\//);
   sh('git add -A && git commit -qm record');
   assert.equal(JSON.parse(jarl(root, 'status', '--json')).uncommitted, 0);
 

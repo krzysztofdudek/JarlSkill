@@ -38,7 +38,7 @@ test('a verdict names its artifact: the line, the Reviews entry and show carry t
   jarl(root, 'review', id, 'approve', '--by', 'rev-b', '--artifact', './renders/home.png', FINDINGS);
   assert.match(jarl(root, 'show', id), /^- \*\*approve\*\* · by rev-b \(fresh\) · \d{4}-\d\d-\d\d · (?:model test-model · )?artifact \.\/renders\/home\.png$/m);
   const verdicts = loopEvents(join(root, '.jarl'), loadProfile(root)).filter((e) => e.type === 'verdict');
-  assert.deepEqual(verdicts.map((e) => [e.verdict, e.artifact, e.model]), [['changes', 'renders/home page.png', 'm-1'], ['approve', './renders/home.png', null]]);
+  assert.deepEqual(verdicts.map((e) => [e.verdict, e.artifact, e.model]), [['changes', 'renders/home page.png', 'm-1'], ['approve', './renders/home.png', 'test-model']]);
   assert.match(JSON.parse(jarl(root, 'show', id, '--json')).sections.reviews, /artifact renders\/home page\.png/);
   // The artifact gates nothing: the approve clears the issue as any other.
   assert.match(jarl(root, 'set', id, 'done', 'approved', '--by', 'jarl'), new RegExp(`${id} → done`));
@@ -56,7 +56,7 @@ test('the brief pairs a verdict that names an artifact with its Reviews entry, a
 test('a finding that opens like an artifact mark is kept as text', () => {
   const { root, id } = inFlight();
   jarl(root, 'review', id, 'approve', '--by', 'rev-a', 'artifact renders/x.png · was read and nothing was found in it');
-  assert.match(log(root), new RegExp(`${id} review approve · by rev-a \\(fresh\\) · findings: artifact renders/x\\.png · was read`));
+  assert.match(log(root), new RegExp(`${id} review approve · by rev-a \\(fresh\\) · model test-model · findings: artifact renders/x\\.png · was read`));
   assert.doesNotMatch(jarl(root, 'report', '--metrics'), /verdicts that name an artifact/);
 });
 
@@ -115,7 +115,7 @@ test('the help and the reviewer reference state the rule of an artifact value in
 
 test('report counts the verdicts that name an artifact', () => {
   const { root, id } = inFlight();
-  const other = fileThreeDigits(root, 'another page', { acceptance: 'it renders' });
+  const other = fileThreeDigits(root, 'another page', { acceptance: '[read] it renders' });
   jarl(root, 'set', other, 'in-progress', '--worker', 'w2');
   jarl(root, 'review', id, 'changes', '--by', 'rev-a', '--artifact', 'renders/home.png', 'Important: the header overlaps the menu');
   jarl(root, 'review', id, 'approve', '--by', 'rev-b', '--artifact', 'renders/home.png', FINDINGS);

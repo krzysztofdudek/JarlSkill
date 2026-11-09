@@ -126,18 +126,18 @@ test('every rule Jarl ships is quoted whole from the reference it names, and eac
     assert.ok(r.selectors.length > 0);
   }
   const of = (role) => BUILTIN_RULES.filter((r) => r.selectors.some((s) => s.word === 'role' && s.value === role)).length;
-  assert.deepEqual([of('reviewer'), of('worker'), of('coordinator')], [5, 1, 4]);
+  assert.deepEqual([of('reviewer'), of('worker'), of('coordinator')], [3, 1, 3]);
 });
 
-test('a reviewer of a light issue in a round is given the reviewer\'s rules of the round and of the light tier; a reviewer of a standard issue at its first review is not', () => {
+test('a reviewer in a round is given the reviewer\'s rules of the round; a reviewer at its first review is not', () => {
   const root = loop();
   jarl(root, 'new', 'light work', '--acceptance', '[read] it works', '--tier', 'light');
   jarl(root, 'new', 'standard work', '--acceptance', '[read] it works', '--tier', 'standard');
   const loopRead = readLoop(join(root, '.jarl'));
   const reviewer = (id, moments) => ({ roles: new Set(['reviewer']), slice: null, moments: new Set(moments), issues: [loopRead.byId.get(id)] });
   const slugsOf = (reader) => rulesFor(root, loopRead, reader, '2026-11-04').map((r) => r.slug);
-  assert.deepEqual(slugsOf(reviewer('1', ['review', 'round'])), ['jarl:reviewer-every-round', 'jarl:reviewer-light-tier', 'jarl:reviewer-tier-above', 'jarl:reviewer-identical-output', 'jarl:reviewer-judges-the-issue']);
-  assert.deepEqual(slugsOf(reviewer('2', ['review'])), ['jarl:reviewer-tier-above', 'jarl:reviewer-identical-output', 'jarl:reviewer-judges-the-issue']);
+  assert.deepEqual(slugsOf(reviewer('1', ['review', 'round'])), ['jarl:reviewer-every-round', 'jarl:reviewer-tier-above', 'jarl:reviewer-judges-the-issue']);
+  assert.deepEqual(slugsOf(reviewer('2', ['review'])), ['jarl:reviewer-tier-above', 'jarl:reviewer-judges-the-issue']);
 });
 
 test('a selector of files matches a path, a directory and a pattern; of a repository and a kind, the issue that names them', () => {
@@ -185,7 +185,7 @@ test('an agent proposes a rule: the ball is on the jarl, or on the owner where t
   assert.match(refuses(root, 'ask', 'x', '--kind', 'rule'), /a rule is proposed with whom it applies to/);
   const withOptions = refuses(root, 'ask', 'x', '--kind', 'rule', '--applies-to', 'loop', '--option', 'a:one', '--option', 'b:two');
   assert.match(withOptions, /^a proposed rule is answered yes or reject, so it takes no --option\n/);
-  assert.match(withOptions, /\njarl\.mjs ask "<text>" --kind "<ask-kind>" --applies-to "<selectors>"\n$/, 'the form leaves the options out');
+  assert.match(withOptions, /\njarl\.mjs ask "<text>" --by "<who>" --kind "<ask-kind>" --applies-to "<selectors>"\n$/, 'the form leaves the options out');
   assert.equal(json(root, 'ask', 'x', '--kind', 'rule', '--applies-to', 'loop').options, undefined, 'a proposed rule without options is filed');
   assert.match(refuses(root, 'ask', 'x', '--kind', 'rule', '--applies-to', 'loop', '--issue', '1'), /a proposed rule holds no issue back/);
   assert.match(refuses(root, 'ask', 'x', '--applies-to', 'loop'), /--applies-to, --until and --to go with kind rule/);

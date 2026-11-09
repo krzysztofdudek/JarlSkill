@@ -52,7 +52,7 @@ test('--parent is refused, with nothing written, for a parent the loop does not 
   jarl(root, 'set', '2', 'dropped', 'not wanted');
   const file = findingsFile([good(1)]);
   assert.match(refusedImport(root, file, '--parent', '99'), /no such issue: 99[^\n]*\njarl\.mjs import "<findings\.json>" --by "<who>" --source "?[^ \n]+"? --parent "<id>"\n$/);
-  assert.match(refusedImport(root, file, '--parent', 'soon'), /the Parent of an issue is the number of one issue of the loop \(got "soon"\)[^\n]*\njarl\.mjs import .* --by "<who>" --parent "<id>"\n$/);
+  assert.match(refusedImport(root, file, '--parent', 'soon'), /the Parent of an issue is the number of one issue of the loop \(got "soon"\)[^\n]*\njarl\.mjs import .* --parent "<id>"\n$/);
   assert.match(refusedImport(root, file, '--parent', '2'), /2 is dropped: its own acceptance was checked against a whole that a sub-issue added now would not be part of — reopen it first/);
   assert.equal(json(root, 'list', '--all').length, 2);
 });

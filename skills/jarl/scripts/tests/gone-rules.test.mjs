@@ -1,4 +1,4 @@
-// What the loop no longer does: the tag identical-output means nothing, a comparison is a [compare] line and its examiner may
+// What the loop does not do: the tag identical-output means nothing, a comparison is a [compare] line and its examiner may
 // be a light one; a leased issue that changes its lines carries no mark of it; no rule reaches a reviewer by the tier of the
 // work.
 import { test } from 'node:test';

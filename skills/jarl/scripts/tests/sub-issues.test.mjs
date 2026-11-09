@@ -184,7 +184,7 @@ test('a split moves each acceptance line to a named issue or keeps it on the par
   const log = logText(root);
   assert.match(log, /^- \S+ \S+ key \S+ by odin · 2 field Parent · 1 · was \(none\) · by odin$/m);
   assert.match(log, /^- \S+ \S+ key \S+ by odin · 1 body · acceptance · was "- \[read\] it writes csv.*" · by odin$/m);
-  assert.match(log, /^- \S+ \S+ key \S+ · 3 body · acceptance · was "\[read\] json is valid" · by odin$/m);
+  assert.match(log, /^- \S+ \S+ key \S+ by odin · 3 body · acceptance · was "\[read\] json is valid" · by odin$/m);
   // A sub-issue can be split in turn: the tree goes deeper, and the ids stay flat numbers.
   jarl(root, 'new', 'the csv header', '--acceptance', '[read] it works');                                                                   // 4
   assert.equal(jarl(root, 'split', '2', '--line', '1=4'), '2 split: line 1 → 4 · sub-issues 4');

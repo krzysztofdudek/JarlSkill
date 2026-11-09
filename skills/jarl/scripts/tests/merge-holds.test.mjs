@@ -169,7 +169,7 @@ test('the done gate refuses a merge that landed only in the branch the main chec
   readyToClose(hub);
   const out = refuses(hub, 'set', '1', 'done', 'landed in main');
   assert.match(out, new RegExp(`^1 records Merged ${sha}, which is not in the base \\(release in [^)]*tool\\)`), out);
-  assert.match(out, /\njarl\.mjs merged "<ids>" --sha "<sha>"\n$/, out);
+  assert.match(out, /\njarl\.mjs merged "<ids>" --sha "<sha>" --by "<who>"\n$/, out);
 });
 
 test('the cleanup after a merge keeps the declared base when an issue is leased on it, whatever branch the main checkout has open', () => {

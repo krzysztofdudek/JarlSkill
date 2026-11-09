@@ -130,7 +130,7 @@ test('close --force closes with issues still open, as the reference says, and re
   const { dir } = gitRepo({ prefix: 'jarl-docs-close-' });
   jarl(dir, 'init', 'g');
   jarl(dir, 'new', 'still open', '--acceptance', '[read] it works');
-  assert.match(refuses(dir, 'close'), /still open or in progress.*close --force removes it with them\)\njarl\.mjs ask "<question-for-the-owner>" --by "<who>"\n$/);
+  assert.match(refuses(dir, 'close'), /still open or in progress.*close --force removes it with them\)\njarl\.mjs ask "<question-for-the-owner>" --by test-writer\n$/);
   assert.match(jarl(dir, 'close', '--force'), /^removed /);
   assert.equal(existsSync(join(dir, '.jarl')), false);
 });

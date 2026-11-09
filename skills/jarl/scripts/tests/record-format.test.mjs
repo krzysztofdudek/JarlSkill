@@ -60,13 +60,13 @@ for (const [name, mark] of WRONG_MARKS) {
   });
 }
 
-test('the refusal of an older format comes before every other refusal of the call', () => {
+test('the refusal of a wrong format comes before every other refusal of the call', () => {
   const root = loopWithMark('Format: 3');
   assert.match(refuses(root, 'set', '99', 'not-a-status', '--by', 'jarl'), /converting-from-6-2/);
   assert.match(refuses(root, 'list', '--status', 'not-a-status'), /converting-from-6-2/);
 });
 
-test('the refusal of an older format holds for the library, on a read and on a write', () => {
+test('the refusal of a wrong format holds for the library, on a read and on a write', () => {
   const root = loopWithMark(null);
   assert.throws(() => R.loadIssues(root), /converting-from-6-2/);
   assert.throws(() => R.statusData(root), /converting-from-6-2/);
@@ -74,7 +74,7 @@ test('the refusal of an older format holds for the library, on a read and on a w
   assert.throws(() => R.initLoop(root, 'another goal'), /converting-from-6-2/);
 });
 
-test('the refusal of an older format holds for a tool of the server', () => {
+test('the refusal of a wrong format holds for a tool of the server', () => {
   const root = loopWithMark(null);
 
   const r = mcp.callTool('jarl_list', { root });

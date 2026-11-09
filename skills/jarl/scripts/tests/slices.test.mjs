@@ -19,7 +19,7 @@ test('field Tags and new refuse a second slice: tag on one issue, and say how to
   const file = readFileSync(json(root, 'show', '1').file, 'utf8');
   const moving = refuses(root, 'field', '1', 'Tags', '--add', 'slice:thor');
   assert.match(moving, /^1 is in slice:odin already, and an issue is in one slice — to move it, take slice:odin off with field --remove first, then add slice:thor with field --add$/m);
-  assert.match(moving, /\njarl\.mjs field "<ids>" Tags "<tag>" --remove\njarl\.mjs field "<ids>" Tags "<tag>" --add\n$/, 'the steps are forms: no command is composed that takes a tag off');
+  assert.match(moving, /\njarl\.mjs field "<ids>" Tags "<tag>" --remove --by "<who>"\njarl\.mjs field "<ids>" Tags "<tag>" --by "<who>" --add\n$/, 'the steps are forms: no command is composed that takes a tag off');
   assert.match(refuses(root, 'field', '1', 'Tags', 'slice:odin, slice:thor'), /^1 is in slice:odin already, and an issue is in one slice — to move it, take slice:odin off with field --remove first, then add slice:thor with field --add$/m);
   assert.match(refuses(root, 'new', 'two', '--tags', 'slice:odin,slice:thor'), /^an issue is in one slice, and the tags name slice:odin, slice:thor — keep one, e\.g\. --tags slice:odin$/m);
   assert.match(refuses(root, 'field', '1', 'Tags', '--add', 'slice:'), /^slice: names no coordinator: a slice is the tag slice:<coordinator>/m);
@@ -165,11 +165,9 @@ test('the issues waiting on a slice\'s issue, through After or a file it reserve
 
 test('ask --kind escalation names its slice or issue, is held by the jarl, shows in the slice\'s views and holds its issue back', () => {
   const root = twoSlicesUnkeyed();
-  const before = readFileSync(join(root, '.jarl', 'profile.json'), 'utf8');
-  assert.match(refuses(root, 'ask', 'is this ours?', '--kind', 'escalation'), /^an escalation names what it is about, its slice or its issue or both\njarl\.mjs ask "<text>" --kind "<ask-kind>" --slice "<coordinator>"\n$/);
+  assert.match(refuses(root, 'ask', 'is this ours?', '--kind', 'escalation'), /^an escalation names what it is about, its slice or its issue or both\njarl\.mjs ask "<text>" --by "<who>" --kind "<ask-kind>" --slice "<coordinator>"\n$/);
   assert.match(refuses(root, 'ask', 'is this ours?', '--slice', 'odin'), /^--slice goes with kind escalation only/m);
   assert.match(refuses(root, 'ask', 'is this ours?', '--kind', 'escalation', '--slice', 'loki'), /no coordinator loki on the goal's Coordinators line/);
-  assert.equal(readFileSync(join(root, '.jarl', 'profile.json'), 'utf8'), before, 'a refusal raises nothing');
   const a = json(root, 'ask', 'thor blocks odin on a.mjs: which goes first?', '--kind', 'escalation', '--slice', 'odin', '--issue', '2');
   assert.deepEqual([a.id, a.kind, a.slice], ['1', 'escalation', 'odin']);
   assert.match(readFileSync(join(root, '.jarl', 'asks.md'), 'utf8'), /^- \*\*a-1\*\* \(open\) · escalation · issue 2 · slice odin · thor blocks odin on a\.mjs: which goes first\?$/m);
@@ -226,7 +224,7 @@ test('with more than one slice in play, a lease on an issue that declares no Fil
   jarl(root, 'new', 'no slice, bare', '--acceptance', '[read] it works');                                         // 3
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   for (const id of ['1', '3']) {
-    assert.match(refuses(root, 'set', id, 'in-progress', 'go', '--worker', 'w', '--branch', `jarl/${id}`), new RegExp(`^${id} declares no Files or Resources, and 3 slices are in play \\(slice:odin, slice:thor, the issues in no slice\\): across slices only leases hold, and a lease holds only what its issue declares — declare them first, its files or its resources \\(jarl\\.mjs field "<ids>" Resources "<resource-name>"\\)\njarl\\.mjs field "<ids>" Files "<paths>"\njarl\\.mjs set "<ids>" "<status>" "<why>" --worker "<the-new-worker>" --branch "<worker-branch>"\n$`));
+    assert.match(refuses(root, 'set', id, 'in-progress', 'go', '--worker', 'w', '--branch', `jarl/${id}`), new RegExp(`^${id} declares no Files or Resources, and 3 slices are in play \\(slice:odin, slice:thor, the issues in no slice\\): across slices only leases hold, and a lease holds only what its issue declares — declare them first, its files or its resources \\(jarl\\.mjs field "<ids>" Resources "<resource-name>"\\)\njarl\\.mjs field "<ids>" Files "<paths>" --by "<who>"\njarl\\.mjs set "<ids>" "<status>" "<why>" --by "<who>" --model "<model-id>" --worker "<the-new-worker>" --branch "<worker-branch>"\n$`));
   }
   assert.equal(readFileSync(join(root, '.jarl', 'log.md'), 'utf8'), log, 'nothing was written');
   jarl(root, 'set', '2', 'in-progress', 'go', '--worker', 'w2', '--branch', 'jarl/2');

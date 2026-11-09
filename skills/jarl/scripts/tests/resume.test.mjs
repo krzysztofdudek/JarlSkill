@@ -70,7 +70,7 @@ test('resume assembles every section live from the loop and the repositories its
   assert.match(t, /^# Resume · ship the export command\nopened \S+ \S+ · last activity \S+ \S+\nopen 4 · in flight 2 · waiting 1 · done 0 · dropped 0 · deferred 0 · questions 1 · to ratify 1 · merged, CI pending 1 · CI red 1\n/);
   assert.match(t, /\n1 ruling\(s\) in force: jarl\.mjs decisions --live; resume --as <who> adds the rules that match whoever asks\n\n## Rules for the whole loop \(0\)\n- \(none\)\n\n/);
   assert.doesNotMatch(t, /old-way ·/, 'a superseded ruling is not in force');
-  assert.match(t, /## In flight \(2\)\n- 1 in flight one · branch jarl\/1-one · (?:model test-model · )?worker w1 · model not recorded · since \S+ \S+\n {2}→ no evidence rows since the start[^\n]*\n- 5 queued five · branch jarl\/5-five · (?:model test-model · )?worker w5 · model not recorded · since \S+ \S+\n {2}→ approved and queued[^\n]*\n/);
+  assert.match(t, /## In flight \(2\)\n- 1 in flight one · branch jarl\/1-one · worker w1 · model test-model · since \S+ \S+\n {2}→ no evidence rows since the start[^\n]*\n- 5 queued five · branch jarl\/5-five · worker w5 · model test-model · since \S+ \S+\n {2}→ approved and queued[^\n]*\n/);
   assert.match(t, /## Waiting — After not settled \(1\)\n- 2 waits for one \(after 1\)\n/);
   assert.match(t, /## Questions to the owner \(1\)\n- a-1 \(stuck\) issue 3 · which flag name\?\n/);
   assert.match(t, /## To ratify \(1\)\n- a-2 \(issue 1\) · kept the old default under the mandate\n/);
@@ -81,14 +81,14 @@ test('resume assembles every section live from the loop and the repositories its
   assert.match(t, /## Tips \(CI not asked — --gh asks gh\)\n/);
   assert.match(t, /^\[tool\] .*\n {2}worker {3}jarl\/1-one [0-9a-f]{12} {2}\+1\/-0 vs release {2}not pushed {2}→ 1\n {2}worker {3}jarl\/5-five [0-9a-f]{12} {2}\+1\/-0 vs release {2}not pushed {2}→ 5\n {2}feature {2}release [0-9a-f]{12} {2}= origin\/release\n {2}main {5}main [0-9a-f]{12} {2}= origin\/main$/m);
   assert.match(t, /## Loop files not committed \(\d+\) — commit \.jarl\/\n- \.jarl\/asks\.md\n/);
-  assert.match(t, /## Last 15 log line\(s\)\n(- \S+ \S+ · .*\n){14}- \S+ \S+ · 7 merged /);
+  assert.match(t, /## Last 15 log line\(s\)\n(- \S+ \S+(?: key \S+)? by [^·]+ · .*\n){14}- \S+ \S+(?: key \S+)? by [^·]+ · 7 merged /);
   assert.equal(existsSync(join(parent, 'gh-calls')), false, 'no --gh: gh is never run');
   assert.deepEqual(snapshot(hub), before, 'resume writes nothing: no log line, no lock, no file');
 
   // --log and --ready narrow the two long sections; --gh asks gh for the pushed tips only.
   const narrow = run(hub, ['resume', '--log', '2', '--ready', '1', '--gh'], { JARL_GH: ghStub(parent) }).stdout;
   assert.match(narrow, /## Next ready \(1 of 3\)\n- 4  P2  ready three  \(no acceptance yet\)\n\n/);
-  assert.match(narrow, /## Last 2 log line\(s\)\n- \S+ \S+ · filed 7 · merged seven\n- \S+ \S+ · 7 merged \S+ in tool · CI red$/);
+  assert.match(narrow, /## Last 2 log line\(s\)\n- \S+ \S+(?: key \S+)? by [^·]+ · filed 7 · merged seven\n- \S+ \S+(?: key \S+)? by [^·]+ · 7 merged \S+ in tool · CI red$/);
   assert.match(narrow, /## Tips\n/);
   assert.match(narrow, / {2}feature {2}release [0-9a-f]{12} {2}= origin\/release {2}ci green \(run 7 CI\)/);
   assert.equal(readFileSync(join(parent, 'gh-calls'), 'utf8').trim().split('\n').length, 2, 'gh asked about the two pushed tips, release and main');
@@ -97,7 +97,7 @@ test('resume assembles every section live from the loop and the repositories its
   // JSON: the same sections as data.
   const o = JSON.parse(run(hub, ['resume', '--json'], { JARL_GH: ghStub(parent) }).stdout);
   assert.deepEqual(Object.keys(o), ['goal', 'opened', 'lastActivity', 'archived', 'status', 'rulings', 'unsettled', 'rules', 'inFlight', 'waiting', 'questions', 'escalations', 'proposed', 'ratify', 'held', 'kept', 'next', 'readyTotal', 'queue', 'merged', 'tips', 'uncommitted', 'log', 'legacyHandoff']);
-  assert.deepEqual(o.inFlight[0], { id: '1', title: 'in flight one', branch: 'jarl/1-one', worker: 'w1', model: null, since: o.inFlight[0].since, stale: [], mark: 'no-rows' });
+  assert.deepEqual(o.inFlight[0], { id: '1', title: 'in flight one', branch: 'jarl/1-one', worker: 'w1', model: 'test-model', since: o.inFlight[0].since, stale: [], mark: 'no-rows' });
   assert.deepEqual(o.merged.map((m) => [m.id, m.ci]), [['6', 'pending'], ['7', 'red']]);
   assert.equal(o.tips.ci, false);
   assert.equal(o.legacyHandoff, null);
@@ -111,8 +111,8 @@ test('resume assembles every section live from the loop and the repositories its
   const st = JSON.parse(jarl(hub, 'status', '--json'));
   assert.deepEqual([st.ready, st.inFlight, st.waiting], [6, 1, 2]);
   assert.match(w, /\nopen 6 · in flight 1 · waiting 2 · /);
-  assert.match(w, /## In flight \(1\)\n- 1 in flight one · branch jarl\/1-one · (?:model test-model · )?worker w1 · model not recorded · since \S+ \S+\n {2}→ no evidence rows since the start[^\n]*\n\n/);
-  assert.match(w, /## Waiting — After not settled \(2\)\n- 2 waits for one \(after 1\)\n- 5 queued five \(after 8\) · in progress · branch jarl\/5-five · (?:model test-model · )?worker w5 · model not recorded · since \S+ \S+\n/);
+  assert.match(w, /## In flight \(1\)\n- 1 in flight one · branch jarl\/1-one · worker w1 · model test-model · since \S+ \S+\n {2}→ no evidence rows since the start[^\n]*\n\n/);
+  assert.match(w, /## Waiting — After not settled \(2\)\n- 2 waits for one \(after 1\)\n- 5 queued five \(after 8\) · in progress · branch jarl\/5-five · worker w5 · model test-model · since \S+ \S+\n/);
   assert.match(w, /## Held — files in flight \(2\)\n- 3  P1  ready two \(open question a-1\)\n- 9  P2  held nine \(tool\/src\/a\.mjs held by 1\)\n/);
   assert.match(w, /## Next ready \(4 of 4\)\n/);
   const wo = JSON.parse(jarl(hub, 'resume', '--json'));
@@ -123,8 +123,8 @@ test('resume assembles every section live from the loop and the repositories its
   // A lease that went wrong is flagged in place, in flight or waiting.
   sh(tool, 'git branch -D jarl/1-one jarl/5-five');
   const gone = jarl(hub, 'resume');
-  assert.match(gone, /- 1 in flight one · branch jarl\/1-one · (?:model test-model · )?worker w1 · model not recorded · since \S+ \S+ · STALE: branch gone: jarl\/1-one\n/);
-  assert.match(gone, /- 5 queued five \(after 8\) · in progress · branch jarl\/5-five · (?:model test-model · )?worker w5 · model not recorded · since \S+ \S+ · STALE: branch gone: jarl\/5-five\n/);
+  assert.match(gone, /- 1 in flight one · branch jarl\/1-one · worker w1 · model test-model · since \S+ \S+ · STALE: branch gone: jarl\/1-one\n/);
+  assert.match(gone, /- 5 queued five \(after 8\) · in progress · branch jarl\/5-five · worker w5 · model test-model · since \S+ \S+ · STALE: branch gone: jarl\/5-five\n/);
 
   // --log 0 leaves the log out.
   assert.doesNotMatch(jarl(hub, 'resume', '--log', '0'), /log line|empty log/);

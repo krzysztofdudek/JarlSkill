@@ -51,7 +51,7 @@ test('a field the tool does not take, a wrong type and a missing argument are re
   assert.deepEqual(formOf(e.message, 'jarl_decisions', root), { root, json: true });
   e = refusal(() => mcp.callTool('jarl_field', { by: 'test-writer', name: 'After', clear: true, root }));
   assert.match(e.message, /"ids" is required/);
-  assert.deepEqual(formOf(e.message, 'jarl_field', root), { ids: '<ids>', name: '<name>', root });
+  assert.deepEqual(formOf(e.message, 'jarl_field', root), { ids: '<ids>', name: '<name>', by: '<who>', root });
   e = refusal(() => mcp.callTool('jarl_help', { bogus: 1 }));
   assert.match(e.message, /unknown field "bogus"/);
   assert.deepEqual(formOf(e.message, 'jarl_help'), {});

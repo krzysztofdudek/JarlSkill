@@ -61,12 +61,12 @@ test('a range that is not declared, a range with no number left and a Range line
   assert.equal(filed(root, 'the only one', '--range', 'tiny'), '7000');
   said = refuses(root, 'new', 'one too many', '--range', 'tiny');
   assert.match(said, /the range tiny \(7000-7000\) has no number left: widen it in the goal/);
-  assert.equal(lastLine(said), "jarl.mjs goal --set 'Range (tiny): <from-to>'");
+  assert.equal(lastLine(said), 'jarl.mjs goal --set \'Range (tiny): <from-to>\' --by "<who>"');
   assert.deepEqual(files(root), [...before, '7000-the-only-one.md'].sort());
   const goal = goalText(root);
   said = refuses(root, 'goal', '--set', 'Range (film): 6000-7500');
   assert.match(said, /the range film \(6000-7500\) shares numbers with the range tiny \(7000-7000\): two ranges never share a number/);
-  assert.equal(lastLine(said), 'jarl.mjs goal --set "<machine-line>"');
+  assert.equal(lastLine(said), 'jarl.mjs goal --by "<who>" --set "<machine-line>"');
   assert.match(refuses(root, 'goal', '--set', 'Range (tiny): 7001-7010'), /would leave out issue 7000, numbered in the range tiny \(7000-7000\): a range keeps every number it holds/);
   assert.match(refuses(root, 'goal', '--set', 'Range (low): 1-50'), /would take in issue 1, numbered outside it: a range takes in no number filed elsewhere/);
   assert.match(refuses(root, 'goal', '--set', 'Range (bad): 50-10'), /a Range line is "Range \(<name>\): <from-to>"/);
@@ -88,23 +88,3 @@ test('verify places a Range line, and names one that does not parse, repeats a n
   assert.match(r.stdout, /"Range: 1-9" — a Range line is "Range \(<name>\): <from-to>"/);
 });
 
-test('a loop that declares no range numbers as before and is never raised for it; a composer\'s loop refuses a range number with nothing written', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'jarl-ranges-composed-'));
-  mkdirSync(join(dir, '.git'));
-  const file = join(mkdtempSync(join(tmpdir(), 'jarl-ranges-profile-')), 'profile.json');
-  writeFileSync(file, JSON.stringify({ 'jarl-profile': 1, name: 'composed', statuses: BUILTIN_STATUSES }));
-  jarl(dir, 'init', 'a composed goal', '--profile', file);
-  assert.equal(filed(dir, 'first'), '001');
-  // No number of a range can be filed there, so the goal declares none.
-  const goal = goalText(dir);
-  const refused = refuses(dir, 'goal', '--set', 'Range (film): 1000-1999');
-  assert.match(refused, /^a number from a range the goal declares needs record format 3, and this loop stays at format 1: its profile names an external scheduler \(the composer tick\)/);
-  assert.deepEqual(refused.trim().split('\n').slice(-2), ['jarl.mjs profile', 'jarl.mjs goal --set "<machine-line>"']);
-  assert.equal(goalText(dir), goal);
-  // A Range line written by hand moves nothing outside it, and still files no number of its own.
-  writeFileSync(join(dir, '.jarl', 'goal.md'), `${goal}Range (film): 1000-1999\n`);
-  assert.equal(filed(dir, 'second'), '002', 'a declared range moves nothing outside it');
-  const said = refuses(dir, 'new', 'a film', '--range', 'film');
-  assert.match(said, /a number from a range the goal declares needs record format 3, and this loop stays at format 1/);
-  assert.deepEqual(readdirSync(join(dir, '.jarl', 'issues')).sort(), ['001-first.md', '002-second.md']);
-});

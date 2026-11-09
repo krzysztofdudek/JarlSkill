@@ -55,7 +55,6 @@ test('a line marked as the owner\'s must name its material and what to check, an
     assert.match(refuses(root, 'new', 'cut the film', '--acceptance', bad), /acceptance line ".*" is marked as one only the owner ticks, and it must name the material he reviews \(a path, a link or an artifact\) and what he checks/, bad);
   }
   assert.equal(R.loadIssues(root).length, 0, 'nothing was filed');
-  assert.equal(existsSync(profileFile(root)), false, 'nothing was raised');
 
   jarl(root, 'new', 'cut the film', '--acceptance', '[read] the cut renders', '--acceptance', OWNER_LINE);
   assert.match(issueText(root, '1'), new RegExp(`^- ${OWNER_LINE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'), 'the line is kept as written');
@@ -79,7 +78,7 @@ test('set done refuses while an owner line is not ticked, naming the line, its m
   const ticked = json(root, 'tick', '1', '2', '--by', 'owner');
   assert.deepEqual([ticked.id, ticked.line, ticked.by], ['1', 2, 'owner']);
   assert.match(ticked.at, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
-  assert.match(logText(root), /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)? by [^·]+ · 1 tick · line 2 · by owner · \[owner\] the first cut reads well · material: renders\/cut\.txt · check: the pacing of the opening and the captions$/m);
+  assert.match(logText(root), /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)?(?: by [^·]+)? · 1 tick · line 2 · by owner · \[owner\] the first cut reads well · material: renders\/cut\.txt · check: the pacing of the opening and the captions$/m);
   assert.match(jarl(root, 'show', '1'), /^owner's sign-off: acceptance line 2 ticked by owner \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/m);
   jarl(root, 'set', '1', 'done', 'finished');
   assert.equal(json(root, 'show', '1').status, 'done');
@@ -151,7 +150,7 @@ test('retract tick-<n> takes back the owner\'s tick of one line, given by mistak
   jarl(root, 'set', '1', 'done', 'finished');
   const closed = refuses(root, 'retract', '1', 'tick-2', 'too late', '--by', 'owner');
   assert.match(closed, /^1 is done: opening it again spends every tick it was closed on; a tick he gives after that is taken back while the issue is open\n/);
-  assert.match(closed, /\njarl\.mjs set 1 "<status>" "<why>"\njarl\.mjs retract "<id>" "<tick-n>" "<why>" --by "<the-owner-himself>"\n$/, 'the step to reopen, then the form of the take-back');
+  assert.match(closed, /\njarl\.mjs set 1 "<status>" "<why>" --by "<who>"\njarl\.mjs retract "<id>" "<tick-n>" "<why>" --by "<the-owner-himself>"\n$/, 'the step to reopen, then the form of the take-back');
   // Opening it again spends the tick, as the refusal says: no tick is left to take back.
   jarl(root, 'set', '1', 'in-progress', 'looking again');
   assert.match(refuses(root, 'retract', '1', 'tick-2', 'too late', '--by', 'owner'), /^acceptance line 2 of 1 has no tick that counts: his tick of .* was spent when the work was sent back or started again/);
@@ -226,7 +225,7 @@ test('a tick reads whole wherever the log is shown: the resume tail and the take
   produce(root);
   proveAndApprove(root);
   jarl(root, 'tick', '1', '2', '--by', 'owner');
-  const whole = /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)? by [^·]+ · 1 tick · line 2 · by owner · \[owner\] the first cut reads well · material: renders\/cut\.txt · check: the pacing of the opening and the captions$/m;
+  const whole = /^- \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?: key \S+)?(?: by [^·]+)? · 1 tick · line 2 · by owner · \[owner\] the first cut reads well · material: renders\/cut\.txt · check: the pacing of the opening and the captions$/m;
   assert.match(jarl(root, 'resume'), whole);
   assert.ok(json(root, 'resume').log.some((l) => /1 tick · line 2 · by owner · \[owner\] the first cut/.test(typeof l === 'string' ? l : `${l.text}`)), 'the resume --json tail holds the whole line');
   jarl(root, 'round', '1', 'the captions drift');

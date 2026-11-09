@@ -39,7 +39,7 @@ test('the tools say there is no loop where a root holds none, with the form nami
   for (const [tool, args] of [['jarl_ask', { text: 'a question' }], ['jarl_log', { text: 'a note' }], ['jarl_decide', { slug: 'a-slug', text: 'a ruling', by: 'jarl' }]]) {
     const said = mcp.callTool(tool, { by: 'jarl', ...args, root: dir });
     assert.ok(said.isError, tool);
-    assert.match(posixForms(said.content[0].text), /^no loop here: .*\S+ holds no \.jarl\/ — open one with jarl\.mjs init "<goal>" '--root=[^']+', or pass --root "<loop-root>", the directory that holds \.jarl\/\njarl\.mjs init "<goal>" '--root=[^']+'$/, tool);
+    assert.match(posixForms(said.content[0].text), /^no loop here: .*\S+ holds no \.jarl\/ — open one with jarl\.mjs init "<goal>" '--root=[^']+', or pass --root "<loop-root>", the directory that holds \.jarl\/\njarl\.mjs init "<goal>" --by "<who>" '--root=[^']+'$/, tool);
   }
   assert.deepEqual(readdirSync(dir), []);
 });
