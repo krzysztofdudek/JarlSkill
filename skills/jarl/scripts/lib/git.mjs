@@ -1,6 +1,8 @@
 // Git and gh: the one place the library runs a process.
 
 import { execFileSync } from 'node:child_process';
+import { existsSync, realpathSync, statSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 
 // ---- git: the one place a process is run ----------------------------------------------------------
 
@@ -10,8 +12,24 @@ import { execFileSync } from 'node:child_process';
 function exec(bin, args, opts) {
   return /\.[cm]?js$/i.test(bin) ? execFileSync(process.execPath, [bin, ...args], opts) : execFileSync(bin, args, opts);
 }
+// Whether git could answer for `dir` at all: a repository somewhere up its path, read as git reads it with its links
+// followed, or a GIT_DIR in the environment. A .git counts when git would take it, a file (a linked worktree, a submodule)
+// or a directory that holds HEAD. Where none is, every rev-parse the library asks fails, and is answered without starting
+// a process, which on a loop kept out of git would be several per command.
+const holdsGitDir = (d) => { const g = join(d, '.git'); return existsSync(g) && (!statSync(g).isDirectory() || existsSync(join(g, 'HEAD'))); };
+function maybeGitRepo(dir, gitDir) {
+  if (gitDir) return true;
+  let d = resolve(dir ?? process.cwd());
+  try { d = realpathSync.native(d); } catch { /* not there: read as written */ }
+  for (; ; d = dirname(d)) {
+    if (holdsGitDir(d) || (existsSync(join(d, 'HEAD')) && existsSync(join(d, 'objects')))) return true;
+    if (dirname(d) === d) return false;
+  }
+}
+const noRepositoryFor = (dir, args, gitDir) => args[0] === 'rev-parse' && !maybeGitRepo(dir, gitDir);
 // What git prints in `root`, trimmed; null when it fails.
 function git(root, args) {
+  if (noRepositoryFor(root, args, process.env.GIT_DIR)) return null;
   try { return exec('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: GIT_OUTPUT }).trim(); } catch { return null; }
 }
 // The most a git command may print to the library: a diff of a large branch is read whole.
@@ -25,6 +43,7 @@ function gitRun(cwd, args) {
 // a hook it runs): the loop's repository is always the one its directory is in.
 const REPOSITORY_OVERRIDES = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_PREFIX', 'GIT_NAMESPACE'];
 function gitHere(dir, args) {
+  if (noRepositoryFor(dir, args)) return null;
   const env = { ...process.env };
   for (const name of REPOSITORY_OVERRIDES) delete env[name];
   try { return exec('git', args, { cwd: dir, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: GIT_OUTPUT }).trim(); } catch { return null; }
