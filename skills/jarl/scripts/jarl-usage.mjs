@@ -320,7 +320,7 @@ commands:
   branches [--base <base-branch>] [--repo <name-or-path>] [--stale-hours n]
                                                  every jarl/7-* branch and every branch an issue records: the
                                                  issues on it, commits beyond the base, worktree state, STALE leases
-                                                 (worktree gone, branch gone, idle: no commit, row or log line for the
+                                                 (worktree gone, branch gone, idle: no commit, row, log line or change in its worktree for the
                                                  goal's "Liveness: <minutes>", default 30, or n hours) and
                                                  DONE → delete, NO ISSUE for commits no issue holds; shown only, never
                                                  acted on; read in --repo alone, else in the loop's own
@@ -414,7 +414,7 @@ commands:
                                                  "Merger (<coordinator>): <name>" (a slice's own merger, in a worktree of its own, landing
                                                  the slice's work on its integration branch jarl/slice-<coordinator>, which then lands on the
                                                  feature branch as a merge with its check), "Takeover (<kind>): <rounds>" or a bare "Takeover: <rounds>",
-                                                 "Liveness: <minutes>" (a lease or a proof with no commit, row or log line
+                                                 "Liveness: <minutes>" (a lease or a proof with no commit, row, log line or change in its worktree
                                                  for longer is idle, on its coordinator's list; default 30, and
                                                  --stale-hours overrides it for one call), "Range (<name>): <from-to>" (the
                                                  numbers new --range <name> files under: no two ranges share a number, and a

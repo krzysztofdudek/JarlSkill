@@ -1,5 +1,7 @@
 // Rounds, branches and checks.
 
+import { lstatSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { LIVENESS_MINUTES, ROUNDS_BEFORE_TAKEOVER, fieldText, hole, need, noSeparators } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { git, gitBytes } from './git.mjs';
@@ -10,7 +12,7 @@ import { appendLog, goalLines, oneLine, parseStamp, readGoal } from './journal.m
 import { journalById, leaseOfMove, withoutWorktree } from './log.mjs';
 import { findIssue, loadIssues, mergedOf } from './issues.mjs';
 import { readLoop } from './loop.mjs';
-import { baseOf, fetchedRefs, fileAt, isGitRepo, issuePlaces, issueRepoPaths, issueRepos, refsIn, repoFromInput, repoLabel, repoOf, reposNamed, worktreeState, worktreesOf } from './repositories.mjs';
+import { baseOf, fetchedRefs, fileAt, isGitRepo, issuePlaces, issueRepoPaths, issueRepos, refsIn, repoFromInput, repoLabel, listedWorktrees, repoOf, reposNamed, worktreeState, worktreesOf } from './repositories.mjs';
 import { awaitsMerge, ceilingTier } from './models.mjs';
 
 // ---- rounds, branches, checks ------------------------------------------------------------------
@@ -402,13 +404,40 @@ export function ago(ms) {
   return `${Math.floor(h / 24)}d`;
 }
 
-// How long a lease has gone without a sign of work, read from the record and from git, never from a network: the newest
-// of its issue's log lines since the lease began (its rows among them, and the move that took the lease), and the newest
-// commit of its branch in each git repository the issue names, in this clone's own branches and in the refs it fetched
-// from each remote. Returns { id, minutes, ageMs, idle, since, lastLog, lastRow, lastCommit, branch, read }: ageMs from
-// the newest of them all (null when the record dates nothing), idle when it is past `minutes`; lastLog and lastRow as
-// { at, ageMs }, lastCommit as { ageMs, ref, clone }, each null when there is none; read, one entry per clone read, as
-// { clone, refs } with the refs of the branch it holds. `events` are the issue's events, read from the log when not given.
+// The newest modification time of anything in a worktree, as milliseconds, or null when it holds nothing. A worker that
+// builds, tests or waits on a long run changes files and commits nothing, so this is the one sign of it. The .git entry is
+// left out, since git itself touches it; a node_modules directory is not entered (its own time counts), and at most
+// WORK_SCAN_LIMIT entries are read, so a vast tree costs a bounded read.
+const WORK_SCAN_LIMIT = 50_000;
+export function newestChangeIn(dir) {
+  let newest = null;
+  let seen = 0;
+  const note = (path) => { try { const t = lstatSync(path).mtimeMs; if (newest === null || t > newest) newest = t; } catch { /* gone while reading */ } };
+  const stack = [dir];
+  while (stack.length && seen < WORK_SCAN_LIMIT) {
+    const d = stack.pop();
+    note(d);
+    let entries = [];
+    try { entries = readdirSync(d, { withFileTypes: true }); } catch { continue; }
+    for (const e of entries) {
+      if (e.name === '.git') continue;
+      seen += 1;
+      const p = join(d, e.name);
+      if (e.isDirectory() && e.name !== 'node_modules') stack.push(p);
+      else note(p);
+    }
+  }
+  return newest;
+}
+// How long a lease has gone without a sign of work, read from the record, from git and from its worktree, never from a
+// network: the newest of its issue's log lines since the lease began (its rows among them, and the move that took the
+// lease), the newest commit of its branch in each git repository the issue names, in this clone's own branches and in the
+// refs it fetched from each remote, and the newest change to a file in the lease's worktree where it is on this machine.
+// Returns { id, minutes, ageMs, idle, since, lastLog, lastRow, lastCommit, lastWork, branch, read }: ageMs from the newest
+// of them all (null when nothing is dated), idle when it is past `minutes`; lastLog and lastRow as { at, ageMs },
+// lastCommit as { ageMs, ref, clone }, lastWork as { ageMs, path }, each null when there is none; read, one entry per
+// clone read, as { clone, refs } with the refs of the branch it holds. `events` are the issue's events, read from the log
+// when not given.
 export function leaseLiveness(root, issue, minutes = LIVENESS_MINUTES, { events, now = nowMs() } = {}) {
   const profile = loadProfile(root);
   const f = issue.fields;
@@ -430,13 +459,21 @@ export function leaseLiveness(root, issue, minutes = LIVENESS_MINUTES, { events,
       for (const t of tips) if (t.committedMs && (!commit || t.committedMs > commit.t)) commit = { t: t.committedMs, ref: t.ref, clone };
     }
   }
+  let work = null;
+  if (branch || fieldText(f.worktree)) {
+    for (const repo of issueRepoPaths(root, issue).filter(isGitRepo)) {
+      const place = worktreeState(repo, branch, fieldText(f.worktree) || undefined, listedWorktrees(repo));
+      const t = place.state === 'here' ? newestChangeIn(place.path) : null;
+      if (t !== null && (!work || t > work.t)) work = { t, path: place.path };
+    }
+  }
   const sinceMs = parseStamp(f.since);
-  const times = [log?.t, commit?.t, sinceMs].filter((t) => t !== null && t !== undefined);
+  const times = [log?.t, commit?.t, work?.t, sinceMs].filter((t) => t !== null && t !== undefined);
   const ageMs = times.length ? now - Math.max(...times) : null;
   return {
     id: issue.id, minutes, ageMs, idle: ageMs !== null && ageMs > minutes * 60_000, since: fieldText(f.since) || null,
     lastLog: log ? { at: log.at, ageMs: now - log.t } : null, lastRow: row ? { at: row.at, ageMs: now - row.t } : null,
-    lastCommit: commit ? { ageMs: now - commit.t, ref: commit.ref, clone: commit.clone } : null, branch, read,
+    lastCommit: commit ? { ageMs: now - commit.t, ref: commit.ref, clone: commit.clone } : null, lastWork: work ? { ageMs: now - work.t, path: work.path } : null, branch, read,
   };
 }
 // The ages of a lease in words: the last log line, the last row and the last commit, then the clones and refs read.
@@ -445,7 +482,7 @@ function livenessText(lv) {
   const commit = !lv.branch ? 'no branch, so no commit read'
     : !lv.read.length ? `branch ${lv.branch} not read: no git repository of the issue here`
       : `${lv.lastCommit ? `last commit ${ago(lv.lastCommit.ageMs)} ago on ${lv.lastCommit.ref}` : `no commit of ${lv.branch} found`}; ${lv.read.map((r) => `read in the clone ${r.clone}: ${r.refs.length ? `${r.refs.join(', ')}${r.refs.some((x) => x !== lv.branch) ? '' : ', no fetched ref'}` : `no ref of ${lv.branch}`}`).join('; ')}`;
-  return `last log line ${age(lv.lastLog)}, last row ${age(lv.lastRow)}, ${commit}`;
+  return `last log line ${age(lv.lastLog)}, last row ${age(lv.lastRow)}, ${commit}${lv.lastWork ? `, last change in the worktree ${age(lv.lastWork)}` : ''}`;
 }
 // A lease idle past its threshold, in words: how long, the threshold, and the ages it was read from.
 function idleText(lv) { return `idle ${ago(lv.ageMs)} (threshold ${thresholdText(lv.minutes)}): ${livenessText(lv)}`; }

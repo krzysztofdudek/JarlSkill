@@ -66,7 +66,7 @@ test('the newest modification time in a lease\'s worktree counts as activity, so
   });
   at(75, () => {
     const [problem] = R.statusData(root).stale[0].problems;
-    assert.match(problem, /^idle 35m \(threshold 30m\): .*last commit 70m ago on jarl\/1-one.*last change in the worktree 35m ago/);
+    assert.match(problem, /^idle 35m \(threshold 30m\): .*last commit 1h ago on jarl\/1-one.*last change in the worktree 35m ago/);
     assert.match(L.renderNextAs(L.cmdNextAs(root, { as: 'jarl' })), /no commit, row, log line or change in its worktree for 35m \(threshold 30m\)/);
   });
 });

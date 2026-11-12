@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- A lease is no longer reported as idle while its worker changes files in its worktree: the newest change to a file there counts as activity alongside commits, rows and log lines.
 - `decide --supersedes` takes several rulings in one call (a comma list, or the flag repeated) and marks them all or none. A supersession written by mistake is taken back with `retract <slug> supersession "<why>" --by <who>`: the ruling is in force again and the reason is kept in the record and the log.
 - `decisions --as <role>` lists the rulings that are rules reaching that role (with `--live`, only those still in force), so a new rule can be checked before any brief is raised.
 - Issues leased together on one branch are one lease for `brief` and `next` even when their Repo fields name the same repository once by its name and once by a path.

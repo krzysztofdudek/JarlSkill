@@ -121,7 +121,7 @@ function issueRows(ctx) {
     }
     if ((mark === 'no-rows' || backAfterRound) && lv.idle) {
       // Idle past the threshold: a worker stuck on a prompt or a lock writes nothing, so the act is the holder's.
-      out.push({ ...base, what: 'idle', idle: { ageMs: lv.ageMs, minutes: lv.minutes }, says: `${withWorker}${since}, no commit, row or log line for ${idleFor(lv)}: ask the worker whether it waits on a prompt or a lock, or hand the lease over`,
+      out.push({ ...base, what: 'idle', idle: { ageMs: lv.ageMs, minutes: lv.minutes }, says: `${withWorker}${since}, ${lv.lastWork ? 'no commit, row, log line or change in its worktree' : 'no commit, row or log line'} for ${idleFor(lv)}: ask the worker whether it waits on a prompt or a lock, or hand the lease over`,
         command: jarlLine('set', leaseIds(loop, i).join(','), leaseStatus, '<why-the-worker-changed>', '--worker', '<the-new-worker>', '--model', '<model-id>', '--handover') });
       continue;
     }

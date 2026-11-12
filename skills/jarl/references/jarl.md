@@ -97,7 +97,7 @@ To the owner: one sentence of state at boot, plain words, no internal names; "ho
 
 | Fails | Seen by | Do |
 |---|---|---|
-| a worker dies | `branches` marks the lease stale (30 minutes of no commit, row or log line, or the goal's `Liveness: <minutes>`) | hand the whole lease over with `set --handover`: the same worktree if the old agent is certainly gone, else a new branch from the old tip |
+| a worker dies | `branches` marks the lease stale (30 minutes of no commit, row, log line or change in its worktree, or the goal's `Liveness: <minutes>`) | hand the whole lease over with `set --handover`: the same worktree if the old agent is certainly gone, else a new branch from the old tip |
 | a worker goes in circles | the round limit | a fresh worker one tier up, on another model, or with a changed approach |
 | an examiner dies | proof with no verdict past the threshold | raise another; two verdicts corrupt nothing |
 | a merge goes red | the merger's check | the merger's brief has the three cases |
