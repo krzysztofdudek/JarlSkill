@@ -19,6 +19,29 @@ test('decide says when a ruling that reads as an instruction has no scope, and n
   }
 });
 
+// Rulings of a real loop that carry no scope. The first five are instructions to agents; the rest record what was found, chosen
+// or read, and hold the words that oblige or forbid only as part of what they describe.
+const INSTRUCTIONS = [
+  'The owner, 2026-10-02: "Just so you know, you do not make any fixes until I tell you" (translated from Polish). Findings from the bug hunt go into this loop as issues; none is fixed until the owner says which.',
+  'The owner, 2026-10-04: "Only close out the open work and do not open new tasks. I will let you know when you can" (translated from Polish). We finish the six packages in progress.',
+  'Krzysztof, 2026-11-03 (translated from Polish, a swear word made neutral): "Stop, not Fable, never." No agent of the family\'s work runs on the Fable model.',
+  'Hard work goes to Opus 5.5 at high; its reviews and every takeover go to Fable 5.2 at high. Packages already running keep their worker.',
+  'New work avoids Fable 5.2 for cost: hard work goes to Sonnet 5.5 at high, its reviews and every takeover to Opus 5.5 at xhigh.',
+];
+const RECORDS = [
+  'Issue 340\'s line 2 is read as: a file above the size limit is never decoded to text for a rule; a rule that reads only its path is not affected.',
+  'On 2026-11-09 the jarl read the backlog against the release branches and put a list of seven corrections to the owner. 142 and 143 adopt Runes 1.1.0, because 1.0.1 was never published.',
+  'Issue 566\'s line 1 is proved red before against the extractors the work changed, not against the walker, which already walks in linear time; those inputs stay as pins that must stay green.',
+  'The release moves to Friday, because the review ran long and nobody should wait for it.',
+  'Krzysztof, 2026-10-29 (translated from Polish): "The deadline is Friday." The loop records it and goes on.',
+];
+
+test('the note is for rulings that tell agents what to do, and not for those that describe what was found or chosen', () => {
+  const root = fresh();
+  for (const [n, text] of INSTRUCTIONS.entries()) assert.match(run(root, ['decide', `real-i-${n}`, text, '--by', 'jarl']).stderr, /reads as an instruction/, text);
+  for (const [n, text] of RECORDS.entries()) assert.doesNotMatch(run(root, ['decide', `real-r-${n}`, text, '--by', 'jarl']).stderr, /reads as an instruction/, text);
+});
+
 test('decide stays quiet about a ruling that has a scope and about one that records a choice', () => {
   const root = fresh();
   const scoped = run(root, ['decide', 'scoped', 'Never push to main.', '--applies-to', 'role worker', '--by', 'jarl']);
