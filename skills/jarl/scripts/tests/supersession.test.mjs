@@ -33,7 +33,9 @@ test('--supersedes takes several slugs, as a list or repeated, and marks each on
 
 test('a list with one slug that cannot be superseded writes nothing, and names the slug', () => {
   const root = chain();
-  assert.match(refuses(root, 'decide', 'd', 'D.', '--supersedes', 'a,nothing', '--by', 'coordinator'), /no ruling nothing in decisions\.md to supersede/);
+  const said = refuses(root, 'decide', 'd', 'D.', '--supersedes', 'a,nothing', '--by', 'coordinator');
+  assert.match(said, /no ruling nothing in decisions\.md to supersede/);
+  assert.match(said, /--supersedes "a,<a-ruling-in-force>"/, 'the form keeps the slugs that were fine and replaces the one that was not');
   jarl(root, 'decide', 'x', 'X replaces b.', '--supersedes', 'b', '--by', 'coordinator');
   assert.match(refuses(root, 'decide', 'd', 'D.', '--supersedes', 'a,b', '--by', 'coordinator'), /b is already superseded by x/);
   assert.match(refuses(root, 'decide', 'd', 'D.', '--supersedes', 'a,a,d', '--by', 'coordinator'), /--supersedes names the slug of an earlier ruling/);
@@ -50,7 +52,7 @@ test('retract <slug> supersession takes a supersession back with a reason the lo
   const after = decisionsText(root).split('\n');
   let at = 0;
   for (const line of before.split('\n')) { const k = after.indexOf(line, at); assert.notEqual(k, -1, `the line stays: ${line}`); at = k + 1; }
-  assert.match(decisionsText(root), /\*\*Supersession withdrawn:\*\* d \(\d{4}-\d{2}-\d{2}\) · by jarl · a was named by mistake/);
+  assert.match(decisionsText(root), /\*\*Superseded by:\*\* \(withdrawn\) d \(\d{4}-\d{2}-\d{2}\) · by jarl · a was named by mistake/);
   assert.match(logText(root), /withdrew the supersession of a by d · by jarl · a was named by mistake/);
   assert.equal(json(root, 'decisions').find((d) => d.slug === 'd').supersedes, 'b', 'd supersedes b only now');
   assert.equal(json(root, 'decisions').find((d) => d.slug === 'a').supersededBy, null);
@@ -78,4 +80,45 @@ test('the decisions driver reads every slug of a Supersedes line when it looks f
   const r = mergeDecisionsTexts(base, ours, theirs);
   assert.equal(r.ok, false);
   assert.ok(r.conflicts.some((c) => /b is superseded on both sides — by n1 and by n2/.test(c)), r.conflicts.join('; '));
+});
+
+// The closing block of a ruling as Jarl 6.3.0 reads it: from its end, up to the first line that is none of its fields. A
+// withdrawal written as a line of a field that reader does not know would end the block there and leave By, Applies to and the
+// owner's words inside the ruling's text.
+const OLD_META = /^\*\*(Waives review|Applies to|By|Supersedes|Superseded by|Settles|Area|Reach|Rule|Ratified|Rejected|Type log|Rule log):\*\*\s*(.*)$/;
+function oldReading(text, slug) {
+  const lines = text.split('\n');
+  const at = lines.findIndex((l) => l.endsWith(` · ${slug}`) && l.startsWith('## '));
+  let end = lines.findIndex((l, n) => n > at && l.startsWith('## '));
+  if (end === -1) end = lines.length;
+  const body = lines.slice(at + 1, end);
+  let cut = body.length;
+  while (cut > 0 && (body[cut - 1].trim() === '' || OLD_META.test(body[cut - 1]))) cut -= 1;
+  const meta = body.slice(cut).map((l) => OLD_META.exec(l)).filter(Boolean);
+  return { ruling: body.slice(0, cut).join('\n').trim(), by: meta.filter((m) => m[1] === 'By').pop()?.[2], applies: meta.filter((m) => m[1] === 'Applies to').pop()?.[2] ?? null };
+}
+
+test('a record that holds a withdrawal is read by an older Jarl with every field in place, the ruling still reading as superseded', () => {
+  const root = makeLoop({ prefix: 'jarl-withdraw-old-', via: 'cli', dotGit: false });
+  jarl(root, 'decide', 'a', 'Run the tests.', '--applies-to', 'role worker', '--by', 'owner', '--quote', 'Yes, run them.');
+  jarl(root, 'decide', 'b', 'B replaces a by mistake.', '--supersedes', 'a', '--by', 'jarl');
+  jarl(root, 'retract', 'a', 'supersession', 'a was named by mistake', '--by', 'jarl');
+  const old = oldReading(decisionsText(root), 'a');
+  assert.equal(old.by, 'owner');
+  assert.equal(old.applies, 'role worker');
+  assert.match(old.ruling, /^Run the tests\.\n\nThe owner's words: "Yes, run them\."$/);
+  assert.deepEqual(live(root), ['a', 'b']);
+});
+
+test('the decisions driver merges a withdrawal added on one side, and still refuses two successors', () => {
+  const block = (slug, ...meta) => `## 2026-01-01 · ${slug}\nRuling ${slug}.\n\n${meta.join('\n')}\n`;
+  const file = (...blocks) => `# Decisions\n\n${blocks.join('\n')}`;
+  const base = file(block('a', '**Superseded by:** d (2026-01-02)'), block('d', '**Supersedes:** a'));
+  const withdrawn = file(block('a', '**Superseded by:** d (2026-01-02)', '**Superseded by:** (withdrawn) d (2026-01-03) · by jarl · mistake'), block('d', '**Supersedes:** a'));
+  const again = file(block('a', '**Superseded by:** d (2026-01-02)', '**Superseded by:** (withdrawn) d (2026-01-03) · by jarl · mistake', '**Superseded by:** f (2026-01-04)'), block('d', '**Supersedes:** a'), block('f', '**Supersedes:** a'));
+  assert.equal(mergeDecisionsTexts(base, withdrawn, base).ok, true);
+  assert.equal(mergeDecisionsTexts(base, base, withdrawn).ok, true);
+  const merged = mergeDecisionsTexts(base, again, withdrawn);
+  assert.equal(merged.ok, true, merged.conflicts?.join('; '));
+  assert.equal(mergeDecisionsTexts(file(block('a'), block('d'), block('e')), file(block('a', '**Superseded by:** d (2026-01-02)'), block('d'), block('e')), file(block('a', '**Superseded by:** e (2026-01-02)'), block('d'), block('e'))).ok, false);
 });
