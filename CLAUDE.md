@@ -6,6 +6,8 @@ This repository exists solely so the author can develop and version the jarl ski
 
 Jarl is the loop in the core of the Yggdrasil family (Jarl the loop, Yggdrasil the law, Grain the survey). It works alone and holds no law or gate of its own: where the repository has a check, the check decides what lands. It owns the **issues → merged branch** stage: a session that works on a repository opens an issue loop (out of git by default, committed with the branch on request, or kept as a permanent record), raises a worker per issue in its own worktree, merges on evidence, and closes the loop when nothing is left open. `skills/jarl/scripts/record.mjs` is the `jarl-record/4` contract, registered on the family's contracts page: its exports change only with a new `RECORD_API`, and `tests/record-contract.test.mjs` holds them. Jarl ships on the family's one version number with Yggdrasil and Grain. Its one optional edge to another family tool is writing what the client ratified into Yggdrasil's logs, and letting Yggdrasil's own merge drivers merge Yggdrasil's files. Ratatoskr, Urd and Researcher are the add-ons beside the core, each with no dependency of its own.
 
+Issues, releases, research and the family canon live in Althing: https://github.com/krzysztofdudek/Althing
+
 ## Plugin scaffolding
 
 Layout mirrors the sibling repos (UrdSkill, RatatoskrSkill, ResearcherSkill):
