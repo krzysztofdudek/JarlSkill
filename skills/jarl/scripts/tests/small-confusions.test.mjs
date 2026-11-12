@@ -9,19 +9,38 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { jarl, refuses, run, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
 
-test('round takes its count of findings as --finding-count, and --findings is refused with the call that does the same', () => {
+const mcp = await import('../jarl-mcp.mjs');
+
+test('round takes its count of findings as --finding-count, and --findings still works and says which name to use', () => {
   const root = makeLoop({ prefix: 'jarl-round-count-', via: 'cli', dotGit: false });
   jarl(root, 'new', 'work', '--acceptance', '[read] it works', '--tier', 'light');
   jarl(root, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-work', '--worker', 'w1', '--model', 'm1');
-  const said = refuses(root, 'round', '1', 'the count is off by one', '--findings', '2');
-  assert.match(said, /round takes the count of its findings as --finding-count, a whole number, not as --findings/);
-  assert.match(said, /\njarl\.mjs round "<id>" "<what-failed>" --by "<who>" --finding-count "<count>"/);
+  const old = run(root, ['round', '1', 'the count is off by one', '--findings', '2']);
+  assert.equal(old.status, 0, old.stderr);
+  assert.match(old.stderr, /note: --findings is the name round takes its count of findings under; --finding-count is the name to use/);
   assert.match(refuses(root, 'round', '1', 'red', '--finding-count', 'many'), /--finding-count must be a whole number/);
-  assert.match(jarl(root, 'round', '1', 'the count is off by one', '--finding-count', '2'), /1 round 1/);
-  jarl(root, 'round', '1', 'and again', '--finding-count', '3');
+  assert.match(refuses(root, 'round', '1', 'red', '--findings', 'many'), /--finding-count must be a whole number/);
+  assert.match(refuses(root, 'round', '1', 'red', '--findings', '2', '--finding-count', '3'), /--findings and --finding-count are one count/);
+  const named = run(root, ['round', '1', 'and again', '--finding-count', '3']);
+  assert.equal(named.status, 0);
+  assert.equal(named.stderr, '');
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   assert.match(log, /1 round 1 \(count 1 of 3\) · findings 2 · the count is off by one/);
   assert.match(log, /1 round 2 \(count 2 of 3\) · findings 3 · and again/);
+});
+
+test('the round tool takes findings as an alias of finding-count and records the same count, with the notice', () => {
+  const root = mkdtempSync(join(tmpdir(), 'jarl-round-tool-'));
+  mkdirSync(join(root, '.git'));
+  mcp.callTool('jarl_init', { by: 'test-writer', goal: 'g', root });
+  mcp.callTool('jarl_new', { by: 'test-writer', title: 'one', acceptance: ['[read] it works'], tier: 'light', root });
+  mcp.callTool('jarl_set', { by: 'test-writer', ids: '1', status: 'in-progress', text: 'go', branch: 'jarl/1-one', worker: 'w1', model: 'm1', root });
+  const viaAlias = mcp.callTool('jarl_round', { by: 'test-writer', ids: '1', text: 'red one', findings: '4', root });
+  assert.match(JSON.stringify(viaAlias), /--finding-count is the name to use/);
+  mcp.callTool('jarl_round', { by: 'test-writer', ids: '1', text: 'red two', 'finding-count': '5', root });
+  const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
+  assert.match(log, /findings 4 · red one/);
+  assert.match(log, /findings 5 · red two/);
 });
 
 test('a --worktree that is not on this machine yet says it was not checked, and one that is says it was', () => {
