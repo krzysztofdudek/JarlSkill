@@ -138,6 +138,15 @@ function issueHolds(root, issue, selectors) {
     return false;
   });
 }
+// Whether a rule reaches a role at all: its scope names that role or names none. The moment, slice and issue selectors
+// narrow what the role is handed, and a role is handed a rule on the work that matches them, so they do not keep it out here.
+export function ruleReachesRole(rule, role) {
+  return Boolean(rule.selectors) && rule.selectors.every((s) => s.word !== 'role' || s.value === role);
+}
+export function needRuleRole(role) {
+  need(RULE_ROLES.includes(String(role).toLowerCase()), `${role} is not a role a rule reaches: ${RULE_ROLES.join(', ')}`, () => ({ flag: '--as', value: hole('<role>') }));
+  return String(role).toLowerCase();
+}
 // Whether a rule matches a reader: { roles, slice, moments, issues }. The reader's selectors hold for the reader, a slice
 // holds for the coordinator of that slice or for an issue in it, and the issue selectors hold for one issue the reader
 // works on.

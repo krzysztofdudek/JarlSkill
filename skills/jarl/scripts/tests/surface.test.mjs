@@ -184,7 +184,7 @@ const FLAG_MEANINGS = {
   branch: ['a branch: the lease\'s, or the one measured', ['set', 'scope']], worker: ['the worker of a lease', ['set']], model: ['the model the agent was raised on', ['set', 'review']],
   worktree: ['the worktree a lease is checked against', ['set']], handover: ['a lease handed to a new worker', ['set']], header: ['the header rewritten from the log', ['set']],
   'at-lease': ['prints the lines as they were at the lease and as they are now', ['show']],
-  limit: ['how many ready issues', ['next']], as: ['the holder whose list is asked for', ['next', 'resume', 'status']], slice: ['a coordinator\'s slice', ['next', 'ask', 'resume', 'status', 'brief']],
+  limit: ['how many ready issues', ['next']], as: ['the one whose list is asked for: a holder, or for decisions a role whose rules are listed', ['next', 'resume', 'status', 'decisions']], slice: ['a coordinator\'s slice', ['next', 'ask', 'resume', 'status', 'brief']],
   role: ['the role a brief is written for', ['brief']],
   relayed: ['a verdict recorded in the reviewer\'s name', ['review']], bot: ['a verdict recorded as a bot\'s', ['review']], artifact: ['the render or file a verdict judged', ['review']], outside: ['a finding outside the reviewed issue, filed as a new issue', ['review']], findings: ['how many findings a red round left', ['round']], with: ['another loop to read', ['models']], archives: ['this loop\'s archives read too', ['models']],
   base: ['the base branch a branch is held against', ['scope', 'branches', 'resume']], 'stale-hours': ['how long a lease may idle', ['branches', 'status']],

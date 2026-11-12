@@ -396,8 +396,10 @@ commands:
                                                  about a whole type of code, --reach how many files that type holds,
                                                  --rule the graph's rule it admits on that type (its id):
                                                  close puts it to the owner for ratification
-  decisions [--live]                             the rulings with who ruled and what superseded them; --live only
-                                                 those still in force
+  decisions [--live] [--as <role>]               the rulings with who ruled and what superseded them; --live only
+                                                 those still in force; --as <role> only the rules that reach that role
+                                                 (a rule scoped to an issue, a moment or a slice is kept, because it
+                                                 reaches the role on the work it matches)
   goal                                           the goal as goal.md holds it
   goal --set "<machine-line>" --by who         one machine line of the goal set, with a log line that says what it
                                                  was and what it is: "Check (<name>): <command>" or a bare

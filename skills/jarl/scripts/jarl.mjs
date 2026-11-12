@@ -67,7 +67,7 @@ export const COMMAND_FLAGS = {
   answer: { by: 'value', option: 'value' },
   resume: { log: 'value', ready: 'value', gh: 'bool', repo: 'value', base: 'value', as: 'value', slice: 'value' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', gh: 'bool' },
-  log: { by: 'value' }, decide: { settles: 'many', 'waives-review': 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', 'applies-to': 'value', until: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool' },
+  log: { by: 'value' }, decide: { settles: 'many', 'waives-review': 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', 'applies-to': 'value', until: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool', as: 'value' },
   goal: { set: 'value', by: 'value' },
   status: { 'stale-hours': 'value', group: 'value', tag: 'value', as: 'value', slice: 'value' }, archive: { by: 'value' }, report: { found: 'bool', metrics: 'bool' }, mode: { by: 'value' },
   changelog: { repo: 'value' },
@@ -214,7 +214,7 @@ const ARG_HOLES = {
   ids: '<ids>', id: '<id>', title: '<title>', goal: '<goal>', files: '<findings.json>', 'import file': '<findings.json>', 'profile file': '<profile.json>',
   'retract entry': '<review-n-or-note-n>', 'retract text': '<why>', 'field name': '<part>', 'base name': '<name>', 'base branch': '<branch>',
   'set status': '<status>', 'set text': '<why>', 'review verdict': '<verdict>', 'review text': '<what-was-read-and-found>', 'round text': '<what-failed>',
-  'tick line': '<line-number>', 'answer id': '<question>', 'decide slug': '<slug>', 'decide text': '<a-ruling>', 'archive slug': '<slug>', 'mode mode': '<mode>',
+  'tick line': '<line-number>', 'answer id': '<question>', 'decide slug': '<slug>', 'decide text': '<a-ruling>', 'decisions as': '<role>', 'archive slug': '<slug>', 'mode mode': '<mode>',
   'extend part': '<section-or-field>', 'extend name': '<name>',
   text: '<text>',
 };

@@ -15,7 +15,7 @@ import { tipLinesOf } from './repositories.mjs';
 import { readLoop } from './loop.mjs';
 import { sliceNamed } from './slices.mjs';
 import { issuesFor } from './shared.mjs';
-import { appliesToLine, loopRules, needKnownRepos, parseScope, parseUntil, underText, withUnder } from './rules.mjs';
+import { appliesToLine, loopRules, needKnownRepos, needRuleRole, parseScope, parseUntil, ruleReachesRole, underText, withUnder } from './rules.mjs';
 
 // ---- questions to the owner and the handoff -------------------------------------------------
 
@@ -470,8 +470,9 @@ export function promotionBatch(root) {
   return { items, filed: filed.map((id) => `a-${id}`) };
 }
 
-// decisions [--live]: the rulings, oldest first, each with who ruled and what superseded it; --live leaves out
-// the superseded ones — what a session reads at boot as the rulings in force.
+// decisions [--live] [--as <role>]: the rulings, oldest first, each with who ruled and what superseded it; --live leaves out
+// the superseded ones — what a session reads at boot as the rulings in force; --as keeps the rulings that are rules reaching
+// that role.
 // A ruling with a scope carries it (appliesTo, the line as written) and, once it has ended, why (ended); --live
 // leaves out an ended rule too.
 export function cmdDecisions(root, flags = {}) {
@@ -482,7 +483,10 @@ export function cmdDecisions(root, flags = {}) {
     const r = ends.get(d.slug);
     return withUnder(loop.decisions, r && !d.supersededBy && (r.ended || r.unread) ? { ...d, ...(r.ended ? { ended: r.ended } : {}), ...(r.unread ? { unread: r.unread } : {}) } : d, ended);
   });
-  return flags.live ? all.filter((d) => !d.supersededBy && !d.ended) : all;
+  const live = flags.live ? all.filter((d) => !d.supersededBy && !d.ended) : all;
+  if (flags.as === undefined) return live;
+  const role = needRuleRole(flags.as);
+  return live.filter((d) => ruleReachesRole(ends.get(d.slug) ?? { selectors: null }, role));
 }
 // The rulings in force, as decisions --live counts them, whose Settles names an issue the loop holds that is neither done
 // nor dropped (in a status that settles none of the issues waiting on it), each with those issues and their status: work
