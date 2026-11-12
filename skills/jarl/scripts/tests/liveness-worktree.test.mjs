@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readdirSync, realpathSync, utimesSync, writeFileSync, lstatSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import * as R from '../record.mjs';
 import * as L from '../jarl-lib.mjs';
 import * as W from '../lib/where.mjs';
@@ -38,7 +38,7 @@ function leaseWithWorktree() {
     R.setStatus(root, '001', 'in-progress', 'w', { worker: 'w1', branch: 'jarl/1-one' });
   });
   const parent = realpathSync.native(join(root, '..'));
-  const worktree = join(parent, `${root.split('/').pop()}-wt`);
+  const worktree = join(parent, `${basename(root)}-wt`);
   g('worktree', 'add', '-q', '-b', 'jarl/1-one', worktree);
   const when = new Date(T0 + 5 * MIN).toISOString();
   writeFileSync(join(worktree, 'b.txt'), 'b\n');
