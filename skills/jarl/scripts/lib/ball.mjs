@@ -260,7 +260,7 @@ function awaitingReview(loop, profile) {
 }
 // The issues of one lease, the given one among them, in the record's order.
 function leaseIds(loop, issue) {
-  const mates = loop.issues.filter((x) => x.id !== issue.id && sameLease(loop.profile, x, issue)).map((x) => x.id);
+  const mates = loop.issues.filter((x) => x.id !== issue.id && sameLease(loop.root, loop.profile, x, issue)).map((x) => x.id);
   return [issue.id, ...mates].sort(cmpId);
 }
 // The first issue of `issue`'s lease whose worker still owes rows (see workerRowsMissing), and which lines: a review is

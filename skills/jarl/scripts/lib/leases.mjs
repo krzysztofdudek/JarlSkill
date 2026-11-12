@@ -7,7 +7,7 @@ import { jarlDir } from './where.mjs';
 import { branchNameProblem } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
 import { acceptanceLineCount, loadIssues } from './issues.mjs';
-import { fileKeysOf, isGitRepo, issueRepoPaths, repoLabel, worktreesOf } from './repositories.mjs';
+import { fileKeysOf, isGitRepo, issuePlaces, issueRepoPaths, repoLabel, worktreesOf } from './repositories.mjs';
 import { activeSlices, sliceOf } from './slices.mjs';
 import { leaseConflictOf } from './gate.mjs';
 import { readLoop } from './loop.mjs';
@@ -68,12 +68,12 @@ export function needLeaseHolds(root, profile, issues, status, why, flags, handov
   for (const issue of issues) {
     if (handover) {
       need(leased(issue), `${issue.id} holds no lease to hand over${nothing} — lease it without --handover: ${jarlLine('set', issue.id, status, '<text>', ...leaseFlags)}`, () => ({ rename: '--handover', to: hole('<no-flag-here>') }));
-      const left = everyIssue.filter((i) => !taken.has(i.id) && sameLease(profile, i, issue));
+      const left = everyIssue.filter((i) => !taken.has(i.id) && sameLease(root, profile, i, issue));
       need(!left.length, `${issue.id} shares its lease with ${left.map((i) => i.id).join(', ')} (${leaseWords(issue)}): a handover moves the whole lease or nothing, or two workers would hold one branch — name every issue of the lease${nothing}`, () => ['jarl.mjs', 'set', hole('<ids>'), status, hole('<why-the-worker-changed>'), '--worker', hole('<the-new-worker>'), '--handover', '--by', hole('<who>')]);
       // A lease the log holds twice is settled by a handover to either of its two holders, the one the issue's header already names too.
       need(replaces(issue) || ((named('worker') !== null || named('branch') !== null) && leaseConflictOf(readLoop(jarlDir(root)), issue) !== null), `--handover names the lease ${issue.id} already has (${holderText(issue)}) — a handover names the new --worker or --branch${nothing}`, () => ({ flag: '--worker', value: '<the-new-worker>' }));
     } else {
-      need(!(leased(issue) && replaces(issue)), `${issue.id} is leased already (${holderText(issue)}) — a second lease would replace it in silence, and ${fieldText(issue.fields.worker) || 'its worker'} would go on working on a branch the record does not name; when the work changes hands, say why: ${jarlLine('set', [issue.id, ...loadIssues(root).filter((x) => x.id !== issue.id && sameLease(profile, x, issue)).map((x) => x.id)].join(','), status, '<why-the-worker-changed>', ...leaseFlags, '--handover')}${nothing}`, () => ([...(why ? [] : [{ arg: 2, value: '<why-the-worker-changed>' }]), { flag: hole('<--handover-or-none>') }]));
+      need(!(leased(issue) && replaces(issue)), `${issue.id} is leased already (${holderText(issue)}) — a second lease would replace it in silence, and ${fieldText(issue.fields.worker) || 'its worker'} would go on working on a branch the record does not name; when the work changes hands, say why: ${jarlLine('set', [issue.id, ...loadIssues(root).filter((x) => x.id !== issue.id && sameLease(root, profile, x, issue)).map((x) => x.id)].join(','), status, '<why-the-worker-changed>', ...leaseFlags, '--handover')}${nothing}`, () => ([...(why ? [] : [{ arg: 2, value: '<why-the-worker-changed>' }]), { flag: hole('<--handover-or-none>') }]));
     }
   }
   // With more than one slice in play, a lease holds only what its issue declares, so one that declares nothing would
@@ -101,12 +101,17 @@ export function needLeaseHolds(root, profile, issues, status, why, flags, handov
 }
 
 // Two issues on one lease: both hold a claim, on one branch of one repository, or both worked in place by one worker.
-export function sameLease(profile, a, b) {
+export function sameLease(root, profile, a, b) {
   if (!profile.is(a.status, 'holds-claim') || !profile.is(b.status, 'holds-claim')) return false;
   const [ba, bb] = [fieldText(a.fields.branch), fieldText(b.fields.branch)];
-  if (ba || bb) return ba === bb && fieldText(a.fields.repo) === fieldText(b.fields.repo);
+  if (ba || bb) return ba === bb && sameRepos(root, a, b);
   return Boolean(fieldText(a.fields.worker)) && fieldText(a.fields.worker) === fieldText(b.fields.worker);
 }
+// Whether two issues name the same repositories, whichever way each is spelled: a name and a path to the same checkout are one.
+const sameRepos = (root, a, b) => {
+  const places = (i) => [...new Set(issuePlaces(root, i))].sort().join('\n');
+  return fieldText(a.fields.repo) === fieldText(b.fields.repo) || places(a) === places(b);
+};
 const leaseWords = (issue) => [fieldText(issue.fields.worker) && `worker ${fieldText(issue.fields.worker)}`, fieldText(issue.fields.branch) && `branch ${fieldText(issue.fields.branch)}`].filter(Boolean).join(', ');
 
 // What the leases of the issues outside `taken` hold: each file key and each resource, with the issue whose lease holds it.
