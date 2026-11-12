@@ -392,7 +392,9 @@ commands:
                                                  with who ruled, into each named issue's evidence (its status is unchanged);
                                                  --waives-review, on a ruling by the owner alone, closes the named
                                                  issues without a review: done and the merge queue take it for the
-                                                 approve until a round, a reopen or a new commit spends it; --applies-to makes it
+                                                 approve until a round, a reopen or a new commit spends it; a ruling with no
+                                                 --applies-to is a record that reaches no reader, and decide says so when its
+                                                 words read as an instruction; --applies-to makes it
                                                  a rule with a scope, printed whole to every reader it matches: loop, or
                                                  selectors joined by "and" (role, slice, moment, issue, tag, kind, tier,
                                                  files, repo, each with one value); --until ends it after a date or when

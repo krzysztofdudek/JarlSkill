@@ -22,7 +22,7 @@ import {
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
   renderProfile, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, workerEvidence, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
-  cmdExtend, needLoop, cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, cmdRetractTick, cmdWithdrawSupersession, renderWithdrawn, atLeaseText, issueLinesAtLease, withWriter, editorOf, readProfileFile, cmdRenumber, cmdSplit,
+  cmdExtend, needLoop, cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, cmdRetractTick, readsAsInstruction, cmdWithdrawSupersession, renderWithdrawn, atLeaseText, issueLinesAtLease, withWriter, editorOf, readProfileFile, cmdRenumber, cmdSplit,
   needKnownModels, cmdUse, renderUse, discoverLoop, needRecordFormat, UNRECORDED,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
@@ -1003,7 +1003,7 @@ function dispatchCall(root, commandName, rest, flags) {
         out = R.appendLog(root, rest[0]); text = 'logged'; break;
       case 'decide':
         need(flags.by !== undefined, 'decide records who ruled with --by, jarl under a mandate, owner with --quote "<his-own-words>"', () => ([{ flag: '--by', value: '<who>' }, ...(rest[1] === undefined ? [{ arg: 1, value: '<text>' }] : [])]));
-        out = R.decide(root, rest[0], rest[1], flags); text = renderDecide(out); decideNotes(root, rest[0], out.by, flags, warn); break;
+        out = R.decide(root, rest[0], rest[1], flags); text = renderDecide(out); decideNotes(root, rest[0], out.by, flags, warn, rest[1]); break;
       case 'decisions': out = R.decisions(root, flags); text = renderDecisions(out); break;
       case 'goal': out = flags.set === undefined ? cmdGoal(root) : cmdGoalSet(root, flags.set); text = flags.set === undefined ? out.goal : out.unchanged ? `goal line unchanged: ${out.shown}` : `goal line ${out.replaced ? 'changed' : 'added'}: ${out.shown}${out.replaced ? ` (was ${out.was})` : ''}`; break;
       case 'status': out = R.statusData(root, groupedBy(flags)); text = renderStatus(out, R.loadProfile(root)); ({ out, text } = endWithAsker(root, flags, out, text)); break;
@@ -1087,8 +1087,11 @@ function askText(out) {
 
 // The notes a decide says on stderr: the owner's word with no question in the record behind it, and the open issues that name the
 // ruling a supersession replaces, so the jarl rewrites them now.
-function decideNotes(root, slug, by, flags, warn) {
+function decideNotes(root, slug, by, flags, warn, text) {
   if (by === 'owner' && !questionFor(root, slug)) warn.push(`note: no question in the record asks about ${slug}: a ruling by the owner with no question behind it is recorded as he gave it`);
+  if (flags['applies-to'] === undefined && typeof text === 'string' && readsAsInstruction(text)) {
+    warn.push(`note: ${slug} reads as an instruction and has no --applies-to, so no brief or view hands it to anyone — a ruling that is a record needs nothing; to make it a rule for agents, decide it again, which supersedes this one: ${jarlLine('decide', '<a-new-slug>', '<a-ruling>', '--supersedes', slug, '--applies-to', '<selectors>', '--by', '<who>')}`);
+  }
   for (const old of flags.supersedes === undefined ? [] : [].concat(flags.supersedes).flatMap((v) => String(v).split(',')).map((x) => x.trim()).filter(Boolean)) {
     const open = issuesNaming(root, old);
     if (open.length) warn.push(`note: open issues name ${old}: ${open.map((i) => i.id).join(', ')} — rewrite them to ${slug}`);

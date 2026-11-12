@@ -11,8 +11,8 @@ const fresh = () => makeLoop({ prefix: 'jarl-rule-record-', via: 'cli', dotGit: 
 
 test('decide says when a ruling that reads as an instruction has no scope, and names the call that scopes it', () => {
   const root = fresh();
-  for (const text of ['Never push to main.', 'Workers must run the tests before they report.', 'Run the linter before every commit.', 'Always name the branch in a report.', "Don't edit the vendored copy."]) {
-    const r = run(root, ['decide', `i-${Math.abs(text.length)}`, text, '--by', 'jarl']);
+  for (const [n, text] of ['Never push to main.', 'Workers must run the tests before they report.', 'Run the linter before every commit.', 'Always name the branch in a report.', "Don't edit the vendored copy."].entries()) {
+    const r = run(root, ['decide', `i-${n}`, text, '--by', 'jarl']);
     assert.equal(r.status, 0);
     assert.match(r.stderr, /note: i-\d+ reads as an instruction and has no --applies-to, so no brief or view hands it to anyone/, text);
     assert.match(r.stderr, /jarl\.mjs decide "<a-new-slug>" "<a-ruling>" --supersedes i-\d+ --applies-to "<selectors>" --by "<who>"/, text);
@@ -42,5 +42,5 @@ test('a rule is delivered as its instruction alone: the ruling it was made under
   assert.match(text('under-rule'), /^- under-rule · role worker · by jarl · under mandate — Run the tests\.$/);
   assert.match(text('owner-rule'), /^- owner-rule · role worker · by owner — Keep reports short\.$/);
   assert.doesNotMatch(text('under-rule') + text('owner-rule'), /Made under|owner's words/);
-  assert.match(jarl(root, 'decisions'), /owner-rule · by owner — Keep reports short\. · the owner's words: "Yes, keep them short\."/, 'the record keeps them');
+  assert.match(jarl(root, 'decisions'), /owner-rule · by owner · applies to role worker — Keep reports short\. · the owner's words: "Yes, keep them short\."/, 'the record keeps them');
 });

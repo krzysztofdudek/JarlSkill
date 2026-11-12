@@ -1778,7 +1778,7 @@ test('decide --by owner with no question in the record prints a notice on stderr
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'rewrite the flag handling', '--acceptance', '[read] it works', '--what', 'Follows flag-rule as it stands.');
   assert.match(run(root, ['decide', 'quiet-rule', 'Keep the default.', '--by', 'owner', '--quote', 'Keep it.']).stderr, /no question in the record/);
-  assert.equal(run(root, ['decide', 'mandate-rule', 'Keep the default.', '--by', 'jarl']).stderr, '');
+  assert.equal(run(root, ['decide', 'mandate-rule', 'The default stays.', '--by', 'jarl']).stderr, '');
   jarl(root, 'decide', 'flag-rule', 'Keep the flag.', '--by', 'jarl');
   const r = run(root, ['decide', 'flag-rule-two', 'Keep the flag, now.', '--by', 'jarl', '--supersedes', 'flag-rule']);
   assert.equal(r.status, 0);
@@ -2020,7 +2020,7 @@ test('the supersession notice finds a slug at the end of a sentence and does not
 test('decide --by coordinator prints no notice: a notice is for a ruling by the owner with no question behind it', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  assert.equal(run(root, ['decide', 'default-rule', 'Keep it.', '--by', 'coordinator']).stderr, '');
+  assert.equal(run(root, ['decide', 'default-rule', 'The default stays.', '--by', 'coordinator']).stderr, '');
 });
 
 // ---- the strict readers: every line a parser cannot place is listed, and the readers answer the same without the list

@@ -20,7 +20,7 @@ export { LOCK_STALE_MS, LOCK_REUSED_PID_MS, LOCK_EMPTY_MS, LOCK_BREAK_STALE_MS, 
 export { leaseOfMove, attachmentOf, parseEvent, appendNote, loopEvents, eventsById, journalById, issueState, mergeLineOf } from './lib/log.mjs';
 export { parseIssue, loadIssues, parentCycle, waitCycle, fieldValue, findIssue, sharedNumbers, sharedNumberText, bodyText, needNoFieldTags, describeNew, renderNewReply, acceptanceText, CHANGELOG_SECTIONS, changelogText, changelogEntries, renderIssue, mergedOf, alignRows, evidenceTable, evidenceRows, isUnsplit, placeEvidence, PROPOSED, acceptanceLineCount, acceptanceLines, reviewEntries } from './lib/issues.mjs';
 export { mainCheckoutOf, worktreeState, fileAt, reposNamed, refsIn, REPOS_FILE, repoValueKind, repoPlace, repoOf, branchTip, originSpelling, repoFromInput, REPOS_HEADER, REPOS_DECLARED_IN, declaredNames, declaredRepos, cmdRepoBase, repoIdentity, needRightCheckouts, whyNotDeletable, whereOf, whereLines, reposWhere, reposWhereLines } from './lib/repositories.mjs';
-export { RULE_ROLES, RULE_MOMENTS, RULE_SELECTORS, BUILTIN_RULES, parseScope, parseUntil, readAppliesTo, ruleMatches, rulesFor } from './lib/rules.mjs';
+export { RULE_ROLES, RULE_MOMENTS, RULE_SELECTORS, BUILTIN_RULES, parseScope, parseUntil, readAppliesTo, ruleMatches, rulesFor, readsAsInstruction } from './lib/rules.mjs';
 export { needLoop, readLoop } from './lib/loop.mjs';
 export { recordDisagreements, disagreementText } from './lib/disagreements.mjs';
 export { BASE_COORDINATORS, reviewerKind, coordinatorNames, sliceOf, coordinatorOf } from './lib/slices.mjs';

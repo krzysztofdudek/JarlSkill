@@ -196,10 +196,32 @@ export const underText = (r) => `under ${r.under}${r.underNotInForce ? ` (not in
 // it proposed, every line of it: the question, up to the line of its answer.
 function ruleText(d) {
   const lines = d.ruling.split('\n');
-  if (!/^ask-\d+$/.test(d.slug) || !lines[0].startsWith('**Question:** ')) return d.ruling;
+  if (!/^ask-\d+$/.test(d.slug) || !lines[0].startsWith('**Question:** ')) return withoutHistory(d.ruling);
   const answered = answeredLines(d);
   const end = answered ? lines.findIndex((l, n) => n > 0 && l.trim() === answered.answer) : -1;
   return [lines[0].slice('**Question:** '.length), ...lines.slice(1, end === -1 ? lines.length : end)].join('\n').trim();
+}
+// A ruling's text without the closing paragraphs that record how it came to be: the ruling it was made under and the owner's
+// words. A rule is delivered as the instruction alone; its head names who ruled and what it rests on, and the record keeps the
+// rest.
+const HISTORY_LINE = /^(?:Made under: [A-Za-z0-9][A-Za-z0-9._-]{0,79}|The owner's words: ".*")$/;
+export function withoutHistory(text) {
+  const lines = String(text).split('\n');
+  for (;;) {
+    const last = lines.findLastIndex((l) => l.trim() !== '');
+    if (last <= 0 || !HISTORY_LINE.test(lines[last]) || lines[last - 1].trim() !== '') break;
+    lines.length = last;
+    while (lines.length && lines[lines.length - 1].trim() === '') lines.pop();
+  }
+  return lines.join('\n');
+}
+// Whether a ruling's words read as an instruction to an agent: a sentence that begins with a verb of work, or holds a word
+// that obliges or forbids. A ruling that reads so and names no one it applies to is delivered to no one.
+const OBLIGES = /\b(?:must|mustn't|never|always|shall|should|shouldn't|do not|don't|is required to|are required to|make sure|ensure)\b/i;
+const WORK_VERBS = /^(?:run|use|keep|write|read|check|file|ask|report|name|send|open|close|add|avoid|prefer|pass|give|put|take|stop|start|wait|call|set|list|say|state|show|attach|record|pin|make|follow|test|review|commit|push|merge|raise|pull|tell|do)\b/i;
+export function readsAsInstruction(text) {
+  const body = withoutHistory(String(text));
+  return OBLIGES.test(body) || body.split(/(?<=[.!?])\s+|\n+/).some((s) => WORK_VERBS.test(s.trim()));
 }
 // The rules that match a reader, whole: the loop's rules in force first, then Jarl's own.
 export function rulesFor(root, loop, reader, today) {
