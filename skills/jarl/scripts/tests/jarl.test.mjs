@@ -1773,12 +1773,12 @@ test('answer takes a comma list of ratify items with one verdict, writes one rul
   assert.match(readRecord(root, 'decisions.md'), /\*\*By:\*\* owner/);
 });
 
-test('decide --by owner with no question in the record prints a notice on stderr; --supersedes names the open issues that name the old ruling', () => {
+test('decide --by owner with no question in the record prints no notice; --supersedes names the open issues that name the old ruling', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
   jarl(root, 'new', 'rewrite the flag handling', '--acceptance', '[read] it works', '--what', 'Follows flag-rule as it stands.');
-  assert.match(run(root, ['decide', 'quiet-rule', 'Keep the default.', '--by', 'owner', '--quote', 'Keep it.']).stderr, /no question in the record/);
-  assert.equal(run(root, ['decide', 'mandate-rule', 'Keep the default.', '--by', 'jarl']).stderr, '');
+  assert.equal(run(root, ['decide', 'quiet-rule', 'The default stays.', '--by', 'owner', '--quote', 'Keep it.']).stderr, '');
+  assert.equal(run(root, ['decide', 'mandate-rule', 'The default stays.', '--by', 'jarl']).stderr, '');
   jarl(root, 'decide', 'flag-rule', 'Keep the flag.', '--by', 'jarl');
   const r = run(root, ['decide', 'flag-rule-two', 'Keep the flag, now.', '--by', 'jarl', '--supersedes', 'flag-rule']);
   assert.equal(r.status, 0);
@@ -2017,10 +2017,10 @@ test('the supersession notice finds a slug at the end of a sentence and does not
   assert.doesNotMatch(r.stderr, /, 10\b/, 'the longer slug is not found');
 });
 
-test('decide --by coordinator prints no notice: a notice is for a ruling by the owner with no question behind it', () => {
+test('decide --by coordinator prints no notice for a ruling that records a choice', () => {
   const root = repo();
   jarl(root, 'init', 'goal');
-  assert.equal(run(root, ['decide', 'default-rule', 'Keep it.', '--by', 'coordinator']).stderr, '');
+  assert.equal(run(root, ['decide', 'default-rule', 'The default stays.', '--by', 'coordinator']).stderr, '');
 });
 
 // ---- the strict readers: every line a parser cannot place is listed, and the readers answer the same without the list

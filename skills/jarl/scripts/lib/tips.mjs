@@ -5,7 +5,7 @@ import { git, runGh } from './git.mjs';
 import { jarlDir } from './where.mjs';
 import { parseStamp } from './journal.mjs';
 import { mergedOf } from './issues.mjs';
-import { FETCHED, HOMES, IS_REPO, REFS, REPO_OF, RESOLVED, TOP_OF, isGitRepo, issueRepoPaths, issueRepos, refsIn, repoFromInput, reposNamed, topOf } from './repositories.mjs';
+import { FETCHED, HOMES, IS_REPO, LISTED, REFS, REPO_OF, RESOLVED, TOP_OF, isGitRepo, issueRepoPaths, issueRepos, refsIn, repoFromInput, reposNamed, topOf } from './repositories.mjs';
 import { readLoop } from './loop.mjs';
 import { lastMerge } from './metrics.mjs';
 
@@ -22,7 +22,7 @@ export const TIPS_RECENT_MS = 7 * 24 * 3_600_000;
 let GH;
 // Every cache a command fills, emptied before the next one (see dispatch).
 export function resetCaches() {
-  for (const m of [IS_REPO, REFS, FETCHED, RESOLVED, REPO_OF, TOP_OF, HOMES]) m.clear();
+  for (const m of [IS_REPO, REFS, FETCHED, LISTED, RESOLVED, REPO_OF, TOP_OF, HOMES]) m.clear();
   GH = undefined;
 }
 function ghBin() {

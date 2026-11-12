@@ -124,7 +124,10 @@ commands:
                                                  section) and note-<n> the n-th free-text note (show prints note-<n> before it): the row or note stays, struck
                                                  through, and show leaves a retracted note and its reason out unless --full; the done gate and the metrics
                                                  do not count what is retracted; tick-<n>, --by owner alone, takes back
-                                                 his tick of acceptance line n, and done waits for his tick again
+                                                 his tick of acceptance line n, and done waits for his tick again;
+                                                 retract <slug> supersession --by <who> "<text>" takes back the
+                                                 supersession of a ruling written by mistake: the ruling is in force
+                                                 again, the line saying who and why is appended to it and logged
   list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--match "<field=value>"]... [--all]
                                                  the issues not finished (open and in-progress) by default; --all for
                                                  every status; --match keeps those whose header field holds the value;
@@ -174,7 +177,8 @@ commands:
                                                  was raised on, as the platform names it (with @effort where it has that
                                                  lever), stored as given; --worktree is a check and records nothing: a path
                                                  that exists must be a worktree of a repository of the issue with the
-                                                 lease's branch checked out, and the worktree of a lease is found through
+                                                 lease's branch checked out, one that is not on this machine is not
+                                                 checked, and the worktree of a lease is found through
                                                  its branch; leaving in-progress removes Worker, Model, Since (and a
                                                  Worktree field a lease holds) and keeps Branch; done notes a merge
                                                  whose CI is not green yet; done asks of each line what its method
@@ -276,8 +280,9 @@ commands:
                                                  findings need at least three words; a verdict is taken back with retract;
                                                  a verdict on several ids is one review: each of its lines carries one
                                                  batch id
-  round <ids> "<text>" [--findings <n>] --by who
-                                                 one red round on each, with the count of findings it left if given; every third round,
+  round <ids> "<text>" [--finding-count <n>] [--findings <n>] --by who
+                                                 one red round on each, with the count of findings it left if given (--findings is the same count
+                                                 under its other name, and says to use --finding-count); every third round,
                                                  or every n-th where the goal's "Takeover (<kind>): <n>" line for the issue's kind
                                                  or its bare "Takeover: <n>" line says so, prints the takeover block for a fresh
                                                  worker: a tier up, another model or a changed approach. The limit is read from the
@@ -317,7 +322,7 @@ commands:
   branches [--base <base-branch>] [--repo <name-or-path>] [--stale-hours n]
                                                  every jarl/7-* branch and every branch an issue records: the
                                                  issues on it, commits beyond the base, worktree state, STALE leases
-                                                 (worktree gone, branch gone, idle: no commit, row or log line for the
+                                                 (worktree gone, branch gone, idle: no commit, row, log line or change in its worktree for the
                                                  goal's "Liveness: <minutes>", default 30, or n hours) and
                                                  DONE → delete, NO ISSUE for commits no issue holds; shown only, never
                                                  acted on; read in --repo alone, else in the loop's own
@@ -375,7 +380,7 @@ commands:
   log "<text>" --by who                       append one dated note to the journal; a line that reads as a filing, a move,
                                                  a round, a verdict, a retraction, an evidence row, a merge, a CI state or
                                                  a body change is refused, and the refusal names the command that writes it
-  decide <slug> "<text>" --by <who> [--quote "<his-own-words>"] [--under <slug>] [--supersedes <slug>] [--settles <ids>] [--waives-review <ids>] [--applies-to "<selectors>" [--until <date-or-id>]] [--area <type> [--reach n] [--rule <id>]]
+  decide <slug> "<text>" --by <who> [--quote "<his-own-words>"] [--under <slug>] [--supersedes <slug>[,<slug>...]] [--settles <ids>] [--waives-review <ids>] [--applies-to "<selectors>" [--until <date-or-id>]] [--area <type> [--reach n] [--rule <id>]]
                                                  append a ruling (slug: letters, digits, . _ -); refuses a duplicate slug;
                                                  --by, which every ruling takes, records who ruled (jarl for a choice
                                                  made under a mandate; a name that reads as owner is owner); --by owner needs --quote, his own words, kept as
@@ -384,11 +389,14 @@ commands:
                                                  letters, hidden characters, other quotation marks, HTML and Markdown marks); --under names the ruling in force a ruling
                                                  by the jarl or a coordinator rests on, kept as the text's last paragraph
                                                  "Made under: <slug>", shown with the ruling by decisions and with a rule by the views; --supersedes marks
-                                                 the ruling it replaces "Superseded by" in place; --settles writes the ruling,
+                                                 each ruling it replaces (one slug, a comma list, or the flag repeated)
+                                                 "Superseded by" in place, all in one write or none; --settles writes the ruling,
                                                  with who ruled, into each named issue's evidence (its status is unchanged);
                                                  --waives-review, on a ruling by the owner alone, closes the named
                                                  issues without a review: done and the merge queue take it for the
-                                                 approve until a round, a reopen or a new commit spends it; --applies-to makes it
+                                                 approve until a round, a reopen or a new commit spends it; a ruling with no
+                                                 --applies-to is a record that reaches no reader, and decide says so when its
+                                                 words read as an instruction; --applies-to makes it
                                                  a rule with a scope, printed whole to every reader it matches: loop, or
                                                  selectors joined by "and" (role, slice, moment, issue, tag, kind, tier,
                                                  files, repo, each with one value); --until ends it after a date or when
@@ -396,8 +404,10 @@ commands:
                                                  about a whole type of code, --reach how many files that type holds,
                                                  --rule the graph's rule it admits on that type (its id):
                                                  close puts it to the owner for ratification
-  decisions [--live]                             the rulings with who ruled and what superseded them; --live only
-                                                 those still in force
+  decisions [--live] [--as <role>]               the rulings with who ruled and what superseded them; --live only
+                                                 those still in force; --as <role> only the rules that reach that role
+                                                 (a rule scoped to an issue, a moment or a slice is kept, because it
+                                                 reaches the role on the work it matches)
   goal                                           the goal as goal.md holds it
   goal --set "<machine-line>" --by who         one machine line of the goal set, with a log line that says what it
                                                  was and what it is: "Check (<name>): <command>" or a bare
@@ -408,7 +418,7 @@ commands:
                                                  "Merger (<coordinator>): <name>" (a slice's own merger, in a worktree of its own, landing
                                                  the slice's work on its integration branch jarl/slice-<coordinator>, which then lands on the
                                                  feature branch as a merge with its check), "Takeover (<kind>): <rounds>" or a bare "Takeover: <rounds>",
-                                                 "Liveness: <minutes>" (a lease or a proof with no commit, row or log line
+                                                 "Liveness: <minutes>" (a lease or a proof with no commit, row, log line or change in its worktree
                                                  for longer is idle, on its coordinator's list; default 30, and
                                                  --stale-hours overrides it for one call), "Range (<name>): <from-to>" (the
                                                  numbers new --range <name> files under: no two ranges share a number, and a

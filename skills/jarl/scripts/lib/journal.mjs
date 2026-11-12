@@ -178,26 +178,39 @@ function decisionsAt(dir, skipped) {
   // section — the trailing lines that are such a field or blank. A line of the ruling's text that happens to start
   // with **By:** is text.
   const META = DECISION_META;
-  return out.map((d) => {
+  const read = out.map((d) => {
     let cut = d.body.length;
     while (cut > 0 && (d.body[cut - 1].trim() === '' || META.test(d.body[cut - 1]))) cut -= 1;
     const meta = d.body.slice(cut).map((l) => META.exec(l)).filter(Boolean);
     const field = (name) => meta.filter((m) => m[1] === name).map((m) => m[2].trim());
     // The ruling's text: a line indented two spaces is a continuation line of its free text, read without the indent.
     const ruling = d.body.slice(0, cut).map((l) => (l.startsWith('  ') ? l.slice(2) : l)).join('\n').trim();
-    const sup = field('Superseded by').pop();
+    // A withdrawal is a Superseded by line of its own, `(withdrawn) <by> (<date>) · by <who> · <why>`: a field every reader
+    // places, so a reader that does not know withdrawals keeps the ruling's closing block whole, and reads the ruling as superseded.
+    const marks = field('Superseded by');
+    const withdrawn = marks.filter((v) => v.startsWith(WITHDRAWN)).map((v) => v.slice(WITHDRAWN.length).split(/\s/)[0]);
+    const sup = marks.filter((v) => !v.startsWith(WITHDRAWN) && !withdrawn.includes(v.split(/\s/)[0])).pop();
     const reach = field('Reach').pop();
     const typeLog = /^(\S+) · (\S+)/.exec(field('Type log').pop() || '');
     const ruleLog = /^(\S+) · (\S+)/.exec(field('Rule log').pop() || '');
     const first = (name) => (field(name).pop() || '').split(/\s/)[0] || null;
     return {
-      date: d.date, slug: d.slug, ruling, quote: field('By').pop() === OWNER ? quoteOf(d.body.slice(0, cut)) : null, under: field('By').pop() === OWNER ? null : underOf(d.body.slice(0, cut)), by: field('By').pop() || null, supersedes: field('Supersedes').pop() || null, supersededBy: sup ? sup.split(/\s/)[0] : null, settles: splitList(field('Settles').pop()),
+      withdrawn, date: d.date, slug: d.slug, ruling, quote: field('By').pop() === OWNER ? quoteOf(d.body.slice(0, cut)) : null, under: field('By').pop() === OWNER ? null : underOf(d.body.slice(0, cut)), by: field('By').pop() || null, supersedes: field('Supersedes').pop() || null, supersededBy: sup ? sup.split(/\s/)[0] : null, settles: splitList(field('Settles').pop()),
       ...(field('Waives review').length ? { waives: splitList(field('Waives review').pop()) } : {}), appliesTo: field('Applies to').pop() || null, area: field('Area').pop() || null, reach: reach !== undefined && /^\d+$/.test(reach) ? Number(reach) : null, rule: field('Rule').pop() || null,
       ratified: first('Ratified'), rejected: first('Rejected'), typeLog: typeLog ? { type: typeLog[1], datetime: typeLog[2] } : null,
       ruleLog: ruleLog ? { rule: ruleLog[1], datetime: ruleLog[2] } : null,
     };
   });
+  // A ruling names the rulings it supersedes as it wrote them; one whose supersession was withdrawn is not one it supersedes now.
+  const gone = new Set(read.flatMap((d) => d.withdrawn.map((by) => `${d.slug}\n${by}`)));
+  return read.map(({ withdrawn, ...d }) => {
+    if (d.supersedes === null || !gone.size) return d;
+    const kept = splitList(d.supersedes).filter((x) => !gone.has(`${x}\n${d.slug}`));
+    return { ...d, supersedes: kept.length ? kept.join(', ') : null };
+  });
 }
+// The words that open the value of a Superseded by line that takes a supersession back; no slug starts with a parenthesis.
+export const WITHDRAWN = '(withdrawn) ';
 // The fields the tool writes into a ruling's closing block. Applies to, Area, Reach and Rule come with the ruling (decide
 // --applies-to, --area, --reach, --rule); Superseded by, Ratified, Rejected, Type log and Rule log are added to an earlier
 // ruling in place, later. Applies to is the block's first line, after Waives review. Waives review
@@ -232,17 +245,30 @@ function markDecision(root, slug, line, { text: given } = {}) {
   return undefined;
 }
 
-// The refusals of a new ruling's slug and of the earlier ruling it supersedes, which write nothing. appendDecision asks
+// The slugs a --supersedes names, in the order given, each once: one slug, a comma list or the flag repeated. Null where none
+// is given.
+export function supersedesList(raw) {
+  if (raw === undefined || raw === null) return null;
+  const items = [].concat(raw).flatMap((v) => (typeof v === 'string' ? splitList(v) : [v]));
+  return [...new Set(items)];
+}
+// The refusals of a new ruling's slug and of the earlier rulings it supersedes, which write nothing. appendDecision asks
 // them before it writes.
 export function needNewRuling(root, slug, supersedes) {
   need(typeof slug === 'string' && SLUG_RE.test(slug), `a ruling's slug is letters, digits and . _ - (starting with a letter or digit, at most 80 characters) — not "${slug}"`, () => ({ arg: 0, value: '<slug>' }));
   const all = loadDecisions(root);
   need(!all.some((d) => d.slug === slug), `duplicate slug: ${slug} — a ruling that replaces it takes a new slug and --supersedes ${slug}`, () => ({ arg: 0, value: hole('<a-new-slug>') }));
-  if (supersedes === undefined) return;
-  need(typeof supersedes === 'string' && SLUG_RE.test(supersedes) && supersedes !== slug, '--supersedes names the slug of an earlier ruling', () => ({ flag: '--supersedes', value: '<slug>' }));
-  const old = all.find((d) => d.slug === supersedes);
-  need(old, `no ruling ${supersedes} in ${DECISIONS_FILE} to supersede — the rulings: ${jarlLine('decisions')}`, () => ({ flag: '--supersedes', value: '<a-ruling-in-force>' }));
-  need(!old.supersededBy, `${supersedes} is already superseded by ${old.supersededBy} — supersede that one instead`, () => ({ flag: '--supersedes', value: hole('<a-ruling-in-force>') }));
+  const list = supersedesList(supersedes);
+  if (list === null) return;
+  need(list.length > 0 && list.every((x) => typeof x === 'string' && SLUG_RE.test(x) && x !== slug), '--supersedes names the slug of an earlier ruling, or several of them', () => ({ flag: '--supersedes', value: '<slug>' }));
+  // A refusal of a list says which of the slugs given are fine, since its form holds a placeholder for each value.
+  const fine = list.filter((x) => all.some((d) => d.slug === x && !d.supersededBy));
+  const others = list.length > 1 ? ` (of the ${list.length} slugs given, ${fine.length ? `${fine.join(', ')} ${fine.length === 1 ? 'is a ruling' : 'are rulings'} in force` : 'none is a ruling in force'}; nothing was written)` : '';
+  for (const target of list) {
+    const old = all.find((d) => d.slug === target);
+    need(old, `no ruling ${target} in ${DECISIONS_FILE} to supersede${others} — the rulings: ${jarlLine('decisions')}`, () => ({ flag: '--supersedes', value: '<a-ruling-in-force>' }));
+    need(!old.supersededBy, `${target} is already superseded by ${old.supersededBy}${others} — supersede that one instead`, () => ({ flag: '--supersedes', value: hole('<a-ruling-in-force>') }));
+  }
 }
 
 // The ruling is written as its caller gives it: structure at the start of a line, free text indented (freeInline, freeBlock).
@@ -259,10 +285,11 @@ export function appendDecision(root, slug, ruling, { by: given, quote, under, su
   const path = decisionsPath(jarlDir(root));
   const existing = existsSync(path) ? readText(path) : '# Decisions\n';
   let text = existing;
-  if (supersedes !== undefined) text = markDecision(root, supersedes, `**Superseded by:** ${slug} (${today()})`, { text });
-  const meta = [waives?.length ? `**Waives review:** ${waives.join(', ')}` : null, appliesTo ? `**Applies to:** ${fieldText(appliesTo)}` : null, settles?.length ? `**Settles:** ${settles.join(', ')}` : null, by ? `**By:** ${fieldText(by)}` : null, supersedes !== undefined ? `**Supersedes:** ${supersedes}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null, rule ? `**Rule:** ${rule}` : null].filter(Boolean).join('\n');
+  const superseded = supersedesList(supersedes) ?? [];
+  for (const target of superseded) text = markDecision(root, target, `**Superseded by:** ${slug} (${today()})`, { text });
+  const meta = [waives?.length ? `**Waives review:** ${waives.join(', ')}` : null, appliesTo ? `**Applies to:** ${fieldText(appliesTo)}` : null, settles?.length ? `**Settles:** ${settles.join(', ')}` : null, by ? `**By:** ${fieldText(by)}` : null, superseded.length ? `**Supersedes:** ${superseded.join(', ')}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null, rule ? `**Rule:** ${rule}` : null].filter(Boolean).join('\n');
   const body = `${ruling.replace(/\s+$/, '')}${under ? `\n\n${underLine(under)}` : ''}${quote ? `\n\n${quoteLine(quote)}` : ''}`;
-  carryingOwnersWords([quote && quoteLine(quote)], () => writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${body}\n${meta ? `\n${meta}\n` : ''}`));
+  carryingOwnersWords([quote && { text: quoteLine(quote), before: /^$/, after: /^$/ }], () => writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${body}\n${meta ? `\n${meta}\n` : ''}`));
 }
 
 // The goal of the record held in `dir`, as text; null when it has none.

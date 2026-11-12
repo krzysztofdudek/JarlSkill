@@ -20,7 +20,7 @@ export { LOCK_STALE_MS, LOCK_REUSED_PID_MS, LOCK_EMPTY_MS, LOCK_BREAK_STALE_MS, 
 export { leaseOfMove, attachmentOf, parseEvent, appendNote, loopEvents, eventsById, journalById, issueState, mergeLineOf } from './lib/log.mjs';
 export { parseIssue, loadIssues, parentCycle, waitCycle, fieldValue, findIssue, sharedNumbers, sharedNumberText, bodyText, needNoFieldTags, describeNew, renderNewReply, acceptanceText, CHANGELOG_SECTIONS, changelogText, changelogEntries, renderIssue, mergedOf, alignRows, evidenceTable, evidenceRows, isUnsplit, placeEvidence, PROPOSED, acceptanceLineCount, acceptanceLines, reviewEntries } from './lib/issues.mjs';
 export { mainCheckoutOf, worktreeState, fileAt, reposNamed, refsIn, REPOS_FILE, repoValueKind, repoPlace, repoOf, branchTip, originSpelling, repoFromInput, REPOS_HEADER, REPOS_DECLARED_IN, declaredNames, declaredRepos, cmdRepoBase, repoIdentity, needRightCheckouts, whyNotDeletable, whereOf, whereLines, reposWhere, reposWhereLines } from './lib/repositories.mjs';
-export { RULE_ROLES, RULE_MOMENTS, RULE_SELECTORS, BUILTIN_RULES, parseScope, parseUntil, readAppliesTo, ruleMatches, rulesFor } from './lib/rules.mjs';
+export { RULE_ROLES, RULE_MOMENTS, RULE_SELECTORS, BUILTIN_RULES, parseScope, parseUntil, readAppliesTo, ruleMatches, rulesFor, readsAsInstruction } from './lib/rules.mjs';
 export { needLoop, readLoop } from './lib/loop.mjs';
 export { recordDisagreements, disagreementText } from './lib/disagreements.mjs';
 export { BASE_COORDINATORS, reviewerKind, coordinatorNames, sliceOf, coordinatorOf } from './lib/slices.mjs';
@@ -42,7 +42,7 @@ export { cmdExtend, cmdField } from './lib/field.mjs';
 export { cmdSetStatus, cmdSetField, cmdSet } from './lib/set.mjs';
 export { doneRefusal } from './lib/done-gate.mjs';
 export { cmdMerged, workEvidence } from './lib/merged.mjs';
-export { loadAsks, cmdAsk, RATIFY_WORDS, REJECT_WORDS, AMBIGUOUS_WORDS, cmdAnswer, cmdAnswerMany, recordTypeLog, recordRuleLog, cmdDecide, questionFor, issuesNaming, AREA_RE, RULE_RE, RATIFY_BATCH, ratificationBatch, PROMOTION_OPTIONS, promotionBatch, cmdDecisions, renderDecide, renderDecisions, handoffAge } from './lib/questions.mjs';
+export { loadAsks, cmdAsk, RATIFY_WORDS, REJECT_WORDS, AMBIGUOUS_WORDS, cmdAnswer, cmdAnswerMany, recordTypeLog, recordRuleLog, cmdDecide, cmdWithdrawSupersession, renderWithdrawn, questionFor, issuesNaming, AREA_RE, RULE_RE, RATIFY_BATCH, ratificationBatch, PROMOTION_OPTIONS, promotionBatch, cmdDecisions, renderDecide, renderDecisions, handoffAge } from './lib/questions.mjs';
 export { cmdEvidence, issueView, workerEvidence, NEXT_GROUPS, cmdNext, modelsTableBuilds, nextRowsBuilds, renderNext, nextRows, uncommittedLoopFiles, cmdStatus, STATUS_BY, IN_FLIGHT_MARKS, inFlightRows, parentChecks, cmdMode, cmdClose, closedGateFlags } from './lib/evidence.mjs';
 export { METHODS, LINE_FORM, readLine, lineDigest, needMarkedLines, lineStates, lineCounts, linesAtLease, atLeaseText, issueLinesAtLease } from './lib/lines.mjs';
 export { cmdQueue, renderQueue } from './lib/queue.mjs';

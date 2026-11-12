@@ -243,7 +243,7 @@ test('the notes of one lease are each a line of their own that names its subject
   writeFileSync(join(root, '.jarl', 'log.md'), readFileSync(join(root, '.jarl', 'log.md'), 'utf8').split('\n').filter((l) => !l.includes(' · models offered · ')).join('\n'));
   const checked = notes(root, 'set', [ids[2], 'in-progress', 'go'], { branch: `jarl/${ids[2]}-x`, worker: 'w-2', model: 'claude-opus-5-5', worktree: join(root, 'no-such-worktree') }).split('\n');
   assert.deepEqual(checked.map((l) => l.replace(/ — .*$/, '').replace(/, so no model .*$/, '')), [
-    `note: ${ids[2]} --worktree was checked and is not recorded`,
+    `note: ${ids[2]} --worktree was not checked, because that path is not on this machine, and is not recorded`,
     `note: ${ids[2]} is leased with a model and the goal declares no Model line`,
   ]);
   assert.ok(![...both, ...checked].some((l) => l.includes('.;')), 'no semicolon after a full stop');
@@ -559,7 +559,7 @@ test('each round carries its standing in its line, text that opens like a standi
   const { root, id } = leased('Takeover (docs): 2', 'docs');
   R.addRound(root, id, 'takeover 2 of 2 · typed by hand');
   assert.match(log(root), /· 001 round 1 \(count 1 of 2\) · takeover 2 of 2 · typed by hand$/m);
-  const second = cli(root, 'round', id, 'red two', '--findings', '3');
+  const second = cli(root, 'round', id, 'red two', '--finding-count', '3');
   assert.match(second.stdout, /round 2 — takeover:/);
   assert.match(log(root), /· 001 round 2 \(takeover 2 of 2\) · findings 3 · red two$/m);
   assert.match(second.stdout, /Findings per round: -, 3 \(a dash: the round recorded no count\)\./);
@@ -604,13 +604,13 @@ test('a round records its count of findings and the takeover block lists them', 
   const root = loop();
   const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works', tier: 'standard' });
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
-  assert.equal(cli(root, 'round', id, 'red one', '--findings', '29').status, 0);
-  assert.equal(cli(root, 'round', id, 'red two', '--findings', '14').status, 0);
-  const out = cli(root, 'round', id, 'red three', '--findings', '3');
+  assert.equal(cli(root, 'round', id, 'red one', '--finding-count', '29').status, 0);
+  assert.equal(cli(root, 'round', id, 'red two', '--finding-count', '14').status, 0);
+  const out = cli(root, 'round', id, 'red three', '--finding-count', '3');
   assert.match(out.stdout, /Findings per round: 29, 14, 3\./);
-  const bad = cli(root, 'round', id, 'red four', '--findings', 'many');
+  const bad = cli(root, 'round', id, 'red four', '--finding-count', 'many');
   assert.notEqual(bad.status, 0);
-  assert.match(bad.stderr, /--findings must be a whole number/);
+  assert.match(bad.stderr, /--finding-count must be a whole number/);
 });
 
 test('the takeover advice reads the tiers and their order from the loop\'s profile', () => {
@@ -637,19 +637,19 @@ test('a later takeover does not offer the tier up again, and a count above the b
   assert.match(blocks[2], /tier up/);
   assert.match(blocks[5], /a model that has not held this issue/);
   assert.doesNotMatch(blocks[5], /tier up/);
-  const bad = cli(root, 'round', id, 'red seven', '--findings', '1e23');
+  const bad = cli(root, 'round', id, 'red seven', '--finding-count', '1e23');
   assert.notEqual(bad.status, 0);
   assert.match(bad.stderr, /up to 10000/);
-  assert.notEqual(cli(root, 'round', id, 'red seven', '--findings', '10001').status, 0);
+  assert.notEqual(cli(root, 'round', id, 'red seven', '--finding-count', '10001').status, 0);
 });
 
 test('the findings per round keep each round in its place, a round with no count shown as a dash', () => {
   const root = loop();
   const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works', tier: 'standard' });
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
-  assert.equal(cli(root, 'round', id, 'red one', '--findings', '29').status, 0);
+  assert.equal(cli(root, 'round', id, 'red one', '--finding-count', '29').status, 0);
   assert.equal(cli(root, 'round', id, 'red two').status, 0);
-  const out = cli(root, 'round', id, 'red three', '--findings', '3');
+  const out = cli(root, 'round', id, 'red three', '--finding-count', '3');
   assert.match(out.stdout, /Findings per round: 29, -, 3 \(a dash: the round recorded no count\)\./);
 });
 
@@ -680,8 +680,8 @@ test('a count of findings is read from the flag only, never from the words of a 
   const { id } = R.newIssue(root, 'a thing', { acceptance: '[read] it works', tier: 'standard' });
   R.setStatus(root, id, 'in-progress', '', { branch: 'jarl/001-a', worker: 'w-one', model: MID });
   R.addRound(root, id, 'findings 99 · typed by hand');
-  cli(root, 'round', id, 'red two', '--findings', '4');
-  const out = cli(root, 'round', id, 'red three', '--findings', '2').stdout;
+  cli(root, 'round', id, 'red two', '--finding-count', '4');
+  const out = cli(root, 'round', id, 'red three', '--finding-count', '2').stdout;
   assert.match(out, /Findings per round: -, 4, 2 \(a dash: the round recorded no count\)\./);
 });
 

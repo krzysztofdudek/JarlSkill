@@ -121,7 +121,7 @@ function issueRows(ctx) {
     }
     if ((mark === 'no-rows' || backAfterRound) && lv.idle) {
       // Idle past the threshold: a worker stuck on a prompt or a lock writes nothing, so the act is the holder's.
-      out.push({ ...base, what: 'idle', idle: { ageMs: lv.ageMs, minutes: lv.minutes }, says: `${withWorker}${since}, no commit, row or log line for ${idleFor(lv)}: ask the worker whether it waits on a prompt or a lock, or hand the lease over`,
+      out.push({ ...base, what: 'idle', idle: { ageMs: lv.ageMs, minutes: lv.minutes }, says: `${withWorker}${since}, ${lv.lastWork ? 'no commit, row, log line or change in its worktree' : 'no commit, row or log line'} for ${idleFor(lv)}: ask the worker whether it waits on a prompt or a lock, or hand the lease over`,
         command: jarlLine('set', leaseIds(loop, i).join(','), leaseStatus, '<why-the-worker-changed>', '--worker', '<the-new-worker>', '--model', '<model-id>', '--handover') });
       continue;
     }
@@ -260,7 +260,7 @@ function awaitingReview(loop, profile) {
 }
 // The issues of one lease, the given one among them, in the record's order.
 function leaseIds(loop, issue) {
-  const mates = loop.issues.filter((x) => x.id !== issue.id && sameLease(loop.profile, x, issue)).map((x) => x.id);
+  const mates = loop.issues.filter((x) => x.id !== issue.id && sameLease(loop.root, loop.profile, x, issue)).map((x) => x.id);
   return [issue.id, ...mates].sort(cmpId);
 }
 // The first issue of `issue`'s lease whose worker still owes rows (see workerRowsMissing), and which lines: a review is

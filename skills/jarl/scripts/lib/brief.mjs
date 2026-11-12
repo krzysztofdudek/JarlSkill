@@ -234,9 +234,9 @@ function leaseIssues(loop, rawIds) {
   });
   const leased = (i) => loop.profile.is(i.status, 'holds-claim') && Boolean(fieldText(i.fields.worker) || fieldText(i.fields.branch));
   const leases = named.filter(leased);
-  for (const i of leases) need(sameLease(loop.profile, i, leases[0]) || i === leases[0], `${named.map((x) => x.id).join(', ')} are not one lease: ${leases[0].id} holds ${leaseText(leases[0])}, and ${i.id} holds ${leaseText(i)} — a brief is for one agent on one lease`, () => ({ arg: 0, value: hole('<ids>') }));
+  for (const i of leases) need(sameLease(loop.root, loop.profile, i, leases[0]) || i === leases[0], `${named.map((x) => x.id).join(', ')} are not one lease: ${leases[0].id} holds ${leaseText(leases[0])}, and ${i.id} holds ${leaseText(i)} — a brief is for one agent on one lease`, () => ({ arg: 0, value: hole('<ids>') }));
   if (leases.length && leases.length !== named.length) need(false, `${named.map((x) => x.id).join(', ')} are not one lease: ${named.find((x) => !leased(x)).id} holds none, and ${leases[0].id} holds ${leaseText(leases[0])} — a brief is for one agent on one lease`, () => ({ arg: 0, value: hole('<ids>') }));
-  const mates = leases.length ? loop.issues.filter((i) => !named.includes(i) && sameLease(loop.profile, i, leases[0])) : [];
+  const mates = leases.length ? loop.issues.filter((i) => !named.includes(i) && sameLease(loop.root, loop.profile, i, leases[0])) : [];
   return { issues: [...named, ...mates].sort((a, b) => cmpId(a.id, b.id)), added: mates };
 }
 const leaseText = (i) => [fieldText(i.fields.branch) && `branch ${fieldText(i.fields.branch)}`, fieldText(i.fields.worker) && `worker ${fieldText(i.fields.worker)}`].filter(Boolean).join(', ') || 'no lease';

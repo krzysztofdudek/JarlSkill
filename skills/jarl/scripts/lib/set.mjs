@@ -1,5 +1,6 @@
 // The set command: a status change with its lease, and the fields that route through it.
 
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { LEASE_FIELDS, fieldText, hole, jarlLine, need, noSeparators } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
@@ -154,7 +155,9 @@ export function cmdSet(root, rawIds, status, why, flags = {}) {
   const offered = holds && leaseNote ? modelOfferAtLease(root, model) : null;
   const modelOffer = caller === 'cli' ? offered : null;
   for (const w of writes) writeAtomic(w.issue.file, w.edit(readText(w.issue.file)));
-  const worktreeNote = caller === 'cli' && holds && flags.worktree !== undefined ? '--worktree was checked and is not recorded — the worktree of a lease is found through its branch' : null;
+  const worktreeNote = caller === 'cli' && holds && flags.worktree !== undefined
+    ? (existsSync(resolve(root, fieldText(flags.worktree))) ? '--worktree was checked and is not recorded — the worktree of a lease is found through its branch' : '--worktree was not checked, because that path is not on this machine, and is not recorded — the worktree of a lease is found through its branch')
+    : null;
   const limit = caller === 'cli' && holds ? limitNote(root, model) : null;
   // Each note is a line of its own: the command line prints every line after the issue's id, which is the subject the
   // offer reads after, whichever note comes before it.

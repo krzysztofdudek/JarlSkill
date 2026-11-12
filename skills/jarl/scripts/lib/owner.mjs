@@ -97,13 +97,30 @@ export function needNoOwnersWords(what, ...values) {
 }
 
 // The texts the writes inside `fn` may add that hold the marker: the quote decide writes, and text the record already
-// holds and copies (a question being answered). Any other new line that holds it is refused by needNoNewOwnersWords. Only
-// a text that holds the marker itself is carried, so a short one (an option labelled "o") cannot hide a marker around it.
+// holds and copies (a question being answered). Any other new line that holds it is refused by needNoNewOwnersWords. A text is
+// carried where it stands in the line it is written in: { text, before, after }, the expressions the line's left part ends
+// with and its right part starts with, around that one place. The same text anywhere else in the line is new and is checked.
+// Only a text that holds the marker itself is carried, so a short one (an option labelled "o") cannot hide a marker around it;
+// an empty item (a writer with nothing to carry) is left out.
 let carried = [];
-export function carryingOwnersWords(texts, fn) {
+export function carryingOwnersWords(items, fn) {
   const before = carried;
-  carried = [...before, ...texts.filter((t) => typeof t === 'string' && holdsOwnersWords(t))];
+  const own = items.filter(Boolean).map((c) => {
+    need(typeof c === 'object' && typeof c.text === 'string' && c.before instanceof RegExp && c.after instanceof RegExp, 'a text carried into the record names where it stands in the line: { text, before, after }', { retry: true });
+    return c;
+  }).filter((c) => holdsOwnersWords(c.text));
+  carried = [...before, ...own];
   try { return fn(); } finally { carried = before; }
+}
+// The line with each carried text taken out at the place it was written: the first place where the text stands with the
+// left part and the right part the carry names around it. A text at any other place stays in the line.
+function withoutCarried(line) {
+  return carried.reduce((t, c) => {
+    for (let at = t.indexOf(c.text); at !== -1; at = t.indexOf(c.text, at + 1)) {
+      if (c.before.test(t.slice(0, at)) && c.after.test(t.slice(at + c.text.length))) return t.slice(0, at) + t.slice(at + c.text.length);
+    }
+    return t;
+  }, line);
 }
 
 // A file of the record, written: every line of `after` that holds the marker is either a line `before` held already (as
@@ -116,7 +133,7 @@ export function needNoNewOwnersWords(before, after, where) {
     if (!holdsOwnersWords(l)) continue;
     const n = held.get(l) || 0;
     if (n) { held.set(l, n - 1); continue; }
-    const rest = carried.reduce((t, c) => t.split(c).join(''), l);
+    const rest = withoutCarried(l);
     need(!holdsOwnersWords(rest), REFUSAL(`a line written to ${where} ("${l.trim().slice(0, 80)}")`), { retry: true });
   }
 }

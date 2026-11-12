@@ -11,7 +11,7 @@ import { fieldText, hole, need } from './base.mjs';
 import { idKey } from './ids.mjs';
 import { answeredLines } from './journal.mjs';
 import { sameSlice, sliceOf } from './slices.mjs';
-import { repoNames } from './repositories.mjs';
+import { declaredNames, repoLabelOf, repoNames } from './repositories.mjs';
 
 export const RULE_ROLES = Object.freeze(['jarl', 'coordinator', 'worker', 'reviewer', 'merger', 'takeover']);
 export const RULE_MOMENTS = Object.freeze(['filing', 'start', 'review', 'round', 'merge', 'done', 'close']);
@@ -42,6 +42,16 @@ export function parseScope(text) {
   });
   need(!(selectors.length > 1 && selectors.some((s) => s.word === 'loop')), `loop takes no other selector: a rule of the loop reaches every reader of it (got "${raw}"); it is loop alone, or the other selectors without it`, () => ({ flag: '--applies-to', value: hole('<selectors>') }));
   return selectors;
+}
+
+// The refusal of a repo selector that no repository of the loop answers to: a rule scoped to it would reach nobody. A
+// repository the loop knows is one declared in it or named by an issue (the loop's own, when an issue names none), in the
+// spelling of a name or of a path.
+export function needKnownRepos(root, loop, selectors, raw) {
+  const known = [...new Set([...declaredNames(root), ...loop.issues.flatMap((i) => repoNames(root, i))])];
+  for (const s of selectors.filter((x) => x.word === 'repo')) {
+    need(known.some((n) => n.toLowerCase() === repoLabelOf(root, s.value).toLowerCase()), `repo ${s.value} is not a repository of this loop: ${known.length ? known.join(', ') : '(none declared, and no issue names one)'} — a rule scoped to it would reach no one; name a repository by its name or a path to it`, () => ({ flag: '--applies-to', value: scopeHole(raw, `repo ${s.value}`, `repo ${hole('<name-or-path>')}`) }));
+  }
 }
 
 // The end of a rule from --until: a date (the rule holds through that day) or an issue (it holds until the issue closes).
@@ -124,9 +134,18 @@ function issueHolds(root, issue, selectors) {
     if (word === 'tier') return String(issue.tier).toLowerCase() === value.toLowerCase();
     if (word === 'slice') return sameSlice(sliceOf(issue), value);
     if (word === 'files') return (issue.files || []).some((f) => fileMatches(value, f));
-    if (word === 'repo') return repoNames(root, issue).some((n) => n.toLowerCase() === value.toLowerCase());
+    if (word === 'repo') return repoNames(root, issue).some((n) => n.toLowerCase() === repoLabelOf(root, value).toLowerCase());
     return false;
   });
+}
+// Whether a rule reaches a role at all: its scope names that role or names none. The moment, slice and issue selectors
+// narrow what the role is handed, and a role is handed a rule on the work that matches them, so they do not keep it out here.
+export function ruleReachesRole(rule, role) {
+  return Boolean(rule.selectors) && rule.selectors.every((s) => s.word !== 'role' || s.value === role);
+}
+export function needRuleRole(role) {
+  need(RULE_ROLES.includes(String(role).toLowerCase()), `${role} is not a role a rule reaches: ${RULE_ROLES.join(', ')}`, () => ({ flag: '--as', value: hole('<role>') }));
+  return String(role).toLowerCase();
 }
 // Whether a rule matches a reader: { roles, slice, moments, issues }. The reader's selectors hold for the reader, a slice
 // holds for the coordinator of that slice or for an issue in it, and the issue selectors hold for one issue the reader
@@ -177,10 +196,39 @@ export const underText = (r) => `under ${r.under}${r.underNotInForce ? ` (not in
 // it proposed, every line of it: the question, up to the line of its answer.
 function ruleText(d) {
   const lines = d.ruling.split('\n');
-  if (!/^ask-\d+$/.test(d.slug) || !lines[0].startsWith('**Question:** ')) return d.ruling;
+  if (!/^ask-\d+$/.test(d.slug) || !lines[0].startsWith('**Question:** ')) return withoutHistory(d.ruling);
   const answered = answeredLines(d);
   const end = answered ? lines.findIndex((l, n) => n > 0 && l.trim() === answered.answer) : -1;
   return [lines[0].slice('**Question:** '.length), ...lines.slice(1, end === -1 ? lines.length : end)].join('\n').trim();
+}
+// A ruling's text without the closing paragraphs that record how it came to be: the ruling it was made under and the owner's
+// words. A rule is delivered as the instruction alone; its head names who ruled and what it rests on, and the record keeps the
+// rest.
+const HISTORY_LINE = /^(?:Made under: [A-Za-z0-9][A-Za-z0-9._-]{0,79}|The owner's words: ".*")$/;
+export function withoutHistory(text) {
+  const lines = String(text).split('\n');
+  for (;;) {
+    const last = lines.findLastIndex((l) => l.trim() !== '');
+    if (last <= 0 || !HISTORY_LINE.test(lines[last]) || lines[last - 1].trim() !== '') break;
+    lines.length = last;
+    while (lines.length && lines[lines.length - 1].trim() === '') lines.pop();
+  }
+  return lines.join('\n');
+}
+// Whether a ruling's words read as an instruction to an agent. The ruling's own sentences are read, after the attribution that
+// opens a quoted word of the owner's. A sentence is an instruction when it opens with a word that commands or forbids or
+// with a verb of work, when an agent (you, a worker, a reviewer, the jarl, no agent) is the one it obliges or forbids, or
+// when it says where work goes or what it avoids. A word that obliges or forbids inside a sentence about something else (a
+// file that is never decoded, a test that must stay green, a release that was never published) describes and does not
+// instruct. A ruling that reads so and names no one it applies to is delivered to no one.
+const ATTRIBUTION = /^(?:the owner|krzysztof|the jarl)\b[^:\n]{0,200}?:\s*/i;
+const OPENS = /^(?:never|always|do not|don't|please|only|stop|avoid|prefer|ensure|make sure|use|run|keep|write|read|check|file|ask|report|name|send|open|close|add|pass|give|put|take|start|wait|call|set|list|say|state|show|attach|record|pin|make|follow|test|review|commit|push|merge|raise|pull|tell|do)\b/i;
+const AGENT = '(?:you|agents?|workers?|reviewers?|examiners?|coordinators?|mergers?|jarl|everyone|nobody|no one)';
+const OBLIGES_AN_AGENT = new RegExp(`\\b${AGENT}\\b[^.!?;]{0,40}\\b(?:must|should|shall|never|always|do not|don't|may not|is to|are to)\\b`, 'i');
+const PLACES_WORK = /^[\w'-]+(?: [\w'-]+){0,2} (?:goes|go) to\b|\bavoids?\b/i;
+export function readsAsInstruction(text) {
+  const body = withoutHistory(String(text)).replace(/[\u201C\u201D"]/g, '').replace(ATTRIBUTION, '');
+  return body.split(/(?<=[.!?])\s+|\n+|;\s+/).map((x) => x.trim().replace(/^\([^)]*\)\s*/, '')).some((x) => OPENS.test(x) || OBLIGES_AN_AGENT.test(x) || PLACES_WORK.test(x));
 }
 // The rules that match a reader, whole: the loop's rules in force first, then Jarl's own.
 export function rulesFor(root, loop, reader, today) {

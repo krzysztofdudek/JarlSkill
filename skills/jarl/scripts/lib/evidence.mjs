@@ -164,7 +164,7 @@ function retractNote(root, rawIds, reason, flags, n) {
   // A note that carries the owner's quote (a ruling's row) is struck through as it stands: its own lines are carried, so the
   // strike does not read as a new line that looks like his words, while the reason and everything else stay checked.
   const own = table.lines.slice(note.start, note.end + 1).map((l) => l.trim().replace(/^- /, ''));
-  carryingOwnersWords(own, () => writeAtomic(issue.file, setSection(text, 'Evidence', placeEvidence(struckNote(table.lines, note).join('\n').trim(), 'note', entry, '\n'))));
+  carryingOwnersWords(own.map((text) => ({ text, before: /^ *(?:- )?(?:~~)?$/, after: /^(?:~~)?$/ })), () => writeAtomic(issue.file, setSection(text, 'Evidence', placeEvidence(struckNote(table.lines, note).join('\n').trim(), 'note', entry, '\n'))));
   appendLog(root, `${issue.id} evidence retract · note ${n} · by ${by} · ${firstLine(reason, "the issue's Evidence section")}`);
   return { id: issue.id, retractedNote: n, by };
 }

@@ -482,7 +482,7 @@ test('a value of the wrong type is refused with a message naming the field and t
     ['jarl_evidence', { ids: '1', ran: { command: 'npm test' }, saw: 'ok' }, /"ran" must be a string or a list of strings/],
     ['jarl_evidence', { ids: '1', ran: ['npm test'], saw: [true] }, /"saw" must be a string or a list of strings/],
     ['jarl_field', { ids: { a: 1 }, name: 'After', value: '1' }, /"ids" must be a string/],
-    ['jarl_decide', { slug: 'a-ruling', text: 'a ruling', supersedes: ['x'] }, /"supersedes" must be a string/],
+    ['jarl_decide', { slug: 'a-ruling', text: 'a ruling', supersedes: { slug: 'x' } }, /"supersedes" must be a string or a list of strings/],
     ['jarl_decisions', { live: 'true' }, /"live" must be true or false/],
     ['jarl_field', { ids: '1', name: 'What', value: ['a', 'b'] }, /"value" must be a string/],
     ['jarl_field', { ids: '1', name: 'Why', value: 'x', add: 'yes' }, /"add" must be true or false/],

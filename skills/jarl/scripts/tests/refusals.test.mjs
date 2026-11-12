@@ -142,7 +142,7 @@ test('a form holds every flag its command needs beside the ones the call gave, a
     [['new', 't', '--tier', 'light', '--person', 'someone'], "jarl.mjs new \"<title>\" --by \"<who>\" --tier \"<tier>\" --person \"<name>\" --kind \"<kind>\" --check-when \"<date-or-event>\""],
     [['ask', 'which?', '--until'], "jarl.mjs ask \"<text>\" --by \"<who>\" --until \"<date-or-id>\" --applies-to \"<selectors>\" --kind \"<ask-kind>\""],
     [['decide', 's1', 'a ruling', '--by', 'jarl', '--reach'], "jarl.mjs decide \"<slug>\" \"<a-ruling>\" --by \"<who>\" --reach \"<number-of-files>\" --area \"<type>\""],
-    [['round', '1', 'x', '--findings'], "jarl.mjs round \"<id>\" \"<what-failed>\" --by \"<who>\" --findings \"<count>\""],
+    [['round', '1', 'x', '--finding-count'], "jarl.mjs round \"<id>\" \"<what-failed>\" --by \"<who>\" --finding-count \"<count>\""],
   ];
   for (const [args, form] of cases) assert.equal(refusal(args, { loop: PLAIN }).ready, form, args.join(' '));
   // A row's --ran and --saw as one pair for each row the call gave, and no part that another stands in for: rows or a note,

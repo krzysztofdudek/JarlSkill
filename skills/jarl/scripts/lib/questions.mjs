@@ -3,19 +3,19 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ASK_KINDS, HANDOFF_STALE_MS, afterView, fieldText, freeInline, hole, jarlLine, need, noSeparators, oneBreak } from './base.mjs';
+import { ASK_KINDS, HANDOFF_STALE_MS, afterView, fieldText, freeInline, hole, jarlLine, need, noSeparators, oneBreak, splitList } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { askNumber, idKey, issueForms, newNumber, writtenId } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
-import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, goalLines, loadDecisions, markDecision, parseStamp, readGoal } from './journal.mjs';
+import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, goalLines, loadDecisions, markDecision, parseStamp, readGoal, supersedesList, WITHDRAWN } from './journal.mjs';
 import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteShown, rulingAuthor } from './owner.mjs';
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
 import { tipLinesOf } from './repositories.mjs';
 import { readLoop } from './loop.mjs';
 import { sliceNamed } from './slices.mjs';
 import { issuesFor } from './shared.mjs';
-import { appliesToLine, loopRules, parseScope, parseUntil, underText, withUnder } from './rules.mjs';
+import { appliesToLine, loopRules, needKnownRepos, needRuleRole, parseScope, parseUntil, ruleReachesRole, underText, withUnder } from './rules.mjs';
 
 // ---- questions to the owner and the handoff -------------------------------------------------
 
@@ -199,7 +199,7 @@ export function cmdAnswer(root, rawId, answer, flags = {}) {
   const issue = ask.issue ? findIssue(root, ask.issue) : null;
   // The question and its options are copied into the ruling as the record holds them; a question written before the
   // marker was refused may hold it, and it is carried as it stands, never refused for text the answerer cannot change.
-  carryingOwnersWords([...ask.question.split('\n'), ...(ask.options || []).flatMap((o) => [o.label, o.effect])], () => {
+  carryingOwnersWords(copiedQuestion(ask), () => {
     appendDecision(root, `ask-${id}`, answerRuling(ask, text, chosen === null ? null : checked.option.label, flags.batch || null), { by: author, appliesTo: accepted });
     const path = asksPath(jarlDir(root));
     // The item line only: a continuation line of an earlier question is never the one marked.
@@ -256,8 +256,8 @@ function ratify(root, ruling, rulings, verdict, askId, by = null) {
     return { ...out, typeLog: skipped, ...(ruling.rule ? { ruleLog: skipped } : {}) };
   }
   // The ruling it replaces, when its entry is in the same type's log, is replaced there too.
-  const prior = ruling.supersedes ? rulings.find((d) => d.slug === ruling.supersedes) : null;
-  const supersedes = prior && prior.typeLog && prior.typeLog.type === ruling.area ? prior.typeLog.datetime : null;
+  const prior = ruling.supersedes ? splitList(ruling.supersedes).map((x) => rulings.find((d) => d.slug === x)).find((d) => d && d.typeLog && d.typeLog.type === ruling.area) : null;
+  const supersedes = prior ? prior.typeLog.datetime : null;
   const text = `${ruling.ruling}\n\n(ratified: ${ruling.slug}, a-${askId})`;
   return { ...out, typeDecision: { type: ruling.area, text, supersedes }, ...(ruling.rule ? { ruleRatification: { rule: ruling.rule, text, ...(by ? { by } : {}) } } : {}) };
 }
@@ -305,10 +305,26 @@ function scopeOf(root, flags) {
   }
   need(typeof flags['applies-to'] === 'string', '--applies-to names whom the rule applies to, as text', () => ({ flag: '--applies-to', value: '<selectors>' }));
   const selectors = parseScope(flags['applies-to']);
+  needKnownRepos(root, readLoop(jarlDir(root)), selectors, fieldText(flags['applies-to']));
   const until = flags.until === undefined ? null : parseUntil(String(flags.until));
   if (until && until.issue) [{ id: until.issue }] = issuesFor(root, until.issue);
   for (const s of selectors.filter((x) => x.word === 'issue')) [{ id: s.value }] = issuesFor(root, s.value);
   return appliesToLine(selectors, until);
+}
+
+// The owner's words as a row ends with them: after the separator, the last thing in the line.
+const endOfRow = (shown) => shown && { text: shown, before: / · $/, after: /^$/ };
+// The question and its options as the answer copies them, each where the ruling and the question file write it: the first line
+// of the question after its label, the others indented, an option's label and effect on its line.
+function copiedQuestion(ask) {
+  const lines = ask.question.split('\n').map((text, k) => (k === 0
+    ? { text, before: /^(?:\*\*Question:\*\* |- \*\*a-\d+\*\* \([a-z]+\) · (?:[^·\n]+ · )*)$/, after: /^$/ }
+    : { text, before: /^ {2}$/, after: /^$/ }));
+  const options = (ask.options || []).flatMap((o) => [
+    { text: o.label, before: /^(?:- |- \*\*a-\d+\*\* option · )$/, after: /^(?:: | · )/ },
+    { text: o.effect, before: /^(?:- .*: |- \*\*a-\d+\*\* option · .* · )$/, after: /^(?: \(chosen\))?$/ },
+  ]);
+  return [...lines, ...options];
 }
 
 // decide <slug> "<text>" --by <who> [--quote "<words>"] [--supersedes <slug>] [--settles <ids>]: the ruling, who ruled
@@ -343,7 +359,7 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
     // A ruling a later one supersedes, the one this call supersedes, an area ruling the owner rejected and a rule that has
     // ended (its date passed, or its issue closed) hold nothing up.
     const ended = new Set(loopRules(readLoop(jarlDir(root)), today()).filter((r) => r.ended).map((r) => r.slug));
-    const inForce = loadDecisions(root).filter((d) => !d.supersededBy && !d.rejected && !ended.has(d.slug) && d.slug !== flags.supersedes).map((d) => d.slug);
+    const inForce = loadDecisions(root).filter((d) => !d.supersededBy && !d.rejected && !ended.has(d.slug) && !(supersedesList(flags.supersedes) ?? []).includes(d.slug)).map((d) => d.slug);
     need(inForce.includes(under), `--under ${under ? `"${under}"` : 'needs a slug'} is not a ruling in force of this loop; the rulings in force: ${inForce.length ? inForce.join(', ') : '(none)'}`, () => ({ flag: '--under', value: hole('<a-ruling-in-force>') }));
   }
   const settles = flags.settles !== undefined ? issuesFor(root, flags.settles) : [];
@@ -356,19 +372,38 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   const rule = flags.rule !== undefined ? String(flags.rule) : null;
   const text = freeBlock(oneBreak(ruling).trim());
   appendDecision(root, slug, text, { by, quote, under, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id), appliesTo, waives: waives.map((i) => i.id) });
-  appendLog(root, `decided ${slug} · by ${by}${appliesTo ? ` · applies to ${appliesTo}` : ''}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
+  appendLog(root, `decided ${slug} · by ${by}${appliesTo ? ` · applies to ${appliesTo}` : ''}${flags.supersedes !== undefined ? ` · supersedes ${(supersedesList(flags.supersedes) ?? []).join(', ')}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
   if (settles.length) {
     const shown = quote ? quoteShown(quote) : null;
-    carryingOwnersWords([shown], () => appendRuling(root, settles, `Ruling ${slug} (by ${by}): ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)}${shown ? ` · ${shown}` : ''}`));
+    carryingOwnersWords([endOfRow(shown)], () => appendRuling(root, settles, `Ruling ${slug} (by ${by}): ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)}${shown ? ` · ${shown}` : ''}`));
   }
   // Each waived issue carries the waiver where the done gate reads it, followed by the tip of its branch, as a verdict is:
   // a new commit after it spends it.
   if (waives.length) {
     const shown = quoteShown(quote);
-    carryingOwnersWords([shown], () => appendRuling(root, waives, `Ruling ${slug} (by owner) waives the review: ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)} · ${shown}`, tipLinesOf(root, waives)));
+    carryingOwnersWords([endOfRow(shown)], () => appendRuling(root, waives, `Ruling ${slug} (by owner) waives the review: ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)} · ${shown}`, tipLinesOf(root, waives)));
   }
-  return { slug, by, ...(waives.length ? { waives: waives.map((i) => i.id) } : {}), ...(quote ? { quote } : {}), ...(under ? { under } : {}), ...(appliesTo ? { appliesTo } : {}), supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
+  return { slug, by, ...(waives.length ? { waives: waives.map((i) => i.id) } : {}), ...(quote ? { quote } : {}), ...(under ? { under } : {}), ...(appliesTo ? { appliesTo } : {}), supersedes: flags.supersedes === undefined ? null : (supersedesList(flags.supersedes) ?? []).join(', '), settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
 }
+
+// retract <slug> supersession "<why>" --by <who>: a supersession written by mistake is taken back. The ruling is in force
+// again; the record keeps what was written and gains one line on the ruling, `Superseded by: (withdrawn) <by> (<date>) · by
+// <who> · <why>`, and the log one that says who and why. The ruling that superseded it is not touched, but it does not count
+// the ruling among those it supersedes any more.
+export function cmdWithdrawSupersession(root, slug, why, flags = {}) {
+  need(flags.by !== undefined, 'a supersession is withdrawn by someone: retract names who with --by', () => ({ flag: '--by', value: hole('<who>') }));
+  const by = rulingAuthor(flags.by);
+  need(fieldText(why ?? ''), 'retract of a supersession says why it is withdrawn', () => ({ arg: 2, value: hole('<why>') }));
+  needNoOwnersWords('the reason', why);
+  const old = loadDecisions(root).find((d) => d.slug === slug);
+  need(old, `no ruling ${slug} in ${DECISIONS_FILE} — the rulings: ${jarlLine('decisions')}`, () => ({ arg: 0, value: hole('<a-ruling>') }));
+  need(old.supersededBy, `${slug} is not superseded: there is no supersession of it to withdraw`, () => ({ arg: 0, value: hole('<a-ruling>') }));
+  const reason = noSeparators(oneBreak(why).split('\n').map((l) => l.trim()).filter(Boolean).join(' ⏎ '));
+  markDecision(root, slug, `**Superseded by:** ${WITHDRAWN}${old.supersededBy} (${today()}) · by ${by} · ${reason}`);
+  appendLog(root, `withdrew the supersession of ${slug} by ${old.supersededBy} · by ${by} · ${reason}`);
+  return { slug, supersededBy: old.supersededBy, by, why: reason };
+}
+export const renderWithdrawn = (o) => `supersession of ${o.slug} by ${o.supersededBy} withdrawn by ${o.by}: ${o.slug} is in force again`;
 
 // Whether a question of the record asks about a ruling: a ratify item naming it, or the question the ruling `ask-<n>` was
 // written from.
@@ -469,8 +504,9 @@ export function promotionBatch(root) {
   return { items, filed: filed.map((id) => `a-${id}`) };
 }
 
-// decisions [--live]: the rulings, oldest first, each with who ruled and what superseded it; --live leaves out
-// the superseded ones — what a session reads at boot as the rulings in force.
+// decisions [--live] [--as <role>]: the rulings, oldest first, each with who ruled and what superseded it; --live leaves out
+// the superseded ones — what a session reads at boot as the rulings in force; --as keeps the rulings that are rules reaching
+// that role.
 // A ruling with a scope carries it (appliesTo, the line as written) and, once it has ended, why (ended); --live
 // leaves out an ended rule too.
 export function cmdDecisions(root, flags = {}) {
@@ -481,7 +517,10 @@ export function cmdDecisions(root, flags = {}) {
     const r = ends.get(d.slug);
     return withUnder(loop.decisions, r && !d.supersededBy && (r.ended || r.unread) ? { ...d, ...(r.ended ? { ended: r.ended } : {}), ...(r.unread ? { unread: r.unread } : {}) } : d, ended);
   });
-  return flags.live ? all.filter((d) => !d.supersededBy && !d.ended) : all;
+  const live = flags.live ? all.filter((d) => !d.supersededBy && !d.ended) : all;
+  if (flags.as === undefined) return live;
+  const role = needRuleRole(flags.as);
+  return live.filter((d) => ruleReachesRole(ends.get(d.slug) ?? { selectors: null }, role));
 }
 // The rulings in force, as decisions --live counts them, whose Settles names an issue the loop holds that is neither done
 // nor dropped (in a status that settles none of the issues waiting on it), each with those issues and their status: work

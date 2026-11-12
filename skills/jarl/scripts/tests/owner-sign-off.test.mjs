@@ -131,7 +131,7 @@ test('retract tick-<n> takes back the owner\'s tick of one line, given by mistak
     [['retract', '1', 'tick-1', 'a mistake', '--by', 'owner'], /^acceptance line 1 of 1 is not marked as one only the owner ticks — the lines whose tick counts: 2\njarl\.mjs retract "<id>" "<tick-n>" "<why>" --by "<the-owner-himself>"\n$/],
     [['retract', '1', 'tick-0', 'a mistake', '--by', 'owner'], /retract takes the owner's tick of an acceptance line as tick-<n>, n its number counted from 1 \(got "tick-0"\)/],
     [['retract', '2', 'tick-1', 'a mistake', '--by', 'owner'], /acceptance line 1 of 2 is not marked as one only the owner ticks — no owner line of 2 has a tick that counts/],
-    [['retract', '1', 'tick-x', 'a mistake', '--by', 'owner'], /retract takes review \(the newest approve\) or the number of an evidence row, note-<n> for a note, or tick-<n> for the owner's tick of acceptance line n, got "tick-x"/],
+    [['retract', '1', 'tick-x', 'a mistake', '--by', 'owner'], /retract takes review \(the newest approve\) or the number of an evidence row, note-<n> for a note, tick-<n> for the owner's tick of acceptance line n, or supersession for the slug of a ruling superseded by mistake, got "tick-x"/],
   ]) {
     assert.match(refuses(root, ...args), why, args.join(' '));
     assert.equal(logText(root), before, `${args.join(' ')}: nothing was written`);

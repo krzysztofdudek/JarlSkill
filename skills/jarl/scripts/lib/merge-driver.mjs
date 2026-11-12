@@ -3,7 +3,7 @@
 import { writeFileSync } from 'node:fs';
 import { git } from './git.mjs';
 import { readText } from './files.mjs';
-import { DECISIONS_FILE, DECISION_HEAD, DECISION_META } from './journal.mjs';
+import { DECISIONS_FILE, DECISION_HEAD, DECISION_META, WITHDRAWN } from './journal.mjs';
 import { decisionsDriverCommand, guardedDriver } from './loop-git.mjs';
 
 // ---- git merges the loop's own files ----------------------------------------------------------------
@@ -49,9 +49,12 @@ function mergeRuling(b, o, t) {
   const meta = [...(b ? b.meta : [])];
   for (const line of [...o.meta, ...t.meta]) if (!meta.includes(line)) meta.push(line);
   const byField = new Map();
+  // A supersession taken back by a line of its own does not stand, and does not count against a later one.
+  const taken = new Set(meta.map((l) => DECISION_META.exec(l)).filter((m) => m && m[1] === 'Superseded by' && m[2].startsWith(WITHDRAWN)).map((m) => m[2].slice(WITHDRAWN.length).split(/\s/)[0]));
   for (const line of meta) {
     const m = DECISION_META.exec(line);
     if (!m || !SINGLE_VALUED.has(m[1])) continue;
+    if (m[1] === 'Superseded by' && (m[2].startsWith(WITHDRAWN) || taken.has(m[2].trim().split(/\s/)[0]))) continue;
     const value = m[1] === 'Superseded by' ? m[2].trim().split(/\s/)[0] : m[2].trim();
     const seen = byField.get(m[1]);
     if (seen !== undefined && seen !== value) {
@@ -96,10 +99,11 @@ export function mergeDecisionsTexts(base, ours, theirs) {
       if (bi.has(b.slug)) continue;
       const m = b.meta.map((l) => DECISION_META.exec(l)).find((x) => x && x[1] === 'Supersedes');
       if (!m) continue;
-      const target = m[2].trim();
-      const was = successors.get(target);
-      if (was && was.side !== side && was.slug !== b.slug) conflicts.push(`${target} is superseded on both sides — by ${was.slug} and by ${b.slug}`);
-      else successors.set(target, { side, slug: b.slug });
+      for (const target of m[2].split(',').map((x) => x.trim()).filter(Boolean)) {
+        const was = successors.get(target);
+        if (was && was.side !== side && was.slug !== b.slug) conflicts.push(`${target} is superseded on both sides — by ${was.slug} and by ${b.slug}`);
+        else successors.set(target, { side, slug: b.slug });
+      }
     }
   }
   let pre = O.pre;

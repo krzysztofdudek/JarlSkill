@@ -124,7 +124,13 @@ function repoEntries(root, issue) {
   const named = reposNamed(issue);
   if (!named.length) return [{ label: repoLabel(topOf(root)), value: undefined }];
   const seen = new Set();
-  return named.map((value) => { const p = repoPlace(root, value); return { label: p.name ?? repoLabel(topOf(canonical(p.path))), value }; }).filter((e) => !seen.has(e.label) && seen.add(e.label));
+  return named.map((value) => ({ label: repoLabelOf(root, value), value })).filter((e) => !seen.has(e.label) && seen.add(e.label));
+}
+// The label of one spelling of a repository, a name or a path: the same label for the name and for every path to the
+// repository, so a rule's repo selector and an issue's Repo field meet whichever way each is written.
+export function repoLabelOf(root, value) {
+  const p = repoPlace(root, value);
+  return p.name ?? repoLabel(topOf(canonical(p.path)));
 }
 
 // Where a loop's directory stands among the worktrees of its git repository, read-only (git rev-parse and the
@@ -155,9 +161,9 @@ export function mainCheckoutOf(root) {
 //   none       no worktree holds the branch (and `stored`, when given, is neither listed nor a directory here).
 // The fallback for a stored path git does not list: a directory here is `here`, a missing one with an existing parent is
 // `gone`, a missing one whose parent is missing too is `invisible`. Returns { state, path, reason? }; `path` is null for none.
-export function worktreeState(repo, branch, stored) {
+export function worktreeState(repo, branch, stored, listed) {
   const sameAs = (a, b) => canonical(dirname(a)) === canonical(dirname(b)) && basename(a) === basename(b);
-  const entries = (repo && worktreesOf(repo)) || [];
+  const entries = listed ?? ((repo && worktreesOf(repo)) || []);
   const found = (branch && entries.find((e) => e.branch === branch)) || (stored && entries.find((e) => sameAs(e.path, stored)));
   if (found) {
     if (existsSync(found.path)) return { state: 'here', path: found.path };
@@ -168,6 +174,14 @@ export function worktreeState(repo, branch, stored) {
   if (!stored) return { state: 'none', path: null };
   if (existsSync(stored)) return { state: 'here', path: stored };
   return { state: existsSync(dirname(stored)) ? 'gone' : 'invisible', path: stored };
+}
+
+// The worktrees git lists for a repository, read once per command: a view that asks of every lease where its worktree is
+// (the age of a lease) reads the list once for all of them. The caches are emptied before each command (resetCaches).
+const LISTED = new Map();
+export function listedWorktrees(repo) {
+  if (!LISTED.has(repo)) LISTED.set(repo, worktreesOf(repo) || []);
+  return LISTED.get(repo);
 }
 
 export function fileAt(root, issue, written) {
@@ -586,4 +600,4 @@ export function reposWhereLines(where) {
 }
 
 // Used by the other modules of the library, and not part of what jarl-lib.mjs exports.
-export { FETCHED, HOMES, IS_REPO, REFS, REPO_OF, RESOLVED, TOP_OF, commitRepoNames, defaultBase, isGitRepo, issuePlaces, issueRepoPaths, issueRepoSlots, issueRepos, repoLabel, repoList, repoNames, tipLinesOf, topOf, worktreesOf };
+export { FETCHED, HOMES, IS_REPO, LISTED, REFS, REPO_OF, RESOLVED, TOP_OF, commitRepoNames, defaultBase, isGitRepo, issuePlaces, issueRepoPaths, issueRepoSlots, issueRepos, repoLabel, repoList, repoNames, tipLinesOf, topOf, worktreesOf };
