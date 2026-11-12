@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- `round` counts its findings with `--finding-count <n>`; the old `--findings` is refused with the call that does the same.
+- `set --worktree` says whether it checked the path: a path that is not on this machine is not checked, and the note says so instead of saying it was checked.
+- `decide --by owner` with his words no longer prints a note about a missing question.
 - `decide` says on stderr when a ruling with no `--applies-to` reads as an instruction, so a rule meant for agents is not left as a record that reaches nobody, and names the call that makes it a rule. A rule is handed to an agent as its instruction alone: the `Made under:` line and the owner's words stay in the record.
 - A lease is no longer reported as idle while its worker changes files in its worktree: the newest change to a file there counts as activity alongside commits, rows and log lines.
 - `decide --supersedes` takes several rulings in one call (a comma list, or the flag repeated) and marks them all or none. A supersession written by mistake is taken back with `retract <slug> supersession "<why>" --by <who>`: the ruling is in force again and the reason is kept in the record and the log.

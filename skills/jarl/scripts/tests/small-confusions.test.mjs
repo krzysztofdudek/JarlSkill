@@ -3,22 +3,25 @@
 // nothing is wrong with it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { jarl, refuses, run, loop as makeLoop, SPAWN_TIMEOUT } from './helpers.mjs';
 
-test('round takes its count of findings as --finding-count, and the old name is refused with the call that does the same', () => {
+test('round takes its count of findings as --finding-count, and --findings is refused with the call that does the same', () => {
   const root = makeLoop({ prefix: 'jarl-round-count-', via: 'cli', dotGit: false });
   jarl(root, 'new', 'work', '--acceptance', '[read] it works', '--tier', 'light');
   jarl(root, 'set', '1', 'in-progress', 'go', '--branch', 'jarl/1-work', '--worker', 'w1', '--model', 'm1');
   const said = refuses(root, 'round', '1', 'the count is off by one', '--findings', '2');
-  assert.match(said, /round counts its findings with --finding-count/);
-  assert.match(said, /\njarl\.mjs round "1" "the count is off by one" --finding-count "2"/);
+  assert.match(said, /round takes the count of its findings as --finding-count, a whole number, not as --findings/);
+  assert.match(said, /\njarl\.mjs round "<id>" "<what-failed>" --by "<who>" --finding-count "<count>"/);
   assert.match(refuses(root, 'round', '1', 'red', '--finding-count', 'many'), /--finding-count must be a whole number/);
   assert.match(jarl(root, 'round', '1', 'the count is off by one', '--finding-count', '2'), /1 round 1/);
-  assert.match(jarl(root, 'round', '1', 'and again', '--finding-count', '3'), /Findings per round: 2, 3\./);
+  jarl(root, 'round', '1', 'and again', '--finding-count', '3');
+  const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
+  assert.match(log, /1 round 1 \(count 1 of 3\) · findings 2 · the count is off by one/);
+  assert.match(log, /1 round 2 \(count 2 of 3\) · findings 3 · and again/);
 });
 
 test('a --worktree that is not on this machine yet says it was not checked, and one that is says it was', () => {

@@ -58,7 +58,7 @@ export const COMMAND_FLAGS = {
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
   show: { full: 'bool', 'at-lease': 'bool' }, brief: { role: 'value', slice: 'value' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', by: 'value' },
   next: { limit: 'value', all: 'bool', as: 'value', slice: 'value' },
-  review: { by: 'value', model: 'value', relayed: 'bool', bot: 'bool', outside: 'many', field: 'many', artifact: 'value' }, round: { findings: 'value', by: 'value' }, tick: { by: 'value' },
+  review: { by: 'value', model: 'value', relayed: 'bool', bot: 'bool', outside: 'many', field: 'many', artifact: 'value' }, round: { 'finding-count': 'value', by: 'value' }, tick: { by: 'value' },
   models: { group: 'value', with: 'many', archives: 'bool' },
   scope: { branch: 'value', base: 'value', repo: 'value' },
   branches: { base: 'value', repo: 'value', 'stale-hours': 'value' },
@@ -84,6 +84,7 @@ const RENAMED_FLAGS = {
   models: { by: { to: '--group', why: 'models groups its counts with --group, and --by names the author of a write' } },
   resume: { ci: { to: '--gh', why: 'resume asks gh for the CI of the tips with --gh; --ci is the CI state merged records' } },
   handoff: { ci: { to: '--gh', why: 'resume asks gh for the CI of the tips with --gh; --ci is the CI state merged records' } },
+  round: { findings: { to: '--finding-count', why: 'round takes the count of its findings as --finding-count, a whole number, not as --findings; the findings themselves are the round\'s text' } },
 };
 // The forms of the commands that take a removed form's place: a row or a note is taken back by retract, a verdict too.
 const RETRACT_FORM = ['jarl.mjs', 'retract', hole('<id>'), hole('<n-or-note-n>'), hole('<why>'), '--by', hole('<who>')];
@@ -224,7 +225,7 @@ const FLAG_HOLES = {
   'import source': '<report-dir>', after: '<ids-it-waits-on>', changelog: '<changelog-entry>', template: '<template>', field: '<name=value>', section: '<name=value>',
   person: '<name>', 'check-when': '<date-or-event>', profile: '<profile.json>', key: '<key>', only: '<finding-ids>', ran: '<command>', saw: '<what-it-printed>',
   file: '<path>', slot: '<slot>', status: '<status>', grep: '<text>', match: '<field=value>', branch: '<worker-branch>', worker: '<the-new-worker>',
-  model: '<model-id>', worktree: '<the-worktree-of-the-lease>', limit: '<whole-number>', as: '<who>', slice: '<coordinator>', findings: '<count>', role: '<role>',
+  model: '<model-id>', worktree: '<the-worktree-of-the-lease>', limit: '<whole-number>', as: '<who>', slice: '<coordinator>', 'finding-count': '<count>', role: '<role>',
   group: '<group>', with: '<loop-root>', base: '<base-branch>', 'stale-hours': '<hours>', sha: '<sha>', ci: '<ci-state>', red: '<another-issue>',
   target: '<what-would-get-weaker>', issue: '<id>', option: '<option>', 'ask option': '<label:effect>', 'applies-to': '<selectors>', until: '<date-or-id>', to: '<jarl-or-owner>', log: '<count>',
   ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', 'waives-review': '<ids>', quote: '<his-own-words>', under: '<a-ruling-in-force>', supersedes: '<a-ruling-in-force>',
@@ -1085,10 +1086,9 @@ function askText(out) {
   return [`asked a-${out.id}`, out.question, ...out.options.map((o) => `- ${o.label}: ${o.effect}`), 'answer with --option <option>, or in your own words'].join('\n');
 }
 
-// The notes a decide says on stderr: the owner's word with no question in the record behind it, and the open issues that name the
-// ruling a supersession replaces, so the jarl rewrites them now.
+// The notes a decide says on stderr: a ruling that reads as an instruction and names no one it applies to, and the open issues
+// that name the ruling a supersession replaces, so the jarl rewrites them now.
 function decideNotes(root, slug, by, flags, warn, text) {
-  if (by === 'owner' && !questionFor(root, slug)) warn.push(`note: no question in the record asks about ${slug}: a ruling by the owner with no question behind it is recorded as he gave it`);
   if (flags['applies-to'] === undefined && typeof text === 'string' && readsAsInstruction(text)) {
     warn.push(`note: ${slug} reads as an instruction and has no --applies-to, so no brief or view hands it to anyone — a ruling that is a record needs nothing; to make it a rule for agents, decide it again, which supersedes this one: ${jarlLine('decide', '<a-new-slug>', '<a-ruling>', '--supersedes', slug, '--applies-to', '<selectors>', '--by', '<who>')}`);
   }

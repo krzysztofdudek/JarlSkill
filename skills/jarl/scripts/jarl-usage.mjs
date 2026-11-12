@@ -177,7 +177,8 @@ commands:
                                                  was raised on, as the platform names it (with @effort where it has that
                                                  lever), stored as given; --worktree is a check and records nothing: a path
                                                  that exists must be a worktree of a repository of the issue with the
-                                                 lease's branch checked out, and the worktree of a lease is found through
+                                                 lease's branch checked out, one that is not on this machine is not
+                                                 checked, and the worktree of a lease is found through
                                                  its branch; leaving in-progress removes Worker, Model, Since (and a
                                                  Worktree field a lease holds) and keeps Branch; done notes a merge
                                                  whose CI is not green yet; done asks of each line what its method
@@ -279,7 +280,7 @@ commands:
                                                  findings need at least three words; a verdict is taken back with retract;
                                                  a verdict on several ids is one review: each of its lines carries one
                                                  batch id
-  round <ids> "<text>" [--findings <n>] --by who
+  round <ids> "<text>" [--finding-count <n>] --by who
                                                  one red round on each, with the count of findings it left if given; every third round,
                                                  or every n-th where the goal's "Takeover (<kind>): <n>" line for the issue's kind
                                                  or its bare "Takeover: <n>" line says so, prints the takeover block for a fresh

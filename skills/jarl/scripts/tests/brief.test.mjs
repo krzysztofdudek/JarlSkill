@@ -80,7 +80,7 @@ test('brief <id> --role reviewer carries the rules of the reviewer, of the round
   jarl(root, 'evidence', '3', '--line', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 3, fail 1');
   const finding = `Important: the count is off by one on the last page.\nMinor: ${'the name of the helper could say more, '.repeat(8)}end of the finding.`;
   jarl(root, 'review', '3', 'changes', '--by', 'rev1', finding);
-  jarl(root, 'round', '3', 'the count is off by one', '--findings', '2');
+  jarl(root, 'round', '3', 'the count is off by one', '--finding-count', '2');
   jarl(root, 'evidence', '3', '--line', '1', '--ran', 'npm test', '--saw', 'tests 4, pass 4, fail 0');
   const o = json(root, 'brief', '3', '--role', 'reviewer');
   assert.equal(o.role, 'reviewer');

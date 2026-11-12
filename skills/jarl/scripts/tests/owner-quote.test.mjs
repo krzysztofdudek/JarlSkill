@@ -75,10 +75,10 @@ test('a ruling text that holds the quote marker is refused, and a written quote 
   assert.equal(loadDecisions(root)[0].quote, 'b');
 });
 
-test('--by owner is read without case, stored as owner, and the note about a missing question follows', () => {
+test('--by owner is read without case and stored as owner, with no note about a missing question', () => {
   const root = loop({ via: 'cli' });
-  const r = run(root, ['decide', 'rule-a', 'Keep it.', '--by', 'OWNER', '--quote', 'Fine.']);
-  assert.match(r.stderr, /no question in the record/);
+  const r = run(root, ['decide', 'rule-a', 'The default stays.', '--by', 'OWNER', '--quote', 'Fine.']);
+  assert.equal(r.stderr, '');
   assert.equal(loadDecisions(root)[0].by, 'owner');
   assert.match(refuses(root, 'decide', 'rule-b', 'Keep it.', '--by', 'Owner'), /records him as owner all the same/);
 });

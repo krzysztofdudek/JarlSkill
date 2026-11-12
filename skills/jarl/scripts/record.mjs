@@ -159,7 +159,7 @@ export function review(root, ids, verdict, findings, opts = {}) { return write(r
 // stands in for the worker's proof; a caller that closes on rows writes its own with addEvidence.
 export function recordMerged(root, ids, opts = {}) { return write(root, () => L.cmdMerged(root, ids, opts), opts.by); }
 // One red round, with no count of findings: the contract keeps its arguments, and the count is the command line's
-// round --findings.
+// round --finding-count.
 export function addRound(root, id, what, opts = {}) { return write(root, () => L.cmdRound(root, id, what), opts.by); }
 // opts { by, supersedes, settles, area, reach, rule }.
 export function decide(root, slug, ruling, opts = {}) { return write(root, () => L.cmdDecide(root, slug, ruling, opts), opts.by); }
