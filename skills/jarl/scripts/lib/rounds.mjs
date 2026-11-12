@@ -1,7 +1,7 @@
 // Rounds, branches and checks.
 
 import { lstatSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { LIVENESS_MINUTES, ROUNDS_BEFORE_TAKEOVER, fieldText, hole, need, noSeparators } from './base.mjs';
 import { needNoOwnersWords } from './owner.mjs';
 import { git, gitBytes } from './git.mjs';
@@ -407,10 +407,11 @@ export function ago(ms) {
 
 // The newest modification time of anything in a worktree, as milliseconds, or null when it holds nothing. A worker that
 // builds, tests or waits on a long run changes files and commits nothing, so this is the one sign of it. The .git entry is
-// left out, since git itself touches it; a node_modules directory is not entered (its own time counts), and at most
-// WORK_SCAN_LIMIT entries are read, so a vast tree costs a bounded read.
+// left out, since git itself touches it, and so is `skip`, the loop's own directory, which every write to the loop changes
+// whoever holds the lease; a node_modules directory is not entered (its own time counts), and at most WORK_SCAN_LIMIT
+// entries are read, so a vast tree costs a bounded read.
 const WORK_SCAN_LIMIT = 50_000;
-export function newestChangeIn(dir) {
+export function newestChangeIn(dir, skip = null) {
   let newest = null;
   let seen = 0;
   const note = (path) => { try { const t = lstatSync(path).mtimeMs; if (newest === null || t > newest) newest = t; } catch { /* gone while reading */ } };
@@ -424,6 +425,7 @@ export function newestChangeIn(dir) {
       if (e.name === '.git') continue;
       seen += 1;
       const p = join(d, e.name);
+      if (skip !== null && e.name === basename(skip) && canonical(p) === skip) continue;
       if (e.isDirectory() && e.name !== 'node_modules') stack.push(p);
       else note(p);
     }
@@ -464,7 +466,7 @@ export function leaseLiveness(root, issue, minutes = LIVENESS_MINUTES, { events,
   if (branch || fieldText(f.worktree)) {
     for (const repo of issueRepoPaths(root, issue).filter(isGitRepo)) {
       const place = worktreeState(repo, branch, fieldText(f.worktree) || undefined, listedWorktrees(repo));
-      const t = place.state === 'here' ? newestChangeIn(place.path) : null;
+      const t = place.state === 'here' ? newestChangeIn(place.path, canonical(jarlDir(root))) : null;
       if (t !== null && (!work || t > work.t)) work = { t, path: place.path };
     }
   }

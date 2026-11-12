@@ -82,3 +82,25 @@ test('a lease whose worktree is not on this machine is aged by the record and th
     assert.ok(lstatSync(root).isDirectory());
   });
 });
+
+test('a write to the loop itself is no activity of a lease whose branch is checked out in the checkout that holds the loop', () => {
+  const { dir: root, g } = gitRepo({ prefix: 'jarl-live-own-', branch: 'main' });
+  g('checkout', '-q', '-b', 'jarl/1-one');
+  writeFileSync(join(root, 'b.txt'), 'b\n');
+  g('add', 'b.txt');
+  const when = new Date(T0).toISOString();
+  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'b'], { cwd: root, env: { ...process.env, GIT_COMMITTER_DATE: when, GIT_AUTHOR_DATE: when }, timeout: SPAWN_TIMEOUT, stdio: 'ignore' });
+  at(0, () => {
+    R.initLoop(root, 'goal');
+    R.newIssue(root, 'one', { files: 'b.txt', acceptance: '[read] b is done' });
+    R.setStatus(root, '001', 'in-progress', 'w', { worker: 'w1', branch: 'jarl/1-one' });
+  });
+  touchAll(root, 0);
+  // Another write to the loop, which changes files under its own directory.
+  at(5, () => R.newIssue(root, 'two', { files: 'c.txt', acceptance: '[read] c is done' }));
+  at(60, () => {
+    const lease = R.statusData(root).liveness.leases.find((x) => x.id === '001');
+    assert.equal(lease.lastWork.ageMs, 60 * MIN, 'the files outside the loop were last changed at the start');
+    assert.match(R.statusData(root).stale[0].problems[0], /^idle 1h \(threshold 30m\)/);
+  });
+});
