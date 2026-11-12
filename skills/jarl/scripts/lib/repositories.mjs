@@ -124,7 +124,13 @@ function repoEntries(root, issue) {
   const named = reposNamed(issue);
   if (!named.length) return [{ label: repoLabel(topOf(root)), value: undefined }];
   const seen = new Set();
-  return named.map((value) => { const p = repoPlace(root, value); return { label: p.name ?? repoLabel(topOf(canonical(p.path))), value }; }).filter((e) => !seen.has(e.label) && seen.add(e.label));
+  return named.map((value) => ({ label: repoLabelOf(root, value), value })).filter((e) => !seen.has(e.label) && seen.add(e.label));
+}
+// The label of one spelling of a repository, a name or a path: the same label for the name and for every path to the
+// repository, so a rule's repo selector and an issue's Repo field meet whichever way each is written.
+export function repoLabelOf(root, value) {
+  const p = repoPlace(root, value);
+  return p.name ?? repoLabel(topOf(canonical(p.path)));
 }
 
 // Where a loop's directory stands among the worktrees of its git repository, read-only (git rev-parse and the

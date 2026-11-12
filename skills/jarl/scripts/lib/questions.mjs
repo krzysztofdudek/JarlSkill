@@ -15,7 +15,7 @@ import { tipLinesOf } from './repositories.mjs';
 import { readLoop } from './loop.mjs';
 import { sliceNamed } from './slices.mjs';
 import { issuesFor } from './shared.mjs';
-import { appliesToLine, loopRules, parseScope, parseUntil, underText, withUnder } from './rules.mjs';
+import { appliesToLine, loopRules, needKnownRepos, parseScope, parseUntil, underText, withUnder } from './rules.mjs';
 
 // ---- questions to the owner and the handoff -------------------------------------------------
 
@@ -305,6 +305,7 @@ function scopeOf(root, flags) {
   }
   need(typeof flags['applies-to'] === 'string', '--applies-to names whom the rule applies to, as text', () => ({ flag: '--applies-to', value: '<selectors>' }));
   const selectors = parseScope(flags['applies-to']);
+  needKnownRepos(root, readLoop(jarlDir(root)), selectors, fieldText(flags['applies-to']));
   const until = flags.until === undefined ? null : parseUntil(String(flags.until));
   if (until && until.issue) [{ id: until.issue }] = issuesFor(root, until.issue);
   for (const s of selectors.filter((x) => x.word === 'issue')) [{ id: s.value }] = issuesFor(root, s.value);

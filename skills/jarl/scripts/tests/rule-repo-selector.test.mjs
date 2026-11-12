@@ -52,7 +52,7 @@ test('decide refuses a repo selector no repository of the loop has, and takes th
   const hub = world();
   const said = refuses(hub, 'decide', 'r0', 'Run the linter.', '--applies-to', 'role worker and repo ./nothing', '--by', 'coordinator');
   assert.match(said, /repo \.\/nothing is not a repository of this loop: tool, inner/);
-  assert.match(said, /--applies-to "role worker and repo <name-or-path>"/);
+  assert.match(said, /\n.*decide "<slug>" .* --applies-to "<selectors>"/);
   assert.match(refuses(hub, 'decide', 'r0', 'Run the linter.', '--applies-to', 'repo missing', '--by', 'coordinator'), /repo missing is not a repository of this loop/);
   assert.match(refuses(hub, 'ask', 'Run the linter.', '--kind', 'rule', '--applies-to', 'repo missing', '--by', 'w1'), /repo missing is not a repository of this loop/);
   assert.equal(jarl(hub, 'decisions', '--json'), '[]', 'nothing was written');

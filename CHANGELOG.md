@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- A rule scoped to a repository (`decide --applies-to "repo <name-or-path>"`) now reaches the issues that name that repository whether the rule and the issue write it as a name or as a path, and `decide` refuses a repository the loop does not know instead of saving a rule that reaches nobody.
 - On Windows, a brief names a worktree with backslashes, as the platform does.
 
 - On Windows, the form a refused call prints carries an empty `--root=` as given, instead of naming the loop root by its placeholder.

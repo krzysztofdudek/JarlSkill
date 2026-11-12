@@ -11,7 +11,7 @@ import { fieldText, hole, need } from './base.mjs';
 import { idKey } from './ids.mjs';
 import { answeredLines } from './journal.mjs';
 import { sameSlice, sliceOf } from './slices.mjs';
-import { repoNames } from './repositories.mjs';
+import { declaredNames, repoLabelOf, repoNames } from './repositories.mjs';
 
 export const RULE_ROLES = Object.freeze(['jarl', 'coordinator', 'worker', 'reviewer', 'merger', 'takeover']);
 export const RULE_MOMENTS = Object.freeze(['filing', 'start', 'review', 'round', 'merge', 'done', 'close']);
@@ -42,6 +42,16 @@ export function parseScope(text) {
   });
   need(!(selectors.length > 1 && selectors.some((s) => s.word === 'loop')), `loop takes no other selector: a rule of the loop reaches every reader of it (got "${raw}"); it is loop alone, or the other selectors without it`, () => ({ flag: '--applies-to', value: hole('<selectors>') }));
   return selectors;
+}
+
+// The refusal of a repo selector that no repository of the loop answers to: a rule scoped to it would reach nobody. A
+// repository the loop knows is one declared in it or named by an issue (the loop's own, when an issue names none), in the
+// spelling of a name or of a path.
+export function needKnownRepos(root, loop, selectors, raw) {
+  const known = [...new Set([...declaredNames(root), ...loop.issues.flatMap((i) => repoNames(root, i))])];
+  for (const s of selectors.filter((x) => x.word === 'repo')) {
+    need(known.some((n) => n.toLowerCase() === repoLabelOf(root, s.value).toLowerCase()), `repo ${s.value} is not a repository of this loop: ${known.length ? known.join(', ') : '(none declared, and no issue names one)'} — a rule scoped to it would reach no one; name a repository by its name or a path to it`, () => ({ flag: '--applies-to', value: scopeHole(raw, `repo ${s.value}`, `repo ${hole('<name-or-path>')}`) }));
+  }
 }
 
 // The end of a rule from --until: a date (the rule holds through that day) or an issue (it holds until the issue closes).
@@ -124,7 +134,7 @@ function issueHolds(root, issue, selectors) {
     if (word === 'tier') return String(issue.tier).toLowerCase() === value.toLowerCase();
     if (word === 'slice') return sameSlice(sliceOf(issue), value);
     if (word === 'files') return (issue.files || []).some((f) => fileMatches(value, f));
-    if (word === 'repo') return repoNames(root, issue).some((n) => n.toLowerCase() === value.toLowerCase());
+    if (word === 'repo') return repoNames(root, issue).some((n) => n.toLowerCase() === repoLabelOf(root, value).toLowerCase());
     return false;
   });
 }
