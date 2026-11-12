@@ -96,10 +96,11 @@ export function mergeDecisionsTexts(base, ours, theirs) {
       if (bi.has(b.slug)) continue;
       const m = b.meta.map((l) => DECISION_META.exec(l)).find((x) => x && x[1] === 'Supersedes');
       if (!m) continue;
-      const target = m[2].trim();
-      const was = successors.get(target);
-      if (was && was.side !== side && was.slug !== b.slug) conflicts.push(`${target} is superseded on both sides — by ${was.slug} and by ${b.slug}`);
-      else successors.set(target, { side, slug: b.slug });
+      for (const target of m[2].split(',').map((x) => x.trim()).filter(Boolean)) {
+        const was = successors.get(target);
+        if (was && was.side !== side && was.slug !== b.slug) conflicts.push(`${target} is superseded on both sides — by ${was.slug} and by ${b.slug}`);
+        else successors.set(target, { side, slug: b.slug });
+      }
     }
   }
   let pre = O.pre;

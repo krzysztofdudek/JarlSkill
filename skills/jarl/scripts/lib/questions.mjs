@@ -3,12 +3,12 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ASK_KINDS, HANDOFF_STALE_MS, afterView, fieldText, freeInline, hole, jarlLine, need, noSeparators, oneBreak } from './base.mjs';
+import { ASK_KINDS, HANDOFF_STALE_MS, afterView, fieldText, freeInline, hole, jarlLine, need, noSeparators, oneBreak, splitList } from './base.mjs';
 import { jarlDir, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { askNumber, idKey, issueForms, newNumber, writtenId } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
-import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, goalLines, loadDecisions, markDecision, parseStamp, readGoal } from './journal.mjs';
+import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, goalLines, loadDecisions, markDecision, parseStamp, readGoal, supersedesList } from './journal.mjs';
 import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteShown, rulingAuthor } from './owner.mjs';
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
 import { tipLinesOf } from './repositories.mjs';
@@ -256,8 +256,8 @@ function ratify(root, ruling, rulings, verdict, askId, by = null) {
     return { ...out, typeLog: skipped, ...(ruling.rule ? { ruleLog: skipped } : {}) };
   }
   // The ruling it replaces, when its entry is in the same type's log, is replaced there too.
-  const prior = ruling.supersedes ? rulings.find((d) => d.slug === ruling.supersedes) : null;
-  const supersedes = prior && prior.typeLog && prior.typeLog.type === ruling.area ? prior.typeLog.datetime : null;
+  const prior = ruling.supersedes ? splitList(ruling.supersedes).map((x) => rulings.find((d) => d.slug === x)).find((d) => d && d.typeLog && d.typeLog.type === ruling.area) : null;
+  const supersedes = prior ? prior.typeLog.datetime : null;
   const text = `${ruling.ruling}\n\n(ratified: ${ruling.slug}, a-${askId})`;
   return { ...out, typeDecision: { type: ruling.area, text, supersedes }, ...(ruling.rule ? { ruleRatification: { rule: ruling.rule, text, ...(by ? { by } : {}) } } : {}) };
 }
@@ -344,7 +344,7 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
     // A ruling a later one supersedes, the one this call supersedes, an area ruling the owner rejected and a rule that has
     // ended (its date passed, or its issue closed) hold nothing up.
     const ended = new Set(loopRules(readLoop(jarlDir(root)), today()).filter((r) => r.ended).map((r) => r.slug));
-    const inForce = loadDecisions(root).filter((d) => !d.supersededBy && !d.rejected && !ended.has(d.slug) && d.slug !== flags.supersedes).map((d) => d.slug);
+    const inForce = loadDecisions(root).filter((d) => !d.supersededBy && !d.rejected && !ended.has(d.slug) && !(supersedesList(flags.supersedes) ?? []).includes(d.slug)).map((d) => d.slug);
     need(inForce.includes(under), `--under ${under ? `"${under}"` : 'needs a slug'} is not a ruling in force of this loop; the rulings in force: ${inForce.length ? inForce.join(', ') : '(none)'}`, () => ({ flag: '--under', value: hole('<a-ruling-in-force>') }));
   }
   const settles = flags.settles !== undefined ? issuesFor(root, flags.settles) : [];
@@ -357,7 +357,7 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   const rule = flags.rule !== undefined ? String(flags.rule) : null;
   const text = freeBlock(oneBreak(ruling).trim());
   appendDecision(root, slug, text, { by, quote, under, supersedes: flags.supersedes, area, reach, rule, settles: settles.map((i) => i.id), appliesTo, waives: waives.map((i) => i.id) });
-  appendLog(root, `decided ${slug} · by ${by}${appliesTo ? ` · applies to ${appliesTo}` : ''}${flags.supersedes !== undefined ? ` · supersedes ${flags.supersedes}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
+  appendLog(root, `decided ${slug} · by ${by}${appliesTo ? ` · applies to ${appliesTo}` : ''}${flags.supersedes !== undefined ? ` · supersedes ${(supersedesList(flags.supersedes) ?? []).join(', ')}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
   if (settles.length) {
     const shown = quote ? quoteShown(quote) : null;
     carryingOwnersWords([shown], () => appendRuling(root, settles, `Ruling ${slug} (by ${by}): ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)}${shown ? ` · ${shown}` : ''}`));
@@ -368,8 +368,27 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
     const shown = quoteShown(quote);
     carryingOwnersWords([shown], () => appendRuling(root, waives, `Ruling ${slug} (by owner) waives the review: ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)} · ${shown}`, tipLinesOf(root, waives)));
   }
-  return { slug, by, ...(waives.length ? { waives: waives.map((i) => i.id) } : {}), ...(quote ? { quote } : {}), ...(under ? { under } : {}), ...(appliesTo ? { appliesTo } : {}), supersedes: flags.supersedes ?? null, settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
+  return { slug, by, ...(waives.length ? { waives: waives.map((i) => i.id) } : {}), ...(quote ? { quote } : {}), ...(under ? { under } : {}), ...(appliesTo ? { appliesTo } : {}), supersedes: flags.supersedes === undefined ? null : (supersedesList(flags.supersedes) ?? []).join(', '), settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
 }
+
+// retract <slug> supersession "<why>" --by <who>: a supersession written by mistake is taken back. The ruling is in force
+// again; the record keeps what was written and gains one line on the ruling, `Supersession withdrawn: <by> (<date>) · by
+// <who> · <why>`, and the log one that says who and why. The ruling that superseded it is not touched, but it does not count
+// the ruling among those it supersedes any more.
+export function cmdWithdrawSupersession(root, slug, why, flags = {}) {
+  need(flags.by !== undefined, 'a supersession is withdrawn by someone: retract names who with --by', () => ({ flag: '--by', value: hole('<who>') }));
+  const by = rulingAuthor(flags.by);
+  need(fieldText(why ?? ''), 'retract of a supersession says why it is withdrawn', () => ({ arg: 2, value: hole('<why>') }));
+  needNoOwnersWords('the reason', why);
+  const old = loadDecisions(root).find((d) => d.slug === slug);
+  need(old, `no ruling ${slug} in ${DECISIONS_FILE} — the rulings: ${jarlLine('decisions')}`, () => ({ arg: 0, value: hole('<a-ruling>') }));
+  need(old.supersededBy, `${slug} is not superseded: there is no supersession of it to withdraw`, () => ({ arg: 0, value: hole('<a-ruling>') }));
+  const reason = noSeparators(oneBreak(why).split('\n').map((l) => l.trim()).filter(Boolean).join(' ⏎ '));
+  markDecision(root, slug, `**Supersession withdrawn:** ${old.supersededBy} (${today()}) · by ${by} · ${reason}`);
+  appendLog(root, `withdrew the supersession of ${slug} by ${old.supersededBy} · by ${by} · ${reason}`);
+  return { slug, supersededBy: old.supersededBy, by, why: reason };
+}
+export const renderWithdrawn = (o) => `supersession of ${o.slug} by ${o.supersededBy} withdrawn by ${o.by}: ${o.slug} is in force again`;
 
 // Whether a question of the record asks about a ruling: a ratify item naming it, or the question the ruling `ask-<n>` was
 // written from.

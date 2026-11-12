@@ -22,7 +22,7 @@ import {
   issuesNaming, questionFor, cmdGoal, cmdGoalSet, cmdRepoBase, whereOf, cmdVerify, renderVerify, renderCheckNotes,
   renderProfile, renderResume, renderStatus, renderImport, renderSources, renderList, recordTypeLog, recordRuleLog,
   runDecisionsDriver, mergeFlags, describeNew, renderNewReply, issueView, workerEvidence, attachmentStates, evidenceTable, renderBranches, renderDecide, renderDecisions,
-  cmdExtend, needLoop, cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, cmdRetractTick, atLeaseText, issueLinesAtLease, withWriter, editorOf, readProfileFile, cmdRenumber, cmdSplit,
+  cmdExtend, needLoop, cmdNextAs, renderNextAs, askerSection, renderBrief, cmdTick, cmdRetractTick, cmdWithdrawSupersession, renderWithdrawn, atLeaseText, issueLinesAtLease, withWriter, editorOf, readProfileFile, cmdRenumber, cmdSplit,
   needKnownModels, cmdUse, renderUse, discoverLoop, needRecordFormat, UNRECORDED,
 } from './jarl-lib.mjs';
 import { writeAreaDecision, writeRuleRatification } from './yg-edge.mjs';
@@ -67,7 +67,7 @@ export const COMMAND_FLAGS = {
   answer: { by: 'value', option: 'value' },
   resume: { log: 'value', ready: 'value', gh: 'bool', repo: 'value', base: 'value', as: 'value', slice: 'value' },
   handoff: { summary: 'value', next: 'many', log: 'value', ready: 'value', gh: 'bool' },
-  log: { by: 'value' }, decide: { settles: 'many', 'waives-review': 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'value', 'applies-to': 'value', until: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool', as: 'value' },
+  log: { by: 'value' }, decide: { settles: 'many', 'waives-review': 'many', by: 'value', quote: 'value', under: 'value', supersedes: 'many', 'applies-to': 'value', until: 'value', area: 'value', reach: 'value', rule: 'value' }, decisions: { live: 'bool', as: 'value' },
   goal: { set: 'value', by: 'value' },
   status: { 'stale-hours': 'value', group: 'value', tag: 'value', as: 'value', slice: 'value' }, archive: { by: 'value' }, report: { found: 'bool', metrics: 'bool' }, mode: { by: 'value' },
   changelog: { repo: 'value' },
@@ -504,7 +504,7 @@ export const COMMAND_SUMMARY = {
   import: 'File one issue per finding of a findings file, skipping findings already filed and reporting those whose text changed; a finding with neither a claim nor a truth is not compared.',
   sources: 'Per findings report: its findings, the issues filed from them and their status.',
   evidence: 'Append a free-text note, or checkable rows of what ran and what it printed, to issues; or record a file as an attachment of a slot (--file, --slot).',
-  retract: 'Take back the newest approve of an issue (entry: review), one evidence row by its number (entry: the number), one evidence note (entry: note-<n>) or the owner\'s tick of an acceptance line (entry: tick-<n>), by an entry that says who and why.',
+  retract: 'Take back the newest approve of an issue (entry: review), one evidence row by its number (entry: the number), one evidence note (entry: note-<n>) the owner\'s tick of an acceptance line (entry: tick-<n>), or the supersession of a ruling written by mistake (id: the ruling\'s slug, entry: supersession), by an entry that says who and why.',
   field: 'Change one part of the description of issues, a header field (Title, Priority, Tags, Files, After and the rest) or a section (What, Why, Acceptance, Changelog): a value replaces it, add and remove change the items of a list or add to a section, clear empties it; each change logs what the part held and who changed it when named.',
   split: 'Share out the acceptance lines of a parent among its sub-issues in one write: each line is moved to an issue, which becomes a sub-issue, or kept on the parent, and a line moved nowhere is refused.',
   base: 'Change the base branch a declared repository is held against, logging what it was.',
@@ -579,7 +579,7 @@ export function shortUsage() {
 export const LIST_FIELDS = {
   new: { tags: 'name', files: 'path', repo: 'path', source: 'name', after: 'name' },
   import: { tags: 'name', repo: 'path', only: 'name' },
-  decide: { settles: 'name', 'waives-review': 'name' },
+  decide: { settles: 'name', 'waives-review': 'name', supersedes: 'name' },
   round: { id: 'name' }, answer: { id: 'name' },
   evidence: { ids: 'name', line: 'name' }, field: { ids: 'name' }, set: { ids: 'name' }, merged: { ids: 'name' },
   review: { ids: 'name' }, changelog: { ids: 'name' },
@@ -957,7 +957,8 @@ function dispatchCall(root, commandName, rest, flags) {
       // One verb takes back a verdict, an evidence row and the owner's tick: the review's newest approve, the row by its
       // number, the tick by the number of its acceptance line.
       case 'retract':
-        need(rest[1] === 'review' || /^(note-|tick-)?\d+$/.test(rest[1] ?? ''), `retract takes review (the newest approve) or the number of an evidence row, note-<n> for a note, or tick-<n> for the owner's tick of acceptance line n, got "${rest[1] ?? ''}"`, () => [...(rest[0] === undefined ? [{ arg: 0, value: '<id>' }] : []), { arg: 1, value: '<review-n-or-note-n>' }, ...(rest[2] === undefined ? [{ arg: 2, value: '<what-was-wrong>' }] : []), ...(flags.by === undefined ? [{ flag: '--by', value: '<who>' }] : [])]);
+        if (rest[1] === 'supersession') { out = cmdWithdrawSupersession(root, rest[0], rest[2], flags); text = renderWithdrawn(out); break; }
+        need(rest[1] === 'review' || /^(note-|tick-)?\d+$/.test(rest[1] ?? ''), `retract takes review (the newest approve) or the number of an evidence row, note-<n> for a note, tick-<n> for the owner's tick of acceptance line n, or supersession for the slug of a ruling superseded by mistake, got "${rest[1] ?? ''}"`, () => [...(rest[0] === undefined ? [{ arg: 0, value: '<id>' }] : []), { arg: 1, value: '<review-n-or-note-n>' }, ...(rest[2] === undefined ? [{ arg: 2, value: '<what-was-wrong>' }] : []), ...(flags.by === undefined ? [{ flag: '--by', value: '<who>' }] : [])]);
         if (/^tick-/.test(rest[1])) { out = cmdRetractTick(root, rest[0], rest[1], rest[2], flags); text = `${out.id} the owner's tick of acceptance line ${out.line} of ${out.retracted} taken back by ${out.by} at ${out.at}`; } else if (rest[1] === 'review') { out = R.review(root, rest[0], 'retract', rest[2], { by: flags.by, caller: 'cli' }); text = each(out, renderReview); warn = [].concat(out).filter((o) => o.note).map((o) => `note: ${o.note}`); } else { out = R.addEvidence(root, rest[0], rest[2], { retract: rest[1], by: flags.by }); text = each(out, renderEvidence); }
         break;
       // One computation of the rows: the ready ones are listed, and the rest says how many are held or waiting.
@@ -1088,9 +1089,9 @@ function askText(out) {
 // ruling a supersession replaces, so the jarl rewrites them now.
 function decideNotes(root, slug, by, flags, warn) {
   if (by === 'owner' && !questionFor(root, slug)) warn.push(`note: no question in the record asks about ${slug}: a ruling by the owner with no question behind it is recorded as he gave it`);
-  if (flags.supersedes !== undefined) {
-    const open = issuesNaming(root, flags.supersedes);
-    if (open.length) warn.push(`note: open issues name ${flags.supersedes}: ${open.map((i) => i.id).join(', ')} — rewrite them to ${slug}`);
+  for (const old of flags.supersedes === undefined ? [] : [].concat(flags.supersedes).flatMap((v) => String(v).split(',')).map((x) => x.trim()).filter(Boolean)) {
+    const open = issuesNaming(root, old);
+    if (open.length) warn.push(`note: open issues name ${old}: ${open.map((i) => i.id).join(', ')} — rewrite them to ${slug}`);
   }
 }
 

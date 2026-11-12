@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- `decide --supersedes` takes several rulings in one call (a comma list, or the flag repeated) and marks them all or none. A supersession written by mistake is taken back with `retract <slug> supersession "<why>" --by <who>`: the ruling is in force again and the reason is kept in the record and the log.
 - `decisions --as <role>` lists the rulings that are rules reaching that role (with `--live`, only those still in force), so a new rule can be checked before any brief is raised.
 - Issues leased together on one branch are one lease for `brief` and `next` even when their Repo fields name the same repository once by its name and once by a path.
 - A rule scoped to a repository (`decide --applies-to "repo <name-or-path>"`) now reaches the issues that name that repository whether the rule and the issue write it as a name or as a path, and `decide` refuses a repository the loop does not know instead of saving a rule that reaches nobody.

@@ -47,7 +47,9 @@ test('retract <slug> supersession takes a supersession back with a reason the lo
   const out = jarl(root, 'retract', 'a', 'supersession', 'a was named by mistake', '--by', 'jarl');
   assert.match(out, /supersession of a by d withdrawn by jarl/);
   assert.deepEqual(live(root), ['a', 'c', 'd']);
-  assert.ok(decisionsText(root).startsWith(before.trimEnd().slice(0, 200)), 'the text written stays');
+  const after = decisionsText(root).split('\n');
+  let at = 0;
+  for (const line of before.split('\n')) { const k = after.indexOf(line, at); assert.notEqual(k, -1, `the line stays: ${line}`); at = k + 1; }
   assert.match(decisionsText(root), /\*\*Supersession withdrawn:\*\* d \(\d{4}-\d{2}-\d{2}\) · by jarl · a was named by mistake/);
   assert.match(logText(root), /withdrew the supersession of a by d · by jarl · a was named by mistake/);
   assert.equal(json(root, 'decisions').find((d) => d.slug === 'd').supersedes, 'b', 'd supersedes b only now');

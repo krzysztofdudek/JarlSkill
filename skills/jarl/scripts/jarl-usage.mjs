@@ -124,7 +124,10 @@ commands:
                                                  section) and note-<n> the n-th free-text note (show prints note-<n> before it): the row or note stays, struck
                                                  through, and show leaves a retracted note and its reason out unless --full; the done gate and the metrics
                                                  do not count what is retracted; tick-<n>, --by owner alone, takes back
-                                                 his tick of acceptance line n, and done waits for his tick again
+                                                 his tick of acceptance line n, and done waits for his tick again;
+                                                 retract <slug> supersession --by <who> "<text>" takes back the
+                                                 supersession of a ruling written by mistake: the ruling is in force
+                                                 again, the line saying who and why is appended to it and logged
   list [--status s] [--kind k] [--tag t] [--prio p] [--grep re] [--match "<field=value>"]... [--all]
                                                  the issues not finished (open and in-progress) by default; --all for
                                                  every status; --match keeps those whose header field holds the value;
@@ -375,7 +378,7 @@ commands:
   log "<text>" --by who                       append one dated note to the journal; a line that reads as a filing, a move,
                                                  a round, a verdict, a retraction, an evidence row, a merge, a CI state or
                                                  a body change is refused, and the refusal names the command that writes it
-  decide <slug> "<text>" --by <who> [--quote "<his-own-words>"] [--under <slug>] [--supersedes <slug>] [--settles <ids>] [--waives-review <ids>] [--applies-to "<selectors>" [--until <date-or-id>]] [--area <type> [--reach n] [--rule <id>]]
+  decide <slug> "<text>" --by <who> [--quote "<his-own-words>"] [--under <slug>] [--supersedes <slug>[,<slug>...]] [--settles <ids>] [--waives-review <ids>] [--applies-to "<selectors>" [--until <date-or-id>]] [--area <type> [--reach n] [--rule <id>]]
                                                  append a ruling (slug: letters, digits, . _ -); refuses a duplicate slug;
                                                  --by, which every ruling takes, records who ruled (jarl for a choice
                                                  made under a mandate; a name that reads as owner is owner); --by owner needs --quote, his own words, kept as
@@ -384,7 +387,8 @@ commands:
                                                  letters, hidden characters, other quotation marks, HTML and Markdown marks); --under names the ruling in force a ruling
                                                  by the jarl or a coordinator rests on, kept as the text's last paragraph
                                                  "Made under: <slug>", shown with the ruling by decisions and with a rule by the views; --supersedes marks
-                                                 the ruling it replaces "Superseded by" in place; --settles writes the ruling,
+                                                 each ruling it replaces (one slug, a comma list, or the flag repeated)
+                                                 "Superseded by" in place, all in one write or none; --settles writes the ruling,
                                                  with who ruled, into each named issue's evidence (its status is unchanged);
                                                  --waives-review, on a ruling by the owner alone, closes the named
                                                  issues without a review: done and the merge queue take it for the
