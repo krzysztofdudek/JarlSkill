@@ -280,8 +280,9 @@ commands:
                                                  findings need at least three words; a verdict is taken back with retract;
                                                  a verdict on several ids is one review: each of its lines carries one
                                                  batch id
-  round <ids> "<text>" [--finding-count <n>] --by who
-                                                 one red round on each, with the count of findings it left if given; every third round,
+  round <ids> "<text>" [--finding-count <n>] [--findings <n>] --by who
+                                                 one red round on each, with the count of findings it left if given (--findings is the same count
+                                                 under its other name, and says to use --finding-count); every third round,
                                                  or every n-th where the goal's "Takeover (<kind>): <n>" line for the issue's kind
                                                  or its bare "Takeover: <n>" line says so, prints the takeover block for a fresh
                                                  worker: a tier up, another model or a changed approach. The limit is read from the

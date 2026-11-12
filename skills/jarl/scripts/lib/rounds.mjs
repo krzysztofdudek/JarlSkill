@@ -108,7 +108,8 @@ const times = (k) => `${k} time${k === 1 ? '' : 's'}`;
 export function cmdRound(root, rawId, what, dry = false, opts = {}) {
   needNoOwnersWords('the round', what);
   need(what, 'round requires "<text>", what failed', () => ({ arg: 1, value: '<what-failed>' }));
-  const found = opts['finding-count'];
+  need(opts['finding-count'] === undefined || opts.findings === undefined, '--findings and --finding-count are one count of findings: give --finding-count', () => ({ drop: '--findings' }));
+  const found = opts['finding-count'] ?? opts.findings;
   need(found === undefined || (/^\d+$/.test(String(found)) && Number(found) <= FINDINGS_MAX), `--finding-count must be a whole number up to ${FINDINGS_MAX} (got "${found}")`, () => ({ flag: '--finding-count', value: hole('<count>') }));
   const issue = findIssue(root, rawId);
   need(issue, `no such issue: ${rawId}`, () => ({ replace: rawId, value: '<id>' }));

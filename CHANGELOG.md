@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-- `round` counts its findings with `--finding-count <n>`; the old `--findings` is refused with the call that does the same.
+- `round` counts its findings with `--finding-count <n>`; `--findings` keeps working, on the command line and in the tool, and the call says to use `--finding-count`.
 - `set --worktree` says whether it checked the path: a path that is not on this machine is not checked, and the note says so instead of saying it was checked.
 - `decide --by owner` with his words no longer prints a note about a missing question.
 - `decide` says on stderr when a ruling with no `--applies-to` reads as an instruction, so a rule meant for agents is not left as a record that reaches nobody, and names the call that makes it a rule. A rule is handed to an agent as its instruction alone: the `Made under:` line and the owner's words stay in the record.

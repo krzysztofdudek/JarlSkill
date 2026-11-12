@@ -29,15 +29,15 @@ test('round takes its count of findings as --finding-count, and --findings still
   assert.match(log, /1 round 2 \(count 2 of 3\) · findings 3 · and again/);
 });
 
-test('the round tool takes findings as an alias of finding-count and records the same count, with the notice', () => {
+test('the round tool takes findings under its other name, records the same count and gives the notice', () => {
   const root = mkdtempSync(join(tmpdir(), 'jarl-round-tool-'));
   mkdirSync(join(root, '.git'));
   mcp.callTool('jarl_init', { by: 'test-writer', goal: 'g', root });
   mcp.callTool('jarl_new', { by: 'test-writer', title: 'one', acceptance: ['[read] it works'], tier: 'light', root });
   mcp.callTool('jarl_set', { by: 'test-writer', ids: '1', status: 'in-progress', text: 'go', branch: 'jarl/1-one', worker: 'w1', model: 'm1', root });
-  const viaAlias = mcp.callTool('jarl_round', { by: 'test-writer', ids: '1', text: 'red one', findings: '4', root });
+  const viaAlias = mcp.callTool('jarl_round', { by: 'test-writer', id: '1', text: 'red one', findings: '4', root });
   assert.match(JSON.stringify(viaAlias), /--finding-count is the name to use/);
-  mcp.callTool('jarl_round', { by: 'test-writer', ids: '1', text: 'red two', 'finding-count': '5', root });
+  mcp.callTool('jarl_round', { by: 'test-writer', id: '1', text: 'red two', 'finding-count': '5', root });
   const log = readFileSync(join(root, '.jarl', 'log.md'), 'utf8');
   assert.match(log, /findings 4 · red one/);
   assert.match(log, /findings 5 · red two/);

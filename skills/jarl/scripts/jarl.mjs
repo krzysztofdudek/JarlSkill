@@ -58,7 +58,7 @@ export const COMMAND_FLAGS = {
   list: { status: 'value', kind: 'value', tag: 'value', prio: 'value', grep: 'value', match: 'many', all: 'bool' },
   show: { full: 'bool', 'at-lease': 'bool' }, brief: { role: 'value', slice: 'value' }, set: { branch: 'value', worker: 'value', model: 'value', worktree: 'value', handover: 'bool', header: 'bool', by: 'value' },
   next: { limit: 'value', all: 'bool', as: 'value', slice: 'value' },
-  review: { by: 'value', model: 'value', relayed: 'bool', bot: 'bool', outside: 'many', field: 'many', artifact: 'value' }, round: { 'finding-count': 'value', by: 'value' }, tick: { by: 'value' },
+  review: { by: 'value', model: 'value', relayed: 'bool', bot: 'bool', outside: 'many', field: 'many', artifact: 'value' }, round: { 'finding-count': 'value', findings: 'value', by: 'value' }, tick: { by: 'value' },
   models: { group: 'value', with: 'many', archives: 'bool' },
   scope: { branch: 'value', base: 'value', repo: 'value' },
   branches: { base: 'value', repo: 'value', 'stale-hours': 'value' },
@@ -84,7 +84,6 @@ const RENAMED_FLAGS = {
   models: { by: { to: '--group', why: 'models groups its counts with --group, and --by names the author of a write' } },
   resume: { ci: { to: '--gh', why: 'resume asks gh for the CI of the tips with --gh; --ci is the CI state merged records' } },
   handoff: { ci: { to: '--gh', why: 'resume asks gh for the CI of the tips with --gh; --ci is the CI state merged records' } },
-  round: { findings: { to: '--finding-count', why: 'round takes the count of its findings as --finding-count, a whole number, not as --findings; the findings themselves are the round\'s text' } },
 };
 // The forms of the commands that take a removed form's place: a row or a note is taken back by retract, a verdict too.
 const RETRACT_FORM = ['jarl.mjs', 'retract', hole('<id>'), hole('<n-or-note-n>'), hole('<why>'), '--by', hole('<who>')];
@@ -225,7 +224,7 @@ const FLAG_HOLES = {
   'import source': '<report-dir>', after: '<ids-it-waits-on>', changelog: '<changelog-entry>', template: '<template>', field: '<name=value>', section: '<name=value>',
   person: '<name>', 'check-when': '<date-or-event>', profile: '<profile.json>', key: '<key>', only: '<finding-ids>', ran: '<command>', saw: '<what-it-printed>',
   file: '<path>', slot: '<slot>', status: '<status>', grep: '<text>', match: '<field=value>', branch: '<worker-branch>', worker: '<the-new-worker>',
-  model: '<model-id>', worktree: '<the-worktree-of-the-lease>', limit: '<whole-number>', as: '<who>', slice: '<coordinator>', 'finding-count': '<count>', role: '<role>',
+  model: '<model-id>', worktree: '<the-worktree-of-the-lease>', limit: '<whole-number>', as: '<who>', slice: '<coordinator>', 'finding-count': '<count>', findings: '<count>', role: '<role>',
   group: '<group>', with: '<loop-root>', base: '<base-branch>', 'stale-hours': '<hours>', sha: '<sha>', ci: '<ci-state>', red: '<another-issue>',
   target: '<what-would-get-weaker>', issue: '<id>', option: '<option>', 'ask option': '<label:effect>', 'applies-to': '<selectors>', until: '<date-or-id>', to: '<jarl-or-owner>', log: '<count>',
   ready: '<count>', summary: '<text>', next: '<text>', settles: '<ids>', 'waives-review': '<ids>', quote: '<his-own-words>', under: '<a-ruling-in-force>', supersedes: '<a-ruling-in-force>',
@@ -982,7 +981,7 @@ function dispatchCall(root, commandName, rest, flags) {
       case 'tick': out = cmdTick(root, rest[0], rest[1], flags); text = `${out.id} acceptance line ${out.line} ticked by ${out.by} at ${out.at}`; break;
       // --group is the grouping the views and the record library read as by.
       case 'models': out = cmdModels(root, groupedBy(flags)); text = renderModels(out); break;
-      case 'round': out = eachIssue(root, rest[0], (id, dry) => cmdRound(root, id, rest[1], dry, flags)); text = each(out, (o) => (o.takeover ? `${o.id} round ${o.round} — takeover:\n\n${o.block}` : `${o.id} round ${o.round}: ${o.since} of ${o.limit} before a takeover; the rounds so far: show ${o.id}`)); break;
+      case 'round': out = eachIssue(root, rest[0], (id, dry) => cmdRound(root, id, rest[1], dry, flags)); text = each(out, (o) => (o.takeover ? `${o.id} round ${o.round} — takeover:\n\n${o.block}` : `${o.id} round ${o.round}: ${o.since} of ${o.limit} before a takeover; the rounds so far: show ${o.id}`)); if (flags.findings !== undefined) warn.push('note: --findings is the name round takes its count of findings under; --finding-count is the name to use'); break;
       case 'merged': out = R.recordMerged(root, rest[0], { ...flags, caller: 'cli' }); text = `${out.ids.join(', ')} ${out.sha ? `merged ${out.sha}` : 'merge'}${out.check ? ` · check ${out.check}` : ''}${out.red ? ` · landed red, cause ${out.red}` : ''}${out.ci ? ` · CI ${out.ci}` : ''}${(out.cleanup || []).map((c) => `\n${c.kept ? `kept ${c.branch}${c.worktree ? ` (worktree ${c.worktree} removed)` : ''} — ${c.kept}` : `removed ${c.worktree ? `the worktree ${c.worktree} and ` : ''}the branch ${c.branch}`}${(c.commands || []).length ? `\nafter looking at the files, remove them with:\n${c.commands.map((x) => `  ${x}`).join('\n')}` : ''}${out.cleanup.some((x) => x.repo !== c.repo) ? ` [${c.repo}]` : ''}`).join('')}`; warn = out.notes.map((n) => `note: ${n}`); break;
       case 'scope': out = cmdCheck(root, rest[0], flags); text = `${out.id === null ? `package ${out.ids.join(', ')} on ${out.branch}\n` : ''}${out.repo === root ? '' : `in ${out.repo}\n`}${out.items.map((i) => `${i.ok ? '✓' : '✗'} ${i.name} — ${i.note}`).join('\n')}${out.notes.length || out.notesOmitted ? `\n${renderCheckNotes(out)}` : ''}`; break;
       case 'branches': out = cmdBranches(root, flags); text = renderBranches(out, root); break;
