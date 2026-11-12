@@ -35,7 +35,7 @@ test('a list with one slug that cannot be superseded writes nothing, and names t
   const root = chain();
   const said = refuses(root, 'decide', 'd', 'D.', '--supersedes', 'a,nothing', '--by', 'coordinator');
   assert.match(said, /no ruling nothing in decisions\.md to supersede/);
-  assert.match(said, /--supersedes "a,<a-ruling-in-force>"/, 'the form keeps the slugs that were fine and replaces the one that was not');
+  assert.match(said, /\(of the 2 slugs given, a is a ruling in force; nothing was written\)/, 'the reason says which slugs were fine, since the form holds a placeholder for each');
   jarl(root, 'decide', 'x', 'X replaces b.', '--supersedes', 'b', '--by', 'coordinator');
   assert.match(refuses(root, 'decide', 'd', 'D.', '--supersedes', 'a,b', '--by', 'coordinator'), /b is already superseded by x/);
   assert.match(refuses(root, 'decide', 'd', 'D.', '--supersedes', 'a,a,d', '--by', 'coordinator'), /--supersedes names the slug of an earlier ruling/);
@@ -82,7 +82,7 @@ test('the decisions driver reads every slug of a Supersedes line when it looks f
   assert.ok(r.conflicts.some((c) => /b is superseded on both sides — by n1 and by n2/.test(c)), r.conflicts.join('; '));
 });
 
-// The closing block of a ruling as Jarl 6.3.0 reads it: from its end, up to the first line that is none of its fields. A
+// The closing block of a ruling as a reader that does not know withdrawals reads it, with the fields of the format: from its end, up to the first line that is none of its fields. A
 // withdrawal written as a line of a field that reader does not know would end the block there and leave By, Applies to and the
 // owner's words inside the ruling's text.
 const OLD_META = /^\*\*(Waives review|Applies to|By|Supersedes|Superseded by|Settles|Area|Reach|Rule|Ratified|Rejected|Type log|Rule log):\*\*\s*(.*)$/;
@@ -98,7 +98,7 @@ function oldReading(text, slug) {
   return { ruling: body.slice(0, cut).join('\n').trim(), by: meta.filter((m) => m[1] === 'By').pop()?.[2], applies: meta.filter((m) => m[1] === 'Applies to').pop()?.[2] ?? null };
 }
 
-test('a record that holds a withdrawal is read by an older Jarl with every field in place, the ruling still reading as superseded', () => {
+test('a record that holds a withdrawal is read with every field in place by a reader that does not know withdrawals, the ruling still reading as superseded', () => {
   const root = makeLoop({ prefix: 'jarl-withdraw-old-', via: 'cli', dotGit: false });
   jarl(root, 'decide', 'a', 'Run the tests.', '--applies-to', 'role worker', '--by', 'owner', '--quote', 'Yes, run them.');
   jarl(root, 'decide', 'b', 'B replaces a by mistake.', '--supersedes', 'a', '--by', 'jarl');

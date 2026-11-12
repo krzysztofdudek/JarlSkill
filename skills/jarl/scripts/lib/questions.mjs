@@ -8,7 +8,7 @@ import { jarlDir, today } from './where.mjs';
 import { appendAtomic, readText, writeAtomic } from './files.mjs';
 import { askNumber, idKey, issueForms, newNumber, writtenId } from './ids.mjs';
 import { loadProfile } from './profile.mjs';
-import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, goalLines, loadDecisions, markDecision, parseStamp, readGoal, supersedesList } from './journal.mjs';
+import { ASKS_FILE, DECISIONS_FILE, STAMP_SRC, answeredLines, appendDecision, appendLog, appendLogLines, asksAt, asksPath, firstLine, goalLines, loadDecisions, markDecision, parseStamp, readGoal, supersedesList, WITHDRAWN } from './journal.mjs';
 import { OWNER, carryingOwnersWords, needNoOwnersWords, quoteShown, rulingAuthor } from './owner.mjs';
 import { findIssue, freeBlock, loadIssues, noteText, parseIssue, placeEvidence, setSection } from './issues.mjs';
 import { tipLinesOf } from './repositories.mjs';
@@ -387,7 +387,7 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
 }
 
 // retract <slug> supersession "<why>" --by <who>: a supersession written by mistake is taken back. The ruling is in force
-// again; the record keeps what was written and gains one line on the ruling, `Supersession withdrawn: <by> (<date>) · by
+// again; the record keeps what was written and gains one line on the ruling, `Superseded by: (withdrawn) <by> (<date>) · by
 // <who> · <why>`, and the log one that says who and why. The ruling that superseded it is not touched, but it does not count
 // the ruling among those it supersedes any more.
 export function cmdWithdrawSupersession(root, slug, why, flags = {}) {
@@ -399,7 +399,7 @@ export function cmdWithdrawSupersession(root, slug, why, flags = {}) {
   need(old, `no ruling ${slug} in ${DECISIONS_FILE} — the rulings: ${jarlLine('decisions')}`, () => ({ arg: 0, value: hole('<a-ruling>') }));
   need(old.supersededBy, `${slug} is not superseded: there is no supersession of it to withdraw`, () => ({ arg: 0, value: hole('<a-ruling>') }));
   const reason = noSeparators(oneBreak(why).split('\n').map((l) => l.trim()).filter(Boolean).join(' ⏎ '));
-  markDecision(root, slug, `**Supersession withdrawn:** ${old.supersededBy} (${today()}) · by ${by} · ${reason}`);
+  markDecision(root, slug, `**Superseded by:** ${WITHDRAWN}${old.supersededBy} (${today()}) · by ${by} · ${reason}`);
   appendLog(root, `withdrew the supersession of ${slug} by ${old.supersededBy} · by ${by} · ${reason}`);
   return { slug, supersededBy: old.supersededBy, by, why: reason };
 }

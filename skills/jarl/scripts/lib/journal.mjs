@@ -185,8 +185,11 @@ function decisionsAt(dir, skipped) {
     const field = (name) => meta.filter((m) => m[1] === name).map((m) => m[2].trim());
     // The ruling's text: a line indented two spaces is a continuation line of its free text, read without the indent.
     const ruling = d.body.slice(0, cut).map((l) => (l.startsWith('  ') ? l.slice(2) : l)).join('\n').trim();
-    const withdrawn = field('Supersession withdrawn').map((v) => v.split(/\s/)[0]);
-    const sup = field('Superseded by').filter((v) => !withdrawn.includes(v.split(/\s/)[0])).pop();
+    // A withdrawal is a Superseded by line of its own, `(withdrawn) <by> (<date>) · by <who> · <why>`: a field every reader
+    // places, so a reader that does not know withdrawals keeps the ruling's closing block whole, and reads the ruling as superseded.
+    const marks = field('Superseded by');
+    const withdrawn = marks.filter((v) => v.startsWith(WITHDRAWN)).map((v) => v.slice(WITHDRAWN.length).split(/\s/)[0]);
+    const sup = marks.filter((v) => !v.startsWith(WITHDRAWN) && !withdrawn.includes(v.split(/\s/)[0])).pop();
     const reach = field('Reach').pop();
     const typeLog = /^(\S+) · (\S+)/.exec(field('Type log').pop() || '');
     const ruleLog = /^(\S+) · (\S+)/.exec(field('Rule log').pop() || '');
@@ -206,11 +209,13 @@ function decisionsAt(dir, skipped) {
     return { ...d, supersedes: kept.length ? kept.join(', ') : null };
   });
 }
+// The words that open the value of a Superseded by line that takes a supersession back; no slug starts with a parenthesis.
+export const WITHDRAWN = '(withdrawn) ';
 // The fields the tool writes into a ruling's closing block. Applies to, Area, Reach and Rule come with the ruling (decide
 // --applies-to, --area, --reach, --rule); Superseded by, Ratified, Rejected, Type log and Rule log are added to an earlier
 // ruling in place, later. Applies to is the block's first line, after Waives review. Waives review
 // (decide --waives-review, the issues a ruling of the owner closes without a review) comes first of all.
-const DECISION_META = /^\*\*(Waives review|Applies to|By|Supersedes|Superseded by|Supersession withdrawn|Settles|Area|Reach|Rule|Ratified|Rejected|Type log|Rule log):\*\*\s*(.*)$/;
+const DECISION_META = /^\*\*(Waives review|Applies to|By|Supersedes|Superseded by|Settles|Area|Reach|Rule|Ratified|Rejected|Type log|Rule log):\*\*\s*(.*)$/;
 // The answer line of an answered question's ruling (ask-<n>): the answer itself, the option chosen, or the answer in its own words.
 const ANSWER_LINE = /^\*\*(?:Answer|Answer in own words|Chose):\*\*/;
 // The answer line and the question line of an answered question's ruling, as the ruling holds them. Resume and decisions
@@ -256,10 +261,13 @@ export function needNewRuling(root, slug, supersedes) {
   const list = supersedesList(supersedes);
   if (list === null) return;
   need(list.length > 0 && list.every((x) => typeof x === 'string' && SLUG_RE.test(x) && x !== slug), '--supersedes names the slug of an earlier ruling, or several of them', () => ({ flag: '--supersedes', value: '<slug>' }));
+  // A refusal of a list says which of the slugs given are fine, since its form holds a placeholder for each value.
+  const fine = list.filter((x) => all.some((d) => d.slug === x && !d.supersededBy));
+  const others = list.length > 1 ? ` (of the ${list.length} slugs given, ${fine.length ? `${fine.join(', ')} ${fine.length === 1 ? 'is a ruling' : 'are rulings'} in force` : 'none is a ruling in force'}; nothing was written)` : '';
   for (const target of list) {
     const old = all.find((d) => d.slug === target);
-    need(old, `no ruling ${target} in ${DECISIONS_FILE} to supersede — the rulings: ${jarlLine('decisions')}`, () => ({ flag: '--supersedes', value: '<a-ruling-in-force>' }));
-    need(!old.supersededBy, `${target} is already superseded by ${old.supersededBy} — supersede that one instead`, () => ({ flag: '--supersedes', value: hole('<a-ruling-in-force>') }));
+    need(old, `no ruling ${target} in ${DECISIONS_FILE} to supersede${others} — the rulings: ${jarlLine('decisions')}`, () => ({ flag: '--supersedes', value: '<a-ruling-in-force>' }));
+    need(!old.supersededBy, `${target} is already superseded by ${old.supersededBy}${others} — supersede that one instead`, () => ({ flag: '--supersedes', value: hole('<a-ruling-in-force>') }));
   }
 }
 
