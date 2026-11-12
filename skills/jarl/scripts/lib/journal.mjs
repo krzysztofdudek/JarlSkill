@@ -281,7 +281,7 @@ export function appendDecision(root, slug, ruling, { by: given, quote, under, su
   for (const target of superseded) text = markDecision(root, target, `**Superseded by:** ${slug} (${today()})`, { text });
   const meta = [waives?.length ? `**Waives review:** ${waives.join(', ')}` : null, appliesTo ? `**Applies to:** ${fieldText(appliesTo)}` : null, settles?.length ? `**Settles:** ${settles.join(', ')}` : null, by ? `**By:** ${fieldText(by)}` : null, superseded.length ? `**Supersedes:** ${superseded.join(', ')}` : null, area ? `**Area:** ${area}` : null, reach !== undefined && reach !== null ? `**Reach:** ${reach}` : null, rule ? `**Rule:** ${rule}` : null].filter(Boolean).join('\n');
   const body = `${ruling.replace(/\s+$/, '')}${under ? `\n\n${underLine(under)}` : ''}${quote ? `\n\n${quoteLine(quote)}` : ''}`;
-  carryingOwnersWords([quote && quoteLine(quote)], () => writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${body}\n${meta ? `\n${meta}\n` : ''}`));
+  carryingOwnersWords([quote && { text: quoteLine(quote), before: /^$/, after: /^$/ }], () => writeAtomic(path, `${text.replace(/\s*$/, '')}\n\n## ${today()} · ${slug}\n${body}\n${meta ? `\n${meta}\n` : ''}`));
 }
 
 // The goal of the record held in `dir`, as text; null when it has none.

@@ -199,7 +199,7 @@ export function cmdAnswer(root, rawId, answer, flags = {}) {
   const issue = ask.issue ? findIssue(root, ask.issue) : null;
   // The question and its options are copied into the ruling as the record holds them; a question written before the
   // marker was refused may hold it, and it is carried as it stands, never refused for text the answerer cannot change.
-  carryingOwnersWords([...ask.question.split('\n'), ...(ask.options || []).flatMap((o) => [o.label, o.effect])], () => {
+  carryingOwnersWords(copiedQuestion(ask), () => {
     appendDecision(root, `ask-${id}`, answerRuling(ask, text, chosen === null ? null : checked.option.label, flags.batch || null), { by: author, appliesTo: accepted });
     const path = asksPath(jarlDir(root));
     // The item line only: a continuation line of an earlier question is never the one marked.
@@ -312,6 +312,21 @@ function scopeOf(root, flags) {
   return appliesToLine(selectors, until);
 }
 
+// The owner's words as a row ends with them: after the separator, the last thing in the line.
+const endOfRow = (shown) => shown && { text: shown, before: / · $/, after: /^$/ };
+// The question and its options as the answer copies them, each where the ruling and the question file write it: the first line
+// of the question after its label, the others indented, an option's label and effect on its line.
+function copiedQuestion(ask) {
+  const lines = ask.question.split('\n').map((text, k) => (k === 0
+    ? { text, before: /^(?:\*\*Question:\*\* |- \*\*a-\d+\*\* \([a-z]+\) · (?:[^·\n]+ · )*)$/, after: /^$/ }
+    : { text, before: /^ {2}$/, after: /^$/ }));
+  const options = (ask.options || []).flatMap((o) => [
+    { text: o.label, before: /^(?:- |- \*\*a-\d+\*\* option · )$/, after: /^(?:: | · )/ },
+    { text: o.effect, before: /^(?:- .*: |- \*\*a-\d+\*\* option · .* · )$/, after: /^(?: \(chosen\))?$/ },
+  ]);
+  return [...lines, ...options];
+}
+
 // decide <slug> "<text>" --by <who> [--quote "<words>"] [--supersedes <slug>] [--settles <ids>]: the ruling, who ruled
 // (--by, which the command line requires and refuses a call without; the library alone takes a call that names nobody,
 // and records the coordinator for it. jarl for a choice the loop made under a mandate, owner for the owner's own, which needs his words in --quote,
@@ -360,13 +375,13 @@ export function cmdDecide(root, slug, ruling, flags = {}) {
   appendLog(root, `decided ${slug} · by ${by}${appliesTo ? ` · applies to ${appliesTo}` : ''}${flags.supersedes !== undefined ? ` · supersedes ${(supersedesList(flags.supersedes) ?? []).join(', ')}` : ''}${area ? ` · area ${area}${reach !== null ? ` (${reach} files)` : ''}${rule ? ` · rule ${rule}` : ''}` : ''}`);
   if (settles.length) {
     const shown = quote ? quoteShown(quote) : null;
-    carryingOwnersWords([shown], () => appendRuling(root, settles, `Ruling ${slug} (by ${by}): ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)}${shown ? ` · ${shown}` : ''}`));
+    carryingOwnersWords([endOfRow(shown)], () => appendRuling(root, settles, `Ruling ${slug} (by ${by}): ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)}${shown ? ` · ${shown}` : ''}`));
   }
   // Each waived issue carries the waiver where the done gate reads it, followed by the tip of its branch, as a verdict is:
   // a new commit after it spends it.
   if (waives.length) {
     const shown = quoteShown(quote);
-    carryingOwnersWords([shown], () => appendRuling(root, waives, `Ruling ${slug} (by owner) waives the review: ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)} · ${shown}`, tipLinesOf(root, waives)));
+    carryingOwnersWords([endOfRow(shown)], () => appendRuling(root, waives, `Ruling ${slug} (by owner) waives the review: ${firstLine(oneBreak(ruling).trim(), `${DECISIONS_FILE}, ruling ${slug}`)} · ${shown}`, tipLinesOf(root, waives)));
   }
   return { slug, by, ...(waives.length ? { waives: waives.map((i) => i.id) } : {}), ...(quote ? { quote } : {}), ...(under ? { under } : {}), ...(appliesTo ? { appliesTo } : {}), supersedes: flags.supersedes === undefined ? null : (supersedesList(flags.supersedes) ?? []).join(', '), settles: settles.map((i) => i.id), ...(area ? { area, reach, ...(rule ? { rule } : {}) } : {}) };
 }

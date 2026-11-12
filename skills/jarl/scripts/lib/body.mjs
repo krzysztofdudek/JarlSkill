@@ -99,7 +99,7 @@ const quotedOldText = (line) => line.match(/ body · [^·]+ · was ("[^·]*")(?:
 // The lines of a description change that are not null, appended in one write; nothing when every part was unchanged.
 export function logChanges(root, lines) {
   const kept = lines.filter(Boolean);
-  if (kept.length) carryingOwnersWords(kept.map(quotedOldText), () => appendLogLines(root, kept));
+  if (kept.length) carryingOwnersWords(kept.map((line) => { const text = quotedOldText(line); return text && { text, before: / body · [^·\n]+ · was $/, after: /^(?: \(\d+ characters\))?(?: · by .*)?$/ }; }), () => appendLogLines(root, kept));
 }
 
 // What a header field of an issue holds as written, '' when the header has none.
