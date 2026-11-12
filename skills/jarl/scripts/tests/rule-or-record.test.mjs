@@ -32,7 +32,7 @@ const RECORDS = [
   'Issue 340\'s line 2 is read as: a file above the size limit is never decoded to text for a rule; a rule that reads only its path is not affected.',
   'On 2026-11-09 the jarl read the backlog against the release branches and put a list of seven corrections to the owner. 142 and 143 adopt Runes 1.1.0, because 1.0.1 was never published.',
   'Issue 566\'s line 1 is proved red before against the extractors the work changed, not against the walker, which already walks in linear time; those inputs stay as pins that must stay green.',
-  'The release moves to Friday, because the review ran long and nobody should wait for it.',
+  'The release moves to Friday, because the review ran long and the backlog was never read.',
   'Krzysztof, 2026-10-29 (translated from Polish): "The deadline is Friday." The loop records it and goes on.',
 ];
 

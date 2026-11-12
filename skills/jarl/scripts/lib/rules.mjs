@@ -215,13 +215,20 @@ export function withoutHistory(text) {
   }
   return lines.join('\n');
 }
-// Whether a ruling's words read as an instruction to an agent: a sentence that begins with a verb of work, or holds a word
-// that obliges or forbids. A ruling that reads so and names no one it applies to is delivered to no one.
-const OBLIGES = /\b(?:must|mustn't|never|always|shall|should|shouldn't|do not|don't|is required to|are required to|make sure|ensure)\b/i;
-const WORK_VERBS = /^(?:run|use|keep|write|read|check|file|ask|report|name|send|open|close|add|avoid|prefer|pass|give|put|take|stop|start|wait|call|set|list|say|state|show|attach|record|pin|make|follow|test|review|commit|push|merge|raise|pull|tell|do)\b/i;
+// Whether a ruling's words read as an instruction to an agent. The ruling's own sentences are read, after the attribution that
+// opens a quoted word of the owner's. A sentence is an instruction when it opens with a word that commands or forbids or
+// with a verb of work, when an agent (you, a worker, a reviewer, the jarl, no agent) is the one it obliges or forbids, or
+// when it says where work goes or what it avoids. A word that obliges or forbids inside a sentence about something else (a
+// file that is never decoded, a test that must stay green, a release that was never published) describes and does not
+// instruct. A ruling that reads so and names no one it applies to is delivered to no one.
+const ATTRIBUTION = /^(?:the owner|krzysztof|the jarl)\b[^:\n]{0,200}?:\s*/i;
+const OPENS = /^(?:never|always|do not|don't|please|only|stop|avoid|prefer|ensure|make sure|use|run|keep|write|read|check|file|ask|report|name|send|open|close|add|pass|give|put|take|start|wait|call|set|list|say|state|show|attach|record|pin|make|follow|test|review|commit|push|merge|raise|pull|tell|do)\b/i;
+const AGENT = '(?:you|agents?|workers?|reviewers?|examiners?|coordinators?|mergers?|jarl|everyone|nobody|no one)';
+const OBLIGES_AN_AGENT = new RegExp(`\\b${AGENT}\\b[^.!?;]{0,40}\\b(?:must|should|shall|never|always|do not|don't|may not|is to|are to)\\b`, 'i');
+const PLACES_WORK = /^[\w'-]+(?: [\w'-]+){0,2} (?:goes|go) to\b|\bavoids?\b/i;
 export function readsAsInstruction(text) {
-  const body = withoutHistory(String(text));
-  return OBLIGES.test(body) || body.split(/(?<=[.!?])\s+|\n+/).some((s) => WORK_VERBS.test(s.trim()));
+  const body = withoutHistory(String(text)).replace(/[\u201C\u201D"]/g, '').replace(ATTRIBUTION, '');
+  return body.split(/(?<=[.!?])\s+|\n+|;\s+/).map((x) => x.trim().replace(/^\([^)]*\)\s*/, '')).some((x) => OPENS.test(x) || OBLIGES_AN_AGENT.test(x) || PLACES_WORK.test(x));
 }
 // The rules that match a reader, whole: the loop's rules in force first, then Jarl's own.
 export function rulesFor(root, loop, reader, today) {
